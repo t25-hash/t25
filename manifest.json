@@ -1,0 +1,25 @@
+{
+  "name": "NISA分析ツール",
+  "short_name": "NISA分析",
+  "description": "楽天証券対応 新NISA商品比較・残枠管理アプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#BF0000",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

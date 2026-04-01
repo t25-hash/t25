@@ -1,0 +1,32 @@
+/* iOS Safe Area 対応 */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.nav-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* スクロールバー非表示 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* タップハイライト無効化 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* アクティブ時のスケール */
+.active\:scale-98:active {
+  transform: scale(0.98);
+}
+
+/* 入力フォームの自動ズーム防止（16px以上） */
+input, select, textarea {
+  font-size: 16px !important;
+}

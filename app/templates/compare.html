@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% block title %}比較 | NISA分析ツール{% endblock %}
+{% block content %}
+
+<div x-data="comparePage('{{ ids }}')" x-init="init()" class="max-w-2xl mx-auto">
+
+  <!-- ヘッダー -->
+  <div class="bg-white sticky top-0 z-40 shadow-sm px-4 py-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-gray-900">ファンド比較</h1>
+        <p class="text-xs text-gray-500 mt-0.5">最大4本まで比較可能</p>
+      </div>
+      <button @click="clearAll()"
+              x-show="funds.length > 0"
+              class="text-sm text-gray-400 underline">クリア</button>
+    </div>
+  </div>
+
+  <!-- 未選択状態 -->
+  <template x-if="!loading && funds.length === 0">
+    <div class="flex flex-col items-center justify-center py-20 px-8 text-center">
+      <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+      <p class="text-gray-500 font-medium">比較するファンドを選択してください</p>
+      <p class="text-gray-400 text-sm mt-1">商品一覧でチェックを入れて比較ボタンを押す</p>
+      <a href="/" class="mt-6 bg-rakuten text-white px-6 py-3 rounded-xl font-medium">
+        商品一覧へ
+      </a>
+    </div>
+  </template>
+
+  <template x-if="loading">
+    <div class="text-center py-12 text-gray-400">読み込み中...</div>
+  </template>
+
+  <template x-if="!loading && funds.length > 0">
+    <div>
+
+      <!-- ファンド名ヘッダー（横スクロール） -->
+      <div class="px-4 pt-4 pb-2 overflow-x-auto">
+        <div class="flex gap-3" :style="'min-width: ' + (funds.length * 160) + 'px'">
+          <template x-for="(fund, i) in funds" :key="fund.id">
+            <div class="flex-1 min-w-36 bg-white rounded-xl p-3 border border-gray-100 relative">
+              <button @click="removeFund(fund.id)"
+                      class="absolute top-2 right-2 text-gray-300 hover:text-gray-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+              <p class="text-[10px] text-gray-400" x-text="fund.fund_company"></p>
+              <p class="text-xs font-bold text-gray-900 mt-0.5 pr-4 leading-tight" x-text="fund.short_name"></p>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 比較テーブル -->
+      <div class="px-4 pb-4 space-y-2">
+
+        <!-- 信託報酬 -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">信託報酬（年率）</p>
+          </div>
+          <div class="overflow-x-auto">
+            <div class="flex" :style="'min-width: ' + (funds.length * 120) + 'px'">
+              <template x-for="fund in funds" :key="fund.id">
+                <div class="flex-1 px-4 py-3 text-center border-r border-gray-50 last:border-r-0">
+                  <p class="text-lg font-bold" :class="expenseColor(fund.expense_ratio)"
+                     x-text="fund.expense_ratio.toFixed(4) + '%'"></p>
+                  <p x-show="isLowest(fund, 'expense_ratio')"
+                     class="text-[10px] text-green-600 font-medium mt-0.5">最安値</p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- カテゴリ -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">カテゴリ</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-4 py-3 text-center border-r border-gray-50 last:border-r-0">
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                      :class="categoryBadge(fund.category)"
+                      x-text="fund.category_label"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- NISA枠 -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">対応NISA枠</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-4 py-3 text-center border-r border-gray-50 last:border-r-0">
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                      :class="nisaBadge(fund.nisa_type)"
+                      x-text="fund.nisa_type_label"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- リスクレベル -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">リスクレベル</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-4 py-3 flex flex-col items-center gap-1 border-r border-gray-50 last:border-r-0">
+                <div class="flex gap-0.5">
+                  <template x-for="i in 5">
+                    <div class="w-3 h-3 rounded-full" :class="i <= fund.risk_level ? riskColor(fund.risk_level) : 'bg-gray-200'"></div>
+                  </template>
+                </div>
+                <p class="text-[10px] text-gray-500" x-text="fund.risk_label"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 純資産総額 -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">純資産総額</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-4 py-3 text-center border-r border-gray-50 last:border-r-0">
+                <p class="text-sm font-semibold text-gray-800"
+                   x-text="fund.net_assets_billion_jpy ? fund.net_assets_billion_jpy.toLocaleString('ja-JP') + '億円' : '-'"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- ベンチマーク -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">ベンチマーク</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-3 py-3 text-center border-r border-gray-50 last:border-r-0">
+                <p class="text-[11px] text-gray-700 leading-relaxed" x-text="fund.benchmark || '-'"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 楽天カード積立 -->
+        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <p class="text-xs font-semibold text-gray-600">楽天カード積立</p>
+          </div>
+          <div class="flex overflow-x-auto" :style="'min-width: ' + (funds.length * 120) + 'px'">
+            <template x-for="fund in funds" :key="fund.id">
+              <div class="flex-1 px-4 py-3 text-center border-r border-gray-50 last:border-r-0">
+                <span x-show="fund.is_rakuten_card_eligible" class="text-green-600 text-lg">✓</span>
+                <span x-show="!fund.is_rakuten_card_eligible" class="text-gray-300 text-lg">-</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div><!-- /テーブル -->
+
+      <!-- チャートセクション -->
+      <div class="px-4 pb-6 space-y-4">
+        <h2 class="text-base font-bold text-gray-800">分析チャート</h2>
+
+        <!-- 信託報酬棒グラフ -->
+        <div class="bg-white rounded-2xl border border-gray-100 p-4">
+          <h3 class="text-sm font-semibold text-gray-700 mb-3">信託報酬比較</h3>
+          <div class="relative h-48">
+            <canvas id="expenseChart"></canvas>
+          </div>
+          <div class="flex gap-4 justify-center mt-3 text-[11px]">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>0.1%未満</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>0.1〜0.2%</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>0.2%超</span>
+          </div>
+        </div>
+
+        <!-- カテゴリドーナツ -->
+        <div class="bg-white rounded-2xl border border-gray-100 p-4">
+          <h3 class="text-sm font-semibold text-gray-700 mb-3">カテゴリ分布</h3>
+          <div class="flex items-center gap-4">
+            <div class="relative w-40 h-40 flex-shrink-0">
+              <canvas id="categoryChart"></canvas>
+            </div>
+            <div id="categoryLegend" class="flex-1 space-y-1.5 text-xs"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </template>
+
+</div>
+
+<script>
+function comparePage(initialIds) {
+  return {
+    funds: [],
+    loading: true,
+    ids: initialIds ? initialIds.split(',').filter(Boolean) : (JSON.parse(localStorage.getItem('compareIds') || '[]')),
+    expenseChart: null,
+    categoryChart: null,
+
+    async init() {
+      if (this.ids.length === 0) {
+        this.loading = false
+        return
+      }
+      try {
+        const res = await fetch('/api/compare?ids=' + this.ids.join(','))
+        if (res.ok) this.funds = await res.json()
+      } finally {
+        this.loading = false
+        this.$nextTick(() => this.drawCharts())
+      }
+    },
+
+    removeFund(id) {
+      this.ids = this.ids.filter(i => i !== id)
+      this.funds = this.funds.filter(f => f.id !== id)
+      this.$store.compare.ids = this.ids
+      localStorage.setItem('compareIds', JSON.stringify(this.ids))
+      this.$nextTick(() => this.drawCharts())
+    },
+
+    clearAll() {
+      this.ids = []
+      this.funds = []
+      this.$store.compare.clear()
+    },
+
+    isLowest(fund, key) {
+      if (this.funds.length < 2) return false
+      const min = Math.min(...this.funds.map(f => f[key]))
+      return fund[key] === min
+    },
+
+    async drawCharts() {
+      if (this.funds.length === 0) return
+      const idsParam = this.ids.join(',')
+
+      // 信託報酬チャート
+      const erRes = await fetch('/api/charts/expense-ratio?ids=' + idsParam)
+      const erData = await erRes.json()
+      if (this.expenseChart) this.expenseChart.destroy()
+      const erCtx = document.getElementById('expenseChart')
+      if (erCtx) {
+        this.expenseChart = new Chart(erCtx, {
+          type: 'bar',
+          data: erData,
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: {
+                ticks: { callback: v => v + '%', font: { size: 10 } },
+                grid: { color: '#f3f4f6' }
+              },
+              y: { ticks: { font: { size: 10 } } }
+            }
+          }
+        })
+      }
+
+      // カテゴリチャート
+      const catRes = await fetch('/api/charts/category-distribution?ids=' + idsParam)
+      const catData = await catRes.json()
+      if (this.categoryChart) this.categoryChart.destroy()
+      const catCtx = document.getElementById('categoryChart')
+      if (catCtx) {
+        this.categoryChart = new Chart(catCtx, {
+          type: 'doughnut',
+          data: catData,
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            cutout: '65%'
+          }
+        })
+      }
+
+      // カスタム凡例
+      const legend = document.getElementById('categoryLegend')
+      if (legend) {
+        legend.innerHTML = catData.labels.map((label, i) =>
+          `<div class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full flex-shrink-0" style="background:${catData.datasets[0].backgroundColor[i]}"></span>
+            <span class="text-gray-700">${label} <span class="text-gray-400">${catData.datasets[0].data[i]}本</span></span>
+          </div>`
+        ).join('')
+      }
+    },
+
+    expenseColor(ratio) {
+      if (ratio < 0.1) return 'text-green-600'
+      if (ratio < 0.2) return 'text-amber-600'
+      return 'text-red-500'
+    },
+    categoryBadge(cat) {
+      const m = {
+        global_equity: 'bg-blue-50 text-blue-700',
+        foreign_equity: 'bg-indigo-50 text-indigo-700',
+        domestic_equity: 'bg-teal-50 text-teal-700',
+        domestic_bond: 'bg-gray-100 text-gray-700',
+        foreign_bond: 'bg-slate-100 text-slate-700',
+        balanced: 'bg-purple-50 text-purple-700',
+        reit: 'bg-amber-50 text-amber-700',
+      }
+      return m[cat] || 'bg-gray-100 text-gray-700'
+    },
+    nisaBadge(t) {
+      if (t === 'tsumitate') return 'bg-blue-100 text-blue-800'
+      if (t === 'seichou') return 'bg-green-100 text-green-800'
+      return 'bg-violet-100 text-violet-800'
+    },
+    riskColor(level) {
+      if (level <= 2) return 'bg-green-500'
+      if (level === 3) return 'bg-yellow-400'
+      return 'bg-red-500'
+    },
+  }
+}
+</script>
+{% endblock %}

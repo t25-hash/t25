@@ -1,0 +1,9 @@
+app/__pycache__/
+app/data/__pycache__/
+app/models/__pycache__/
+app/routers/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+.env
+

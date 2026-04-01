@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}残枠管理 | NISA分析ツール{% endblock %}
+{% block content %}
+
+<div x-data="allowancePage()" x-init="init()" class="max-w-2xl mx-auto">
+
+  <!-- ヘッダー -->
+  <div class="bg-white px-4 py-4 shadow-sm">
+    <h1 class="text-xl font-bold text-gray-900">NISA残枠管理</h1>
+    <p class="text-xs text-gray-500 mt-0.5">新NISA（2024年〜）年間・生涯投資枠</p>
+  </div>
+
+  <!-- 年度タイトル -->
+  <div class="px-4 pt-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-700">
+        <span x-text="allowance.year"></span>年の投資状況
+      </h2>
+      <span x-show="totalYearWarning"
+            class="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full font-medium">
+        ⚠️ 年間枠80%超
+      </span>
+    </div>
+  </div>
+
+  <!-- つみたて投資枠 -->
+  <div class="px-4 pt-3">
+    <div class="bg-white rounded-2xl border border-gray-100 p-4">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <span class="text-[11px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">つみたて投資枠</span>
+          <p class="text-xs text-gray-500 mt-1">年間120万円 / 生涯1,200万円</p>
+        </div>
+        <button @click="editing.tsumitate = !editing.tsumitate"
+                class="text-xs text-rakuten font-medium">
+          <span x-text="editing.tsumitate ? '完了' : '編集'"></span>
+        </button>
+      </div>
+
+      <!-- 年間バー -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-500">年間利用額</span>
+          <span class="font-semibold text-gray-800">
+            ¥<span x-text="fmt(allowance.tsumitate?.used_this_year || 0)"></span>
+            <span class="text-gray-400 font-normal"> / ¥1,200,000</span>
+          </span>
+        </div>
+        <div class="bg-gray-100 rounded-full h-3 overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-500"
+               :class="(allowance.tsumitate?.year_usage_pct || 0) >= 80 ? 'bg-amber-400' : 'bg-blue-500'"
+               :style="'width: ' + (allowance.tsumitate?.year_usage_pct || 0) + '%'"></div>
+        </div>
+        <div class="flex justify-between text-[11px] mt-1 text-gray-400">
+          <span>残り ¥<span x-text="fmt(allowance.tsumitate?.remaining_this_year || 1200000)"></span></span>
+          <span x-text="(allowance.tsumitate?.year_usage_pct || 0).toFixed(1) + '%'"></span>
+        </div>
+      </div>
+
+      <!-- 生涯バー -->
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-500">生涯利用額</span>
+          <span class="font-semibold text-gray-800">
+            ¥<span x-text="fmt(allowance.tsumitate?.used_lifetime || 0)"></span>
+            <span class="text-gray-400 font-normal"> / ¥12,000,000</span>
+          </span>
+        </div>
+        <div class="bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div class="h-full rounded-full bg-blue-300 transition-all duration-500"
+               :style="'width: ' + (allowance.tsumitate?.lifetime_usage_pct || 0) + '%'"></div>
+        </div>
+      </div>
+
+      <!-- 編集フォーム -->
+      <div x-show="editing.tsumitate" x-transition class="mt-4 border-t border-gray-100 pt-4 space-y-3">
+        <div>
+          <label class="text-xs font-semibold text-gray-600 block mb-1">今年の利用額（円）</label>
+          <input type="number" x-model.number="form.tsumitate.used_this_year"
+                 min="0" max="1200000" step="1000"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-gray-600 block mb-1">生涯利用額（円）</label>
+          <input type="number" x-model.number="form.tsumitate.used_lifetime"
+                 min="0" max="12000000" step="10000"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base">
+        </div>
+        <button @click="save('tsumitate')"
+                class="w-full bg-blue-600 text-white rounded-xl py-3 font-semibold">
+          保存する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 成長投資枠 -->
+  <div class="px-4 pt-3">
+    <div class="bg-white rounded-2xl border border-gray-100 p-4">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <span class="text-[11px] font-semibold bg-green-100 text-green-800 px-2 py-0.5 rounded-full">成長投資枠</span>
+          <p class="text-xs text-gray-500 mt-1">年間240万円 / 生涯1,200万円</p>
+        </div>
+        <button @click="editing.seichou = !editing.seichou"
+                class="text-xs text-rakuten font-medium">
+          <span x-text="editing.seichou ? '完了' : '編集'"></span>
+        </button>
+      </div>
+
+      <!-- 年間バー -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-500">年間利用額</span>
+          <span class="font-semibold text-gray-800">
+            ¥<span x-text="fmt(allowance.seichou?.used_this_year || 0)"></span>
+            <span class="text-gray-400 font-normal"> / ¥2,400,000</span>
+          </span>
+        </div>
+        <div class="bg-gray-100 rounded-full h-3 overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-500"
+               :class="(allowance.seichou?.year_usage_pct || 0) >= 80 ? 'bg-amber-400' : 'bg-green-500'"
+               :style="'width: ' + (allowance.seichou?.year_usage_pct || 0) + '%'"></div>
+        </div>
+        <div class="flex justify-between text-[11px] mt-1 text-gray-400">
+          <span>残り ¥<span x-text="fmt(allowance.seichou?.remaining_this_year || 2400000)"></span></span>
+          <span x-text="(allowance.seichou?.year_usage_pct || 0).toFixed(1) + '%'"></span>
+        </div>
+      </div>
+
+      <!-- 生涯バー -->
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-500">生涯利用額</span>
+          <span class="font-semibold text-gray-800">
+            ¥<span x-text="fmt(allowance.seichou?.used_lifetime || 0)"></span>
+            <span class="text-gray-400 font-normal"> / ¥12,000,000</span>
+          </span>
+        </div>
+        <div class="bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div class="h-full rounded-full bg-green-300 transition-all duration-500"
+               :style="'width: ' + (allowance.seichou?.lifetime_usage_pct || 0) + '%'"></div>
+        </div>
+      </div>
+
+      <!-- 編集フォーム -->
+      <div x-show="editing.seichou" x-transition class="mt-4 border-t border-gray-100 pt-4 space-y-3">
+        <div>
+          <label class="text-xs font-semibold text-gray-600 block mb-1">今年の利用額（円）</label>
+          <input type="number" x-model.number="form.seichou.used_this_year"
+                 min="0" max="2400000" step="1000"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-gray-600 block mb-1">生涯利用額（円）</label>
+          <input type="number" x-model.number="form.seichou.used_lifetime"
+                 min="0" max="12000000" step="10000"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base">
+        </div>
+        <button @click="save('seichou')"
+                class="w-full bg-green-600 text-white rounded-xl py-3 font-semibold">
+          保存する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 合計サマリー -->
+  <div class="px-4 pt-3 pb-6">
+    <div class="bg-gradient-to-br from-rakuten to-rakuten-dark rounded-2xl p-4 text-white">
+      <p class="text-sm font-semibold opacity-90 mb-3">生涯投資枠 合計（1,800万円）</p>
+
+      <div class="bg-white bg-opacity-20 rounded-full h-4 overflow-hidden mb-2">
+        <div class="h-full rounded-full bg-white transition-all duration-500"
+             :style="'width: ' + (allowance.total_lifetime_usage_pct || 0) + '%'"></div>
+      </div>
+
+      <div class="flex justify-between text-sm">
+        <div>
+          <p class="opacity-80 text-xs">利用済み</p>
+          <p class="font-bold text-lg">¥<span x-text="fmt(allowance.total_used_lifetime || 0)"></span></p>
+        </div>
+        <div class="text-right">
+          <p class="opacity-80 text-xs">残り</p>
+          <p class="font-bold text-lg">¥<span x-text="fmt(allowance.total_remaining_lifetime || 18000000)"></span></p>
+        </div>
+      </div>
+
+      <p class="text-xs opacity-70 mt-2 text-right">
+        <span x-text="(allowance.total_lifetime_usage_pct || 0).toFixed(1)"></span>% 消化
+      </p>
+    </div>
+
+    <!-- 新NISA説明 -->
+    <div class="mt-4 bg-blue-50 rounded-2xl p-4 text-xs text-blue-800 space-y-1.5">
+      <p class="font-semibold text-sm">新NISA制度のポイント</p>
+      <p>• つみたて投資枠：年間120万円、主に投資信託</p>
+      <p>• 成長投資枠：年間240万円、株式・ETFも対象</p>
+      <p>• 生涯投資枠：1,800万円（うち成長投資枠は1,200万円まで）</p>
+      <p>• 売却した場合、翌年に枠が復活（生涯枠の範囲内）</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function allowancePage() {
+  return {
+    allowance: {},
+    editing: { tsumitate: false, seichou: false },
+    form: {
+      tsumitate: { used_this_year: 0, used_lifetime: 0 },
+      seichou: { used_this_year: 0, used_lifetime: 0 },
+    },
+
+    get totalYearWarning() {
+      const t = this.allowance.tsumitate?.year_usage_pct || 0
+      const s = this.allowance.seichou?.year_usage_pct || 0
+      return t >= 80 || s >= 80
+    },
+
+    async init() {
+      // localStorage から復元
+      const saved = localStorage.getItem('allowanceData')
+      if (saved) {
+        try {
+          const data = JSON.parse(saved)
+          await this.saveToServer('tsumitate', data.tsumitate)
+          await this.saveToServer('seichou', data.seichou)
+        } catch(e) {}
+      }
+      await this.fetch()
+    },
+
+    async fetch() {
+      const res = await fetch('/api/allowance')
+      this.allowance = await res.json()
+      this.form.tsumitate.used_this_year = this.allowance.tsumitate?.used_this_year || 0
+      this.form.tsumitate.used_lifetime = this.allowance.tsumitate?.used_lifetime || 0
+      this.form.seichou.used_this_year = this.allowance.seichou?.used_this_year || 0
+      this.form.seichou.used_lifetime = this.allowance.seichou?.used_lifetime || 0
+    },
+
+    async save(bucket) {
+      await this.saveToServer(bucket, this.form[bucket])
+      await this.fetch()
+      this.editing[bucket] = false
+      // localStorage に保存
+      localStorage.setItem('allowanceData', JSON.stringify(this.form))
+    },
+
+    async saveToServer(bucket, data) {
+      await fetch('/api/allowance/' + bucket, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+    },
+
+    fmt(n) {
+      return Number(n).toLocaleString('ja-JP')
+    },
+  }
+}
+</script>
+{% endblock %}
