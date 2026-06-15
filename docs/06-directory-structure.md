@@ -32,6 +32,7 @@ t25/  (NSCode)
 │       ├── api.js            # API レイヤ（雛形=localStorage モック）
 │       ├── research-engine.js # PDF解析(pdf.js遅延ロード) + オフライン要約/キーワード
 │       ├── rag-engine.js      # RAGパイプライン(chunk/TF-IDF検索/MMR/ハルシネーション検出)
+│       ├── embed-engine.js    # 埋め込み(hashing trick)/類似度/PCA 2D
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js

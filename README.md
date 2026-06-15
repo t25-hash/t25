@@ -21,6 +21,8 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 >   PDF 解析は同梱の [pdf.js](https://github.com/mozilla/pdf.js)（Apache-2.0）。
 > - **RAG Lab**: Chunk → Retrieval（TF-IDF コサイン）→ ReRank（MMR）→ Context Builder →
 >   Hallucination 検出、の5段パイプラインがパラメータ連動で動きます。
+> - **Embedding Lab**: Token 可視化 / 埋め込み（hashing trick）/ 類似度（cos/euclid/dot）/
+>   PCA 2D クラスタ散布図が、実際の計算で動きます。
 
 | 種別 | 場所 | 内容 |
 | --- | --- | --- |

@@ -294,6 +294,20 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
 .is-ok .ns-hal__badge { color: #4ade80; }
 .is-bad .ns-hal__badge { color: var(--danger); }
 
+/* ---- Embedding Lab ---- */
+.ns-tokens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ns-token {
+  display: inline-flex; flex-direction: column; align-items: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: 6px; padding: 4px 8px; font-size: 13px;
+}
+.ns-token i { font-style: normal; color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+.ns-vec { width: 100%; height: 120px; display: block; margin: 6px 0 12px; }
+.ns-scatter {
+  width: 100%; aspect-ratio: 1 / 1; max-height: 460px; display: block;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }
 
