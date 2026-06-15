@@ -16,6 +16,10 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 要件定義書 v1.0 を実装可能なレベルへ落とし込んだ **設計書** と、
 プレーンな HTML/CSS/JS による **画面雛形 (SPA スケルトン)** を含みます。
 
+> ✅ **Research Lab は実動します。** PDF をドロップすると、ブラウザ内だけで
+> テキスト抽出・ページ図解・抽出型要約・キーワード抽出を行います（外部送信なし）。
+> PDF 解析には同梱の [pdf.js](https://github.com/mozilla/pdf.js)（Apache-2.0）を使用。
+
 | 種別 | 場所 | 内容 |
 | --- | --- | --- |
 | 設計書 | [`docs/`](docs/) | 画面一覧・画面遷移・コンポーネント設計・DB設計・API設計・ディレクトリ構成 |
@@ -35,6 +39,10 @@ xdg-open index.html          # Linux
 # もしくは簡易サーバ経由（推奨）
 python3 -m http.server 8000  # → http://localhost:8000
 ```
+
+> 💡 Research Lab の PDF 解析は Web Worker を使うため、`file://` で直接開くと
+> 一部ブラウザでワーカーがブロックされることがあります（自動でフォールバックします）。
+> 確実に動かすには上記の簡易サーバ経由で開いてください。
 
 ## 設計ドキュメント
 

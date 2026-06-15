@@ -20,11 +20,17 @@ t25/  (NSCode)
 ├── assets/
 │   ├── css/
 │   │   └── main.css          # テーマ変数 / レイアウト / コンポーネント
+│   ├── vendor/
+│   │   └── pdfjs/            # pdf.js (legacy UMD) を同梱（オフライン動作）
+│   │       ├── pdf.min.js
+│   │       ├── pdf.worker.min.js
+│   │       └── LICENSE       # Apache-2.0 (Mozilla)
 │   └── js/
 │       ├── core.js           # NSCode 名前空間 / registry / router / store
 │       ├── components.js      # 共通UI（PageHeader, Card, Panel, Tabs, ...）
 │       ├── nav.js            # サイドバー定義（グループ×モジュール）
 │       ├── api.js            # API レイヤ（雛形=localStorage モック）
+│       ├── research-engine.js # PDF解析(pdf.js遅延ロード) + オフライン要約/キーワード
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js

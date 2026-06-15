@@ -220,6 +220,43 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 }
 .ns-step__arrow { color: var(--text-dim); }
 
+/* ---- Research Lab ---- */
+.ns-drop {
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 28px 16px; text-align: center; cursor: pointer; transition: .15s;
+  background: var(--surface-2);
+}
+.ns-drop:hover, .ns-drop:focus, .ns-drop.is-over {
+  border-color: var(--accent); background: var(--accent-weak); outline: none;
+}
+.ns-drop__icon { font-size: 34px; }
+.ns-drop__msg { margin: 6px 0 2px; }
+.ns-loadstatus {
+  margin-top: 12px; padding: 10px 14px; border-radius: 8px;
+  background: var(--accent-weak); color: var(--accent); font-size: 13.5px;
+}
+.ns-summary ul { margin: 0; padding-left: 18px; }
+.ns-summary li { margin-bottom: 8px; }
+.ns-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ns-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 5px 10px; font-size: 13px;
+}
+.ns-chip i { font-style: normal; color: var(--text-dim); font-size: 11px; }
+.ns-thumbs { display: flex; flex-wrap: wrap; gap: 12px; }
+.ns-thumb { margin: 0; text-align: center; }
+.ns-thumb canvas {
+  border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  max-width: 100%; height: auto; display: block;
+}
+.ns-thumb figcaption { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+.ns-fulltext {
+  max-height: 320px; overflow-y: auto; white-space: pre-wrap;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; font-size: 13px; line-height: 1.7; color: var(--text-dim);
+}
+
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }
 
