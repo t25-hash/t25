@@ -43,7 +43,18 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 | スタイル | [`assets/css/main.css`](assets/css/main.css) | Dark Mode / レスポンシブ |
 | アプリ | [`assets/js/`](assets/js/) | ハッシュルーティング + 各画面のビュー |
 
-## 動かし方
+## スマホ / どこからでも（GitHub Pages）
+
+静的サイトなので **GitHub Pages** でそのまま公開でき、iPhone の Safari からも動きます。
+本リポジトリには Pages デプロイ用ワークフロー（[`.github/workflows/pages.yml`](.github/workflows/pages.yml)）を同梱しています。
+
+1. リポジトリの **Settings → Pages → Build and deployment → Source** を **「GitHub Actions」** に設定（初回のみ・スマホの GitHub アプリ/ブラウザからも可）。
+2. 対象ブランチへ push するとワークフローが走り、自動デプロイされます。
+3. 公開 URL: **https://t25-hash.github.io/t25/**
+
+> `_lab.js` が Jekyll に無視されないよう `.nojekyll` を同梱済み。全パスは相対なのでサブパス配信でも動作します。
+
+## 動かし方（ローカル）
 
 ビルド不要です。`index.html` をブラウザで直接開くだけで動作します。
 
