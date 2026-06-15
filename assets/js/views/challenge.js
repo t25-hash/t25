@@ -37,6 +37,9 @@
       return C.PageHeader({ title: 'Level ' + l.level + ' · ' + l.title, purpose: '課題に挑戦',
           breadcrumb: ['Challenge', l.id] }) +
         C.Panel({ title: '課題説明', body: C.EmptyState({ icon: '🎯', message: '課題の要件と合格条件が入ります（雛形）。' }) }) +
+        (l.id === 'L5' ? C.Panel({ title: '参考: 最小ハーネス', hint: 'Claude Code Mini の土台',
+          body: '<p class="ns-lesson">mockLLM → 権限ゲート → tool → transcript/context loop の最小実装を、ブラウザで実行・Python ソースで確認できます。</p>' +
+            '<div class="ns-actions"><a class="ns-btn" href="#/claude-code/harness">Mini Harness を開く</a></div>' }) : '') +
         C.Panel({ title: '提出', body: '<div class="ns-actions"><a class="ns-btn" href="#/build">Build Lab で作る</a><button class="ns-btn ns-btn--ghost">提出して採点</button></div>' });
     }
   });

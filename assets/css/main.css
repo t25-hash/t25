@@ -318,6 +318,22 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
 }
 
+/* ---- Claude Code Mini Harness ---- */
+.cc-turn { border-left: 3px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.cc-turn__head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cc-turn__think { margin: 6px 0; color: var(--text-dim); font-size: 13px; }
+.cc-turn__perm { margin: 4px 0; font-size: 13px; }
+.cc-turn__out { margin: 6px 0 0; max-height: 180px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+.cc-turn__out.is-bad { color: var(--danger); }
+.cc-perm { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+.cc-perm.is-ok { color: #4ade80; border-color: #4ade80; }
+.cc-perm.is-bad { color: var(--danger); border-color: var(--danger); }
+.cc-file { margin-bottom: 10px; }
+.cc-file .ns-code { margin-top: 4px; max-height: 160px; overflow: auto; }
+.cc-ctx { display: flex; flex-direction: column; gap: 4px; }
+.cc-ctx__row { font-size: 12.5px; padding: 5px 8px; background: var(--surface-2); border-radius: 6px; color: var(--text-dim); }
+.cc-ctx__row--sum { background: var(--accent-weak); color: var(--accent); }
+
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }
 

@@ -30,7 +30,7 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 > | **Agent Lab** | ReAct ループ可視化 / 計画生成 / リフレクション / リトライ(指数バックオフ) |
 > | **Memory Lab** | 4種メモリ / 圧縮 / 要約 / 想起(コサイン類似度) |
 > | **Multi-Agent Lab** | 役割別チャット / タスク分配 / 合意形成(投票) |
-> | **Claude Code Explorer** | アーキ図(AI 1.6% vs infra 98.4%) / while-loop 実行ステップ / 権限ゲート / セッション / メモリ |
+> | **Claude Code Explorer** | アーキ図(AI 1.6% vs infra 98.4%) / while-loop 実行ステップ / 権限ゲート / セッション / メモリ / **Mini Harness**（[`examples/minimal_claude_code.py`](examples/minimal_claude_code.py) の JS 実行版） |
 > | **AI Coding Lab** | ツール比較マトリクス(編集可・参考) |
 > | **Build Lab** | RAG/Agent/MultiAgent/MCP/Workflow を JSON/YAML/Python/LangGraph 生成 → 成果物保存 |
 > | **Evaluation Lab** | ラベル付きデータで Precision@k/Recall@k を実測（他は推定明示） |
