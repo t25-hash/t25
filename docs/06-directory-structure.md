@@ -19,7 +19,9 @@ t25/  (NSCode)
 │   └── 06-directory-structure.md
 ├── assets/
 │   ├── css/
-│   │   └── main.css          # テーマ変数 / レイアウト / コンポーネント
+│   │   ├── main.css          # テーマ変数 / レイアウト / 共通コンポーネント
+│   │   └── <lab>.css         # Lab 固有スタイル (tools/agent/memory/multi-agent/
+│   │                         #   mcp/claude-code/build/evaluation)
 │   ├── vendor/
 │   │   └── pdfjs/            # pdf.js (legacy UMD) を同梱（オフライン動作）
 │   │       ├── pdf.min.js
@@ -33,6 +35,13 @@ t25/  (NSCode)
 │       ├── research-engine.js # PDF解析(pdf.js遅延ロード) + オフライン要約/キーワード
 │       ├── rag-engine.js      # RAGパイプライン(chunk/TF-IDF検索/MMR/ハルシネーション検出)
 │       ├── embed-engine.js    # 埋め込み(hashing trick)/類似度/PCA 2D
+│       ├── tools-engine.js    # ツールレジストリ/選択/決定論的実行
+│       ├── agent-engine.js    # ReActループ/計画/リフレクション/リトライ
+│       ├── memory-engine.js   # メモリ圧縮/想起(コサイン)
+│       ├── multiagent-engine.js # 役割別 分配/チャット/合意形成
+│       ├── mcp-engine.js      # MCP config 生成/JSON-RPC ハンドシェイク
+│       ├── codegen-engine.js  # JSON/YAML/Python/LangGraph 生成
+│       ├── eval-engine.js     # ラベル付き評価(Precision@k/Recall@k)
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js

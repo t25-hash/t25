@@ -1,0 +1,48 @@
+/* Memory Lab — module-specific styles (only classes not already in main.css). */
+
+.ns-mem-list { display: flex; flex-direction: column; gap: 8px; }
+
+.ns-mem-turn {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  background: var(--surface-2);
+}
+.ns-mem-turn .ns-tag { margin-right: 8px; }
+.ns-mem-turn--user { border-left-color: var(--accent); }
+.ns-mem-turn--assistant { border-left-color: #5ee0c0; }
+
+.ns-mem-facts { margin: 0; padding-left: 18px; }
+.ns-mem-facts li { margin-bottom: 6px; font-size: 13.5px; line-height: 1.55; }
+
+.ns-mem-event {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--surface-2);
+}
+.ns-mem-ts {
+  display: inline-block;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-right: 8px;
+}
+
+.ns-mem-summary {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-weak);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.ns-mem-bullets { margin: 0; padding-left: 20px; }
+.ns-mem-bullets li { margin-bottom: 10px; font-size: 14px; line-height: 1.6; }

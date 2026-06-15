@@ -1,0 +1,116 @@
+/* Agent Lab (AGENT) — module-specific styles.
+ * Reuses NSCode tokens/components from main.css; only adds what the
+ * agent views need (trace cards, plan list, reflection checklist, retry rows). */
+
+/* ---- inline control (checkbox toggle next to a label) ---- */
+.ns-control--inline {
+  display: inline-flex; flex-direction: row; align-items: center; gap: 8px;
+  color: var(--text); font-size: 13.5px;
+}
+.ns-control--inline input { accent-color: var(--accent); }
+
+/* ---- Loop Viewer: trace cards grouped by phase ---- */
+.ns-trace {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  transition: opacity .25s ease, transform .25s ease;
+}
+.ns-trace.is-hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+
+.ns-trace__head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; margin-bottom: 6px;
+}
+.ns-trace__phase {
+  font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  font-size: 11px; color: var(--text);
+}
+.ns-trace__iter {
+  color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px; font-size: 11px;
+}
+.ns-trace__status { margin-left: auto; font-weight: 700; color: #4ade80; }
+.ns-trace.is-fail .ns-trace__status { color: var(--danger); }
+.ns-trace__body {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: 13px; line-height: 1.6; color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: none; border: none; padding: 0;
+}
+
+/* phase colors (left border + phase label tint) */
+.ns-trace--goal    { border-left-color: #6ea8fe; }
+.ns-trace--goal    .ns-trace__phase { color: #6ea8fe; }
+.ns-trace--plan    { border-left-color: #c792ea; }
+.ns-trace--plan    .ns-trace__phase { color: #c792ea; }
+.ns-trace--action  { border-left-color: #5ee0c0; }
+.ns-trace--action  .ns-trace__phase { color: #5ee0c0; }
+.ns-trace--obs     { border-left-color: #f6bd60; }
+.ns-trace--obs     .ns-trace__phase { color: #f6bd60; }
+.ns-trace--reflect { border-left-color: #f78c6b; }
+.ns-trace--reflect .ns-trace__phase { color: #f78c6b; }
+.ns-trace--retry   { border-left-color: #8ed1fc; }
+.ns-trace--retry   .ns-trace__phase { color: #8ed1fc; }
+
+/* failed observation gets a subtle red wash regardless of phase tint */
+.ns-trace.is-fail {
+  border-left-color: var(--danger);
+  background: rgba(255, 107, 107, 0.08);
+}
+.ns-trace.is-fail .ns-trace__phase { color: var(--danger); }
+
+/* ---- Planner: ordered plan list ---- */
+.ns-plan { list-style: none; margin: 0; padding: 0; counter-reset: none; }
+.ns-plan__step {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+}
+.ns-plan__step .ns-step__no { flex: 0 0 auto; margin-top: 1px; }
+.ns-plan__text { font-size: 13.5px; line-height: 1.55; color: var(--text); }
+.ns-plan__step.is-verify {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+.ns-plan__step.is-verify .ns-step__no { background: #4ade80; }
+
+/* ---- Reflection: suggestion checklist ---- */
+.ns-checklist { list-style: none; margin: 0; padding: 0; }
+.ns-checklist__item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+  font-size: 13.5px; line-height: 1.6; color: var(--text);
+}
+.ns-checklist__box { color: #4ade80; font-weight: 700; flex: 0 0 auto; }
+
+/* ---- Retry: attempt rows with backoff ---- */
+.ns-retry { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ns-retry__row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center; gap: 10px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.ns-retry__row.is-ok  { border-left-color: #4ade80; }
+.ns-retry__row.is-bad { border-left-color: var(--danger); }
+.ns-retry__n {
+  font-size: 12px; font-weight: 600; color: var(--text-dim);
+  white-space: nowrap;
+}
+.ns-retry__status { font-weight: 700; font-size: 15px; }
+.ns-retry__row.is-ok  .ns-retry__status { color: #4ade80; }
+.ns-retry__row.is-bad .ns-retry__status { color: var(--danger); }
+.ns-retry__action {
+  font-size: 13px; color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.ns-retry__backoff {
+  font-size: 11.5px; color: var(--text-dim); white-space: nowrap;
+}
+.ns-retry__bar { grid-column: 1 / -1; height: 6px; margin-top: 2px; }
+.ns-retry__row.is-ok .ns-retry__bar .ns-progress__fill { background: #4ade80; }
+.ns-retry__row.is-bad .ns-retry__bar .ns-progress__fill { background: var(--danger); }

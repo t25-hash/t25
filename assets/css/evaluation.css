@@ -1,0 +1,35 @@
+/* Evaluation Lab — module-specific styles (real vs estimated tagging). */
+.ns-eval-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.ns-eval-metric__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ns-eval-tag {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ns-eval-tag.is-real {
+  color: #062a1f;
+  background: #5ee0c0;
+  border-color: #5ee0c0;
+}
+.ns-eval-tag.is-est {
+  color: #3a2c00;
+  background: #f6bd60;
+  border-color: #f6bd60;
+}
