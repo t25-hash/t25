@@ -154,11 +154,113 @@
     var words = latin + cjk;
     // ~200 en words/min, ~500 cjk chars/min
     var minutes = Math.max(1, Math.round(latin / 200 + cjk / 500));
-    return { pages: pages.length, words: words, latin: latin, cjk: cjk, chars: text.length, minutes: minutes };
+    return { pages: pages.length, words: words, latin: latin, cjk: cjk, chars: text.length,
+      minutes: minutes, sentences: splitSentences(text).length };
+  }
+
+  /* TextRank: sentence-similarity graph + PageRank (better than raw frequency).
+   * Uses NSCode.embeddings for sentence vectors; falls back to frequency-based. */
+  function summarizeRank(text, n) {
+    var sents = splitSentences(text);
+    if (sents.length <= n) return sents;
+    var emb = NSCode.embeddings;
+    if (!emb || !emb.embed) return summarize(text, n);
+    // cap graph size for responsiveness on huge docs
+    var CAP = 400, capped = sents.length > CAP ? sents.slice(0, CAP) : sents;
+    var N = capped.length;
+    var vecs = capped.map(function (s) { return emb.embed(s, 64); });
+    var sim = [], rowsum = [];
+    for (var i = 0; i < N; i++) {
+      sim[i] = []; var rs = 0;
+      for (var j = 0; j < N; j++) {
+        var v = i === j ? 0 : Math.max(0, emb.cosine(vecs[i], vecs[j]));
+        sim[i][j] = v; rs += v;
+      }
+      rowsum[i] = rs;
+    }
+    var d = 0.85, score = [];
+    for (i = 0; i < N; i++) score[i] = 1 / N;
+    for (var it = 0; it < 40; it++) {
+      var next = [];
+      for (i = 0; i < N; i++) {
+        var s = 0;
+        for (j = 0; j < N; j++) if (rowsum[j] > 0) s += sim[j][i] / rowsum[j] * score[j];
+        next[i] = (1 - d) / N + d * s;
+      }
+      score = next;
+    }
+    var ranked = capped.map(function (sn, idx) {
+      return { idx: idx, s: sn, score: score[idx] * (1 + 0.15 * (1 - idx / N)) };
+    });
+    ranked.sort(function (a, b) { return b.score - a.score; });
+    return ranked.slice(0, n).sort(function (a, b) { return a.idx - b.idx; })
+      .map(function (x) { return x.s; });
+  }
+
+  /* TF-IDF keywords (pages as documents) — more distinctive than raw frequency. */
+  function keywordsTfidf(pages, n) {
+    var Np = pages.length || 1, df = {}, tfAll = {};
+    pages.forEach(function (p) {
+      var seen = {};
+      terms(p).forEach(function (t) {
+        if (STOP[t] || t.length < 2) return;
+        tfAll[t] = (tfAll[t] || 0) + 1;
+        if (!seen[t]) { seen[t] = 1; df[t] = (df[t] || 0) + 1; }
+      });
+    });
+    return Object.keys(tfAll).filter(function (k) { return tfAll[k] >= 2; })
+      .map(function (k) { var idf = Math.log(1 + Np / df[k]); return { term: k, count: tfAll[k], score: tfAll[k] * idf }; })
+      .sort(function (a, b) { return b.score - a.score; })
+      .slice(0, n || 20);
+  }
+
+  /* Extractive Q&A over the document: retrieve relevant passages (RAG engine),
+   * then return the sentences best matching the question. No generation. */
+  function ask(question, pages) {
+    var rag = NSCode.rag, full = pages.join('\n\n'), passages = [];
+    if (rag && rag.chunk && rag.retrieve) {
+      var chunks = rag.chunk(full, { size: 320, overlap: 60, separator: '\n\n' });
+      passages = rag.retrieve(question, chunks, { topK: 4, threshold: 0 }).hits || [];
+    }
+    var pool = passages.length ? passages.map(function (h) { return h.chunk.text; }).join(' ') : full;
+    var qTerms = {}; terms(question).forEach(function (t) { if (!STOP[t]) qTerms[t] = 1; });
+    var scored = splitSentences(pool).map(function (s) {
+      var ts = terms(s), m = 0; ts.forEach(function (t) { if (qTerms[t]) m++; });
+      return { s: s, score: ts.length ? m / Math.sqrt(ts.length) : 0 };
+    }).filter(function (x) { return x.score > 0; });
+    scored.sort(function (a, b) { return b.score - a.score; });
+    var picked = [];
+    for (var i = 0; i < scored.length && picked.length < 3; i++) {
+      var cand = scored[i].s;
+      var dup = picked.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; });
+      if (!dup) picked.push(cand);
+    }
+    return { answer: picked, passages: passages };
+  }
+
+  /* In-document search: sentences (with page no.) containing any query term. */
+  function search(query, pages) {
+    var needles = (query.toLowerCase().match(/[a-z0-9]{2,}/g) || [])
+      .concat(query.match(/[぀-ヿ一-鿿ｦ-ﾟ]{2,}/g) || []);
+    if (!needles.length) return [];
+    var hits = [];
+    for (var pi = 0; pi < pages.length && hits.length < 60; pi++) {
+      var sents = splitSentences(pages[pi]);
+      for (var k = 0; k < sents.length; k++) {
+        var s = sents[k], low = s.toLowerCase();
+        for (var m = 0; m < needles.length; m++) {
+          if (low.indexOf(needles[m]) >= 0 || s.indexOf(needles[m]) >= 0) { hits.push({ page: pi + 1, snippet: s }); break; }
+        }
+        if (hits.length >= 60) break;
+      }
+    }
+    return hits;
   }
 
   NSCode.research = {
     ensureLib: ensureLib, parse: parse, renderPage: renderPage,
-    summarize: summarize, keywords: keywords, stats: stats, splitSentences: splitSentences
+    summarize: summarize, summarizeRank: summarizeRank,
+    keywords: keywords, keywordsTfidf: keywordsTfidf,
+    ask: ask, search: search, stats: stats, splitSentences: splitSentences
   };
 })(window.NSCode);

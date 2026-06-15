@@ -18,7 +18,8 @@
     { id: 'execution', label: 'Execution', route: '#/claude-code/execution' },
     { id: 'session', label: 'Session', route: '#/claude-code/session' },
     { id: 'tool', label: 'Tool', route: '#/claude-code/tool' },
-    { id: 'memory', label: 'Memory', route: '#/claude-code/memory' }
+    { id: 'memory', label: 'Memory', route: '#/claude-code/memory' },
+    { id: 'harness', label: 'Mini Harness', route: '#/claude-code/harness' }
   ];
 
   var DISCLAIMER = '教育用の概念モデル（Claude Code の公開分析に基づく・概数）';
@@ -30,7 +31,8 @@
     execStep: 0,
     execToolType: 'read',     // 'read' (read-only) | 'write'
     openTurn: 1,
-    restored: false
+    restored: false,
+    harnessMode: 'auto'
   }, state);
 
   function persist() { NSCode.api.labState('#/claude-code', state); }
@@ -415,5 +417,154 @@
       render();
     }
   });
+
+  /* =====================================================================
+   * MINI HARNESS — runnable in-browser port of examples/minimal_claude_code.py
+   * ===================================================================== */
+  var H = NSCode.harness;
+  var hs = null;          // current harness session
+  var pyCache = null;     // fetched Python reference source
+
+  NSCode.registerView({
+    route: '#/claude-code/harness', module: 'claude-code', title: 'Mini Harness',
+    render: function () {
+      var modeOpt = function (v, l) { return '<option value="' + v + '"' + (state.harnessMode === v ? ' selected' : '') + '>' + l + '</option>'; };
+      return header({ title: 'Mini Harness', purpose: 'examples/minimal_claude_code.py を JS 移植してブラウザで実行', route: '#/claude-code/harness' }) +
+        C.Panel({ title: '設定', hint: 'ループは本物・テスト実行はシミュレーション（実Python不要）',
+          body: C.Controls([
+            { label: '権限モード', control: '<select id="hMode" class="ns-input">' +
+              modeOpt('auto', 'auto（安全な操作は自動許可）') + modeOpt('dontAsk', 'dontAsk（hard deny以外は許可）') + modeOpt('default', 'default（毎回確認）') + '</select>' }
+          ]) +
+          '<div class="ns-actions">' +
+            '<button id="hStep" class="ns-btn">ステップ実行</button>' +
+            '<button id="hRun" class="ns-btn ns-btn--ghost">最後まで実行</button>' +
+            '<button id="hReset" class="ns-btn ns-btn--ghost">リセット</button>' +
+          '</div><div id="hPending"></div>' }) +
+        '<div class="ns-grid" style="--cols:2">' +
+          C.Panel({ title: 'ループ（turns）', hint: 'mockLLM → 権限ゲート → tool → tool_result', body: '<div id="hLog"></div>' }) +
+          C.Panel({ title: 'ワークスペース（in-memory FS）', body: '<div id="hFs"></div>' }) +
+        '</div>' +
+        C.Panel({ title: 'コンテキスト（次のLLMに渡る visible 履歴）', hint: '古い履歴は compact_summary に圧縮', body: '<div id="hCtx"></div>' }) +
+        C.Panel({ title: 'Python 参照ソース（examples/minimal_claude_code.py）',
+          body: '<div class="ns-actions"><button id="hDl" class="ns-btn ns-btn--ghost">ダウンロード</button></div><pre id="hPy" class="ns-code">読み込み中…</pre>' });
+    },
+    onMount: function () {
+      if (!hs) { hs = H.createSession({ mode: state.harnessMode || 'auto' }); H.record(hs, { type: 'user_prompt', content: hs.prompt }); }
+      el('hMode').addEventListener('change', function () {
+        state.harnessMode = el('hMode').value; persist();
+        hs = H.createSession({ mode: state.harnessMode }); H.record(hs, { type: 'user_prompt', content: hs.prompt });
+        renderHarness();
+      });
+      el('hStep').addEventListener('click', function () { stepHarness(); });
+      el('hRun').addEventListener('click', function () {
+        var guard = 0;
+        while (!hs.done && !hs.pending && guard++ < 30) { stepHarness(true); }
+        renderHarness();
+      });
+      el('hReset').addEventListener('click', function () {
+        hs = H.createSession({ mode: state.harnessMode || 'auto' }); H.record(hs, { type: 'user_prompt', content: hs.prompt });
+        renderHarness();
+      });
+      loadPython();
+      renderHarness();
+    }
+  });
+
+  function stepHarness(quiet) {
+    if (hs.done || hs.pending) { if (!quiet) renderHarness(); return; }
+    var a = H.propose(hs);
+    if (a.type === 'finish') { hs.done = true; hs.finished = a.summary; if (!quiet) renderHarness(); return; }
+    var d = H.decide(hs, a);
+    H.record(hs, { type: 'permission', action_id: a.id, decision: d[0], reason: d[1] });
+    if (d[0] === 'ask') { hs.pending = a; if (!quiet) renderHarness(); return; }
+    if (d[0] === 'allow') H.execute(hs, a);
+    else H.record(hs, { type: 'tool_result', action_id: a.id, tool: a.tool, result: { ok: false, error: d[1] } });
+    if (!quiet) renderHarness();
+  }
+
+  function resolvePending(allow) {
+    var a = hs.pending; hs.pending = null;
+    H.record(hs, { type: 'permission', action_id: a.id, decision: allow ? 'allow' : 'deny', reason: allow ? 'approved by user' : 'rejected by user' });
+    if (allow) H.execute(hs, a);
+    else H.record(hs, { type: 'tool_result', action_id: a.id, tool: a.tool, result: { ok: false, error: 'rejected by user' } });
+    renderHarness();
+  }
+
+  function permBadge(d) {
+    var cls = d === 'allow' ? 'is-ok' : (d === 'deny' ? 'is-bad' : '');
+    return '<span class="cc-perm ' + cls + '">' + d + '</span>';
+  }
+
+  function renderHarness() {
+    var log = el('hLog'); if (!log) return;
+    // build per-turn cards from events
+    var evs = hs.events, html = '', i;
+    for (i = 0; i < evs.length; i++) {
+      var e = evs[i];
+      if (e.type === 'llm_reply') {
+        var a = e.action;
+        html += '<div class="cc-turn"><div class="cc-turn__head"><span class="ns-tag">turn ' + e.turn + '</span>' +
+          '<b>' + C.esc(a.tool) + '</b>' + (a.type === 'finish' ? ' <span class="cc-perm is-ok">finish</span>' : '') + '</div>' +
+          '<p class="cc-turn__think">💭 ' + C.esc(a.thought) + '</p>';
+      } else if (e.type === 'permission') {
+        html += '<p class="cc-turn__perm">permission: ' + permBadge(e.decision) + ' <span class="ns-empty__hint">' + C.esc(e.reason) + '</span></p>';
+      } else if (e.type === 'tool_result') {
+        var r = e.result, out = r.stdout || r.stderr || (r.files ? r.files.join('\n') : '') || r.content || (r.error || '');
+        html += '<pre class="cc-turn__out ' + (r.ok ? '' : 'is-bad') + '">' + C.esc((out || (r.ok ? 'ok' : 'failed')).slice(0, 700)) + '</pre></div>';
+      }
+    }
+    if (hs.finished) html += '<div class="ns-qa-answer"><b>assistant:</b> ' + C.esc(hs.finished) + '</div>';
+    log.innerHTML = html || C.EmptyState({ message: '「ステップ実行」または「最後まで実行」を押してください。' });
+
+    // pending permission prompt (default mode)
+    var pend = el('hPending');
+    if (pend) {
+      pend.innerHTML = hs.pending
+        ? '<div class="ns-qa-answer">権限申請: <b>' + C.esc(hs.pending.tool) + '</b> — ' + C.esc(JSON.stringify(hs.pending.args)) +
+          '<div class="ns-actions"><button id="hAllow" class="ns-btn">許可</button><button id="hDeny" class="ns-btn ns-btn--ghost">拒否</button></div></div>'
+        : '';
+      if (hs.pending) {
+        el('hAllow').addEventListener('click', function () { resolvePending(true); });
+        el('hDeny').addEventListener('click', function () { resolvePending(false); });
+      }
+    }
+
+    // workspace FS
+    var fsEl = el('hFs');
+    if (fsEl) {
+      fsEl.innerHTML = Object.keys(hs.fs).map(function (f) {
+        var body = C.esc(hs.fs[f]).replace(/&quot;secret&quot;/g, '<mark>"secret"</mark>').replace(/&quot;wrong&quot;/g, '<mark>"wrong"</mark>');
+        return '<div class="cc-file"><span class="ns-tag">' + C.esc(f) + '</span><pre class="ns-code">' + body + '</pre></div>';
+      }).join('');
+    }
+
+    // context (visible)
+    var ctxEl = el('hCtx');
+    if (ctxEl) {
+      var vis = H.contextVisible(hs);
+      ctxEl.innerHTML = '<p class="ns-empty__hint">transcript 全 ' + hs.transcript.length + ' 件 / visible ' + vis.length + ' 件（keepLast=' + hs.keepLast + '）</p>' +
+        '<div class="cc-ctx">' + vis.map(function (e) {
+          if (e.type === 'compact_summary') return '<div class="cc-ctx__row cc-ctx__row--sum">🗜 ' + C.esc(e.content) + '</div>';
+          var label = e.type === 'llm_reply' ? ('llm_reply: ' + e.action.tool) : e.type;
+          return '<div class="cc-ctx__row">' + C.esc(label) + '</div>';
+        }).join('') + '</div>';
+    }
+  }
+
+  function loadPython() {
+    var py = el('hPy'); if (!py) return;
+    var apply = function (txt) { py.textContent = txt; el('hDl').onclick = function () { downloadText(txt, 'minimal_claude_code.py'); }; };
+    if (pyCache) { apply(pyCache); return; }
+    fetch('examples/minimal_claude_code.py').then(function (r) { return r.text(); })
+      .then(function (t) { pyCache = t; apply(t); })
+      .catch(function () { py.textContent = '(ソースの取得に失敗しました。リポジトリの examples/minimal_claude_code.py を参照してください)'; });
+  }
+
+  function downloadText(text, name) {
+    var blob = new Blob([text], { type: 'text/x-python' });
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
 
 })(window.NSCode);

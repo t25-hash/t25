@@ -42,6 +42,7 @@ t25/  (NSCode)
 │       ├── mcp-engine.js      # MCP config 生成/JSON-RPC ハンドシェイク
 │       ├── codegen-engine.js  # JSON/YAML/Python/LangGraph 生成
 │       ├── eval-engine.js     # ラベル付き評価(Precision@k/Recall@k)
+│       ├── harness-engine.js  # 最小Claude Codeハーネスのブラウザ実行版
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js
@@ -60,6 +61,8 @@ t25/  (NSCode)
 │           ├── evaluation.js
 │           ├── research.js
 │           └── challenge.js
+├── examples/
+│   └── minimal_claude_code.py # 最小Claude Codeハーネス（学習用Python・参照教材）
 └── plugins/                  # 追加モジュール（任意・ビルド不要で増設）
     └── .gitkeep
 ```

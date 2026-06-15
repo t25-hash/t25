@@ -259,6 +259,13 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
   padding: 12px 14px; font-size: 13px; line-height: 1.7; color: var(--text-dim);
 }
+.ns-qa-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.ns-qa-bar .ns-input { flex: 1; }
+.ns-qa-answer { background: var(--accent-weak); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.ns-qa-answer ul { margin: 6px 0 0; padding-left: 18px; }
+.ns-qa-answer li { margin-bottom: 6px; }
+.ns-search-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.ns-search-hit { font-size: 13.5px; line-height: 1.6; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
 
 /* ---- RAG Lab ---- */
 .ns-chunks { display: flex; flex-direction: column; gap: 6px; }
@@ -310,6 +317,22 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
   width: 100%; aspect-ratio: 1 / 1; max-height: 460px; display: block;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
 }
+
+/* ---- Claude Code Mini Harness ---- */
+.cc-turn { border-left: 3px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.cc-turn__head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cc-turn__think { margin: 6px 0; color: var(--text-dim); font-size: 13px; }
+.cc-turn__perm { margin: 4px 0; font-size: 13px; }
+.cc-turn__out { margin: 6px 0 0; max-height: 180px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+.cc-turn__out.is-bad { color: var(--danger); }
+.cc-perm { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+.cc-perm.is-ok { color: #4ade80; border-color: #4ade80; }
+.cc-perm.is-bad { color: var(--danger); border-color: var(--danger); }
+.cc-file { margin-bottom: 10px; }
+.cc-file .ns-code { margin-top: 4px; max-height: 160px; overflow: auto; }
+.cc-ctx { display: flex; flex-direction: column; gap: 4px; }
+.cc-ctx__row { font-size: 12.5px; padding: 5px 8px; background: var(--surface-2); border-radius: 6px; color: var(--text-dim); }
+.cc-ctx__row--sum { background: var(--accent-weak); color: var(--accent); }
 
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }
