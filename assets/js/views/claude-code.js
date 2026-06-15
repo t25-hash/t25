@@ -1,0 +1,419 @@
+/* Claude Code Explorer (CCEX) — an OFFLINE, DETERMINISTIC, EDUCATIONAL
+ * visualization of Claude Code's architecture.
+ *
+ * HONESTY NOTE: This is a *conceptual model* built from PUBLIC analyses of
+ * Claude Code. It illustrates well-known public points (the agent while-loop,
+ * the permission gate, the deterministic-infrastructure-vs-AI-logic split,
+ * context/memory composition). It does NOT reproduce any private/proprietary
+ * internals, and any numeric figures shown are approximate, public estimates.
+ *
+ * Conventions mirror views/rag.js: header() + Tabs, persisted state, render
+ * returns an HTML string (no DOM), onMount wires events into id containers. */
+(function (NSCode) {
+  'use strict';
+  var C = NSCode.C;
+
+  var tabs = [
+    { id: 'architecture', label: 'Architecture', route: '#/claude-code/architecture' },
+    { id: 'execution', label: 'Execution', route: '#/claude-code/execution' },
+    { id: 'session', label: 'Session', route: '#/claude-code/session' },
+    { id: 'tool', label: 'Tool', route: '#/claude-code/tool' },
+    { id: 'memory', label: 'Memory', route: '#/claude-code/memory' }
+  ];
+
+  var DISCLAIMER = '教育用の概念モデル（Claude Code の公開分析に基づく・概数）';
+
+  /* ---- persisted state ---- */
+  var state = NSCode.api.labState('#/claude-code') || {};
+  state = Object.assign({
+    selectedSystem: 'Permission System',
+    execStep: 0,
+    execToolType: 'read',     // 'read' (read-only) | 'write'
+    openTurn: 1,
+    restored: false
+  }, state);
+
+  function persist() { NSCode.api.labState('#/claude-code', state); }
+  function el(id) { return document.getElementById(id); }
+  function header(s) {
+    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Claude Code Explorer', s.title] }) + C.Tabs(tabs, s.route);
+  }
+
+  /* =====================================================================
+   * DATA — the 10 systems (conceptual descriptions from public analyses)
+   * ===================================================================== */
+  var SYSTEMS = [
+    { id: 'Context System', tag: 'infra', desc:
+      'モデル呼び出しの前に、システムプロンプト・利用可能なツール定義・会話履歴・現在の作業状態を1つのコンテキストへ組み立てる役割。Claude Code は毎ループの先頭でコンテキストを再構築する（パイプラインではなくフィードバック制御の入力段）。トークン予算の管理もここが担う。' },
+    { id: 'Permission System', tag: 'infra', desc:
+      'エージェントループとツール実行の「間」に常駐する承認ゲート。すべてのツール要求はここを必ず通過する。読み取り専用ツールは自動承認しうるが、書き込み/実行系は確認を要求する。複数の権限モード（既定 / 自動承認 / 計画専用など）が存在し、安全性の中核を成す決定論的な仕組み。' },
+    { id: 'Tool System', tag: 'infra', desc:
+      'モデルが要求した tool-use を実際の関数呼び出しへルーティングし、結果（観測）を構造化して返す。ファイル読取・編集・コマンド実行・検索・サブエージェント起動などのカテゴリを持ち、入力検証や出力整形といった定型処理を担う。' },
+    { id: 'Memory System', tag: 'infra', desc:
+      'コンテキストウィンドウが満杯に近づいたとき、古いターンを要約（コンパクション）して空間を確保する。プロジェクト固有の指示などの永続メモリも扱う。会話を「忘れずに縮める」ための決定論的な管理機構。' },
+    { id: 'Planning', tag: 'ai', desc:
+      'ゴールをサブタスクへ分解する推論。AI（モデル）の判断が関わる数少ない領域の1つ。計画専用モードでは、変更を加える前に計画だけを提示することもできる。' },
+    { id: 'Reflection', tag: 'ai', desc:
+      '実行結果（観測）を踏まえて次の行動を見直す自己点検。失敗やテスト結果を読み、方針を修正する。モデルの推論に依存する部分。' },
+    { id: 'Retry', tag: 'infra', desc:
+      '一時的な失敗（ネットワーク等）に対し、指数バックオフなどで再試行する定型ロジック。何回・どれだけ待つかは決定論的なルールで決まる。' },
+    { id: 'Recovery', tag: 'infra', desc:
+      'ツール失敗・不正な出力・中断などからの回復処理。エラーを観測としてループへ戻し、安全な状態を保ったまま継続できるようにする。大半が定型の例外処理。' },
+    { id: 'Checkpoint', tag: 'infra', desc:
+      '会話やファイル状態のスナップショットを取り、必要なら以前の地点へ巻き戻せるようにする。ターン境界で状態を確定（コミット）する仕組みと結びつく。' },
+    { id: 'SubAgent', tag: 'infra', desc:
+      '大きな/専門的なタスクを、隔離されたコンテキストを持つ子エージェントへ委譲する仕組み。親のコンテキストを汚さずに探索や調査を並行できる。委譲の判断にはAIが関わるが、起動・隔離・結果回収の枠組みは定型インフラ。' }
+  ];
+  function findSystem(id) {
+    for (var i = 0; i < SYSTEMS.length; i++) if (SYSTEMS[i].id === id) return SYSTEMS[i];
+    return SYSTEMS[0];
+  }
+
+  // Approx. public estimate of the AI-logic vs infrastructure split.
+  var AI_PCT = 1.6, INFRA_PCT = 98.4;
+
+  /* =====================================================================
+   * ARCHITECTURE VIEWER
+   * ===================================================================== */
+  NSCode.registerView({
+    route: '#/claude-code/architecture', module: 'claude-code', title: 'Architecture Viewer',
+    render: function () {
+      return header({ title: 'Architecture Viewer', purpose: '10個の主要システムをクリックして役割を学ぶ', route: '#/claude-code/architecture' }) +
+        C.Panel({ title: 'AIロジック vs インフラ', hint: '公開分析による概数', body:
+          '<div class="cc-split">' +
+            '<div class="ns-metric">' +
+              '<div class="ns-metric__row"><span>AI 判断ロジック</span><span>≈ ' + AI_PCT + '%</span></div>' +
+              '<div class="ns-progress cc-split__bar"><div class="ns-progress__fill cc-split__fill--ai" style="width:' + AI_PCT + '%"></div></div>' +
+            '</div>' +
+            '<div class="ns-metric">' +
+              '<div class="ns-metric__row"><span>決定論的インフラ</span><span>≈ ' + INFRA_PCT + '%</span></div>' +
+              '<div class="ns-progress cc-split__bar"><div class="ns-progress__fill cc-split__fill--infra" style="width:' + INFRA_PCT + '%"></div></div>' +
+            '</div>' +
+          '</div>' +
+          '<p class="ns-empty__hint">Claude Code の大部分（権限ゲート・コンテキスト管理・ツールルーティング・回復処理など）は決定論的インフラで、AIの判断ロジックはごく一部、という公開分析の見立て。数値は概数（公開分析・approx.）であり正確な内部仕様ではありません。</p>' }) +
+        C.Panel({ title: '主要システム（クリックで詳細）', hint: '青=AI判断 / グレー=決定論的インフラ', body:
+          '<div id="ccSysGrid"></div>' }) +
+        C.Panel({ title: '詳細', body: '<div id="ccSysDetail"></div>' });
+    },
+    onMount: function () {
+      function renderGrid() {
+        var grid = el('ccSysGrid'); if (!grid) return;
+        grid.innerHTML = '<div class="ns-grid" style="--cols:3">' + SYSTEMS.map(function (s) {
+          var active = s.id === state.selectedSystem ? ' is-active' : '';
+          return '<button type="button" class="cc-sys cc-sys--' + s.tag + active + '" data-sys="' + C.esc(s.id) + '">' +
+            '<span class="cc-sys__tag">' + (s.tag === 'ai' ? 'AI' : 'infra') + '</span>' +
+            '<span class="cc-sys__name">' + C.esc(s.id) + '</span>' +
+          '</button>';
+        }).join('') + '</div>';
+        var btns = grid.querySelectorAll('.cc-sys');
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].addEventListener('click', function () {
+            state.selectedSystem = this.getAttribute('data-sys'); persist();
+            renderGrid(); renderDetail();
+          });
+        }
+      }
+      function renderDetail() {
+        var out = el('ccSysDetail'); if (!out) return;
+        var s = findSystem(state.selectedSystem);
+        out.innerHTML =
+          '<div class="cc-detail">' +
+            '<div class="cc-detail__head">' +
+              '<span class="ns-tag">' + (s.tag === 'ai' ? 'AI判断ロジック' : '決定論的インフラ') + '</span>' +
+              '<h4 class="cc-detail__title">' + C.esc(s.id) + '</h4>' +
+            '</div>' +
+            '<p class="cc-detail__body">' + C.esc(s.desc) + '</p>' +
+          '</div>';
+      }
+      renderGrid(); renderDetail();
+    }
+  });
+
+  /* =====================================================================
+   * EXECUTION VIEWER — step-through of the agent while-loop
+   * ===================================================================== */
+  // Base loop steps. The Permission Gate / Execute outcome depends on tool type.
+  function execSteps(toolType) {
+    var isWrite = toolType === 'write';
+    return [
+      { key: 'context', icon: '🧩', title: 'Build Context', kind: 'infra',
+        text: 'システムプロンプト + ツール定義 + 履歴 + 現在の状態を1つのコンテキストへ組み立てる。' },
+      { key: 'model', icon: '🧠', title: 'Call Model', kind: 'ai',
+        text: 'モデルにコンテキストを渡し、次の一手（テキスト or tool-use）を生成させる。' },
+      { key: 'requested', icon: '❓', title: 'Tool requested?', kind: 'infra',
+        text: 'モデルの出力が tool-use を含むか判定。含まなければ応答を返してループ終了。今回は ' +
+          (isWrite ? '「書き込み系」' : '「読み取り専用」') + 'ツールが要求されたとする。' },
+      { key: 'gate', icon: '🛡️', title: 'Permission Gate', kind: 'infra',
+        text: isWrite
+          ? '書き込み/実行系ツールのため自動承認できない → ユーザーに確認を要求（許可されると先へ進む）。'
+          : '読み取り専用ツールのため、安全と判断して自動承認（確認なしで先へ進む）。',
+        gate: isWrite ? 'ask' : 'auto' },
+      { key: 'execute', icon: '⚙️', title: 'Execute Tool', kind: 'infra',
+        text: '承認済みのツールを実行する。' + (isWrite ? '（ファイル編集・コマンド実行など）' : '（ファイル読取・検索など）') },
+      { key: 'observe', icon: '👀', title: 'Observe', kind: 'infra',
+        text: 'ツールの結果（観測）を構造化し、次ループのコンテキストへ戻す。' },
+      { key: 'commit', icon: '💾', title: 'Commit State', kind: 'infra',
+        text: 'ターンの状態を確定（必要ならチェックポイント）。→ 先頭へ戻ってループ、またはゴール達成で終了。' }
+    ];
+  }
+
+  NSCode.registerView({
+    route: '#/claude-code/execution', module: 'claude-code', title: 'Execution Viewer',
+    render: function () {
+      return header({ title: 'Execution Viewer', purpose: 'エージェントの while ループを1ステップずつ可視化', route: '#/claude-code/execution' }) +
+        C.Panel({ title: 'ループ制御', hint: DISCLAIMER, body:
+          '<div class="ns-actions">' +
+            '<button id="ccNext" class="ns-btn">次へ ▶</button>' +
+            '<button id="ccReset" class="ns-btn ns-btn--ghost">最初から</button>' +
+            '<label class="ns-control ns-control--inline"><span>ツール種別の切替</span>' +
+              '<button id="ccToggle" type="button" class="ns-btn ns-btn--ghost"></button></label>' +
+          '</div>' +
+          '<p class="ns-empty__hint">Claude Code の中核は「コンテキスト構築 → モデル呼出 → ツール要求の振り分け → 権限ゲート → 実行 → 観測 → 状態確定」を繰り返す while ループ（フィードバック制御）。タイプ切替で権限ゲートの結果が変わります。</p>' }) +
+        C.Panel({ title: '進行状況', body: '<div id="ccExecSummary"></div>' }) +
+        C.Panel({ title: 'ループ・ステップ', body: '<div id="ccExecSteps"></div>' });
+    },
+    onMount: function () {
+      function steps() { return execSteps(state.execToolType); }
+      function clamp() {
+        var n = steps().length;
+        if (state.execStep < 0) state.execStep = 0;
+        if (state.execStep > n) state.execStep = n; // n == fully done
+      }
+      function renderToggle() {
+        var b = el('ccToggle'); if (!b) return;
+        b.textContent = state.execToolType === 'write' ? '書き込み系' : '読み取り専用';
+      }
+      function renderSummary() {
+        var sum = el('ccExecSummary'); if (!sum) return;
+        var n = steps().length;
+        var shown = Math.min(state.execStep, n);
+        var done = state.execStep >= n;
+        sum.innerHTML = '<div class="ns-grid" style="--cols:3">' +
+          C.Metric({ label: 'ステップ', value: shown + ' / ' + n }) +
+          C.Metric({ label: 'ツール種別', value: state.execToolType === 'write' ? '書き込み系' : '読み取り専用' }) +
+          C.Metric({ label: '状態', value: done ? '1周完了 ↺' : '実行中' }) +
+        '</div>';
+      }
+      function renderSteps() {
+        var out = el('ccExecSteps'); if (!out) return;
+        var list = steps();
+        out.innerHTML = '<div class="cc-flow">' + list.map(function (s, i) {
+          var on = i < state.execStep;
+          var current = i === state.execStep - 1;
+          var cls = 'cc-flowcard cc-flowcard--' + s.kind +
+            (on ? ' is-on' : ' is-off') + (current ? ' is-current' : '');
+          var gate = '';
+          if (s.gate) {
+            gate = '<span class="cc-gate cc-gate--' + s.gate + '">' +
+              (s.gate === 'auto' ? '自動承認' : '確認を要求') + '</span>';
+          }
+          return '<div class="' + cls + '">' +
+            '<div class="cc-flowcard__head">' +
+              '<span class="cc-flowcard__icon">' + s.icon + '</span>' +
+              '<span class="cc-flowcard__title">' + C.esc(s.title) + '</span>' +
+              '<span class="ns-tag">' + (s.kind === 'ai' ? 'AI' : 'infra') + '</span>' +
+              gate +
+            '</div>' +
+            '<p class="cc-flowcard__text">' + C.esc(s.text) + '</p>' +
+          '</div>';
+        }).join('') +
+          '<div class="cc-flow__loop' + (state.execStep >= list.length ? ' is-on' : '') + '">↺ 先頭の Build Context へ戻る（または応答を返して終了）</div>' +
+        '</div>';
+      }
+      function renderAll() { clamp(); renderToggle(); renderSummary(); renderSteps(); }
+
+      el('ccNext').addEventListener('click', function () {
+        var n = steps().length;
+        state.execStep = state.execStep >= n ? 0 : state.execStep + 1;
+        persist(); renderAll();
+      });
+      el('ccReset').addEventListener('click', function () {
+        state.execStep = 0; persist(); renderAll();
+      });
+      el('ccToggle').addEventListener('click', function () {
+        state.execToolType = state.execToolType === 'write' ? 'read' : 'write';
+        // re-run from the gate so the changed outcome is visible
+        persist(); renderAll();
+      });
+      renderAll();
+    }
+  });
+
+  /* =====================================================================
+   * SESSION VIEWER — turns -> messages -> checkpoints
+   * ===================================================================== */
+  var SESSION = [
+    { turn: 1, checkpoint: 'cp-1', messages: [
+      { role: 'user', text: '認証バグを調べて修正して' },
+      { role: 'assistant', text: '関連ファイルを探索します（read-only ツール → 自動承認）。' },
+      { role: 'tool', text: 'Grep "login" → 3 件ヒット' }
+    ] },
+    { turn: 2, checkpoint: 'cp-2', messages: [
+      { role: 'assistant', text: 'auth.js の比較演算子の誤りを特定。修正を提案します。' },
+      { role: 'assistant', text: 'Edit auth.js（書き込み系 → 確認を要求）' },
+      { role: 'user', text: '承認' },
+      { role: 'tool', text: 'Edit 適用済み（cp-2 を作成）' }
+    ] },
+    { turn: 3, checkpoint: 'cp-3', messages: [
+      { role: 'assistant', text: 'テストを実行して検証します（exec → 確認を要求）。' },
+      { role: 'tool', text: 'npm test → 全 12 件成功 ✓' },
+      { role: 'assistant', text: '修正完了。テストは緑です。' }
+    ] }
+  ];
+  var ROLE_LABEL = { user: 'user', assistant: 'assistant', tool: 'tool' };
+
+  NSCode.registerView({
+    route: '#/claude-code/session', module: 'claude-code', title: 'Session Viewer',
+    render: function () {
+      return header({ title: 'Session Viewer', purpose: 'セッション構造（ターン → メッセージ → チェックポイント）', route: '#/claude-code/session' }) +
+        C.Panel({ title: 'チェックポイント / 復元の概念', hint: DISCLAIMER, body:
+          '<p class="ns-empty__hint">セッションは複数の「ターン」から成り、各ターンは user / assistant / tool のメッセージを含みます。ターン境界で状態を確定し、チェックポイント（スナップショット）を作成します。任意のチェックポイントへ「復元」すると、その時点の会話・ファイル状態へ巻き戻せます。</p>' +
+          '<div class="ns-actions"><button id="ccRestore" class="ns-btn ns-btn--ghost"></button></div>' +
+          '<div id="ccRestoreNote"></div>' }) +
+        C.Panel({ title: 'セッション（ターンをクリックで展開）', body: '<div id="ccSession"></div>' });
+    },
+    onMount: function () {
+      function renderRestore() {
+        var b = el('ccRestore'), note = el('ccRestoreNote');
+        if (b) b.textContent = state.restored ? 'cp-1 から再開中 — 最新へ戻す' : 'cp-1 へ復元する';
+        if (note) note.innerHTML = state.restored
+          ? '<div class="cc-restore-note">復元: <b>cp-1</b> へ巻き戻した状態（ターン2以降は破棄された、という概念図）。</div>'
+          : '';
+      }
+      function renderSession() {
+        var out = el('ccSession'); if (!out) return;
+        var maxTurn = state.restored ? 1 : SESSION.length;
+        out.innerHTML = '<div class="cc-turns">' + SESSION.map(function (t) {
+          var dropped = t.turn > maxTurn;
+          var open = t.turn === state.openTurn && !dropped;
+          return '<div class="cc-turn' + (dropped ? ' is-dropped' : '') + (open ? ' is-open' : '') + '">' +
+            '<button type="button" class="cc-turn__head" data-turn="' + t.turn + '"' + (dropped ? ' disabled' : '') + '>' +
+              '<span class="cc-turn__no">Turn ' + t.turn + '</span>' +
+              '<span class="ns-tag">' + C.esc(t.checkpoint) + '</span>' +
+              '<span class="cc-turn__meta">' + t.messages.length + ' messages</span>' +
+              '<span class="cc-turn__chev">' + (open ? '▾' : '▸') + '</span>' +
+            '</button>' +
+            (open ? '<div class="cc-turn__body">' + t.messages.map(function (m) {
+              return '<div class="cc-msg cc-msg--' + m.role + '">' +
+                '<span class="cc-msg__role">' + ROLE_LABEL[m.role] + '</span>' +
+                '<span class="cc-msg__text">' + C.esc(m.text) + '</span>' +
+              '</div>';
+            }).join('') + '</div>' : '') +
+          '</div>';
+        }).join('') + '</div>';
+        var heads = out.querySelectorAll('.cc-turn__head');
+        for (var i = 0; i < heads.length; i++) {
+          heads[i].addEventListener('click', function () {
+            var t = +this.getAttribute('data-turn');
+            state.openTurn = state.openTurn === t ? 0 : t;
+            persist(); renderSession();
+          });
+        }
+      }
+      el('ccRestore').addEventListener('click', function () {
+        state.restored = !state.restored;
+        if (state.restored && state.openTurn > 1) state.openTurn = 1;
+        persist(); renderRestore(); renderSession();
+      });
+      renderRestore(); renderSession();
+    }
+  });
+
+  /* =====================================================================
+   * TOOL VIEWER — tool categories x permission mode
+   * ===================================================================== */
+  var TOOLS = [
+    { cat: 'read', label: '読み取り (read)', ex: 'Read / view file', mode: 'auto',
+      why: '副作用がなく安全。デフォルトで自動承認されうる。' },
+    { cat: 'search', label: '検索 (search)', ex: 'Grep / Glob', mode: 'auto',
+      why: '読み取りのみで状態を変えないため自動承認されうる。' },
+    { cat: 'edit', label: '編集 (edit)', ex: 'Edit / Write file', mode: 'confirm',
+      why: 'ファイルを変更するため、原則ユーザー確認が必要。' },
+    { cat: 'exec', label: '実行 (exec)', ex: 'Bash / run command', mode: 'confirm',
+      why: '任意コマンドの実行は影響が大きいため確認が必要。' },
+    { cat: 'subagent', label: 'サブエージェント (subagent)', ex: 'Task / spawn agent', mode: 'confirm',
+      why: '隔離コンテキストで別エージェントを起動。内部のツールも各々ゲートを通る。' }
+  ];
+
+  NSCode.registerView({
+    route: '#/claude-code/tool', module: 'claude-code', title: 'Tool Viewer',
+    render: function () {
+      var rows = TOOLS.map(function (t) {
+        var badge = t.mode === 'auto'
+          ? '<span class="cc-gate cc-gate--auto">自動承認</span>'
+          : '<span class="cc-gate cc-gate--ask">確認を要求</span>';
+        return '<tr>' +
+          '<td><b>' + C.esc(t.label) + '</b></td>' +
+          '<td>' + C.esc(t.ex) + '</td>' +
+          '<td>' + badge + '</td>' +
+          '<td class="cc-why">' + C.esc(t.why) + '</td>' +
+        '</tr>';
+      }).join('');
+      var table = '<div class="ns-table-wrap"><table class="ns-table"><thead>' +
+        '<tr><th>カテゴリ</th><th>例</th><th>権限モード</th><th>理由</th></tr>' +
+        '</thead><tbody>' + rows + '</tbody></table></div>';
+      return header({ title: 'Tool Viewer', purpose: 'ツール・カテゴリ × 権限モード（権限ゲートの判断）', route: '#/claude-code/tool' }) +
+        C.Panel({ title: '権限ゲート', hint: DISCLAIMER, body:
+          '<p class="ns-empty__hint">すべてのツール要求は、エージェントループとツール実行の「間」にある権限ゲートを通過します。読み取り専用は自動承認されうる一方、書き込み・実行・サブエージェントは原則ユーザー確認が必要です（権限モードにより挙動は変わります）。</p>' }) +
+        C.Panel({ title: 'カテゴリ別の既定挙動', body: table });
+    },
+    onMount: function () { /* static table; no wiring needed */ }
+  });
+
+  /* =====================================================================
+   * MEMORY VIEWER — context-window composition + compaction
+   * ===================================================================== */
+  // conceptual token shares (approx., for illustration only)
+  var CTX_BEFORE = [
+    { key: 'system', label: 'システムプロンプト', pct: 10 },
+    { key: 'tools', label: 'ツール定義', pct: 15 },
+    { key: 'history', label: '会話履歴', pct: 62 },
+    { key: 'current', label: '現在のターン', pct: 13 }
+  ];
+  var CTX_AFTER = [
+    { key: 'system', label: 'システムプロンプト', pct: 10 },
+    { key: 'tools', label: 'ツール定義', pct: 15 },
+    { key: 'summary', label: '要約（旧履歴を圧縮）', pct: 18 },
+    { key: 'history', label: '直近の履歴', pct: 30 },
+    { key: 'current', label: '現在のターン', pct: 13 },
+    { key: 'free', label: '確保された空き', pct: 14 }
+  ];
+  function stackBar(parts) {
+    return '<div class="cc-stack">' + parts.map(function (p) {
+      return '<div class="cc-stack__seg cc-seg--' + p.key + '" style="width:' + p.pct + '%" title="' +
+        C.esc(p.label + ' ≈ ' + p.pct + '%') + '"><span class="cc-stack__lbl">' + C.esc(p.label) + ' ' + p.pct + '%</span></div>';
+    }).join('') + '</div>';
+  }
+
+  NSCode.registerView({
+    route: '#/claude-code/memory', module: 'claude-code', title: 'Memory Viewer',
+    render: function () {
+      return header({ title: 'Memory Viewer', purpose: 'コンテキスト・ウィンドウの構成とコンパクション', route: '#/claude-code/memory' }) +
+        C.Panel({ title: 'コンテキスト・ウィンドウの構成', hint: DISCLAIMER, body:
+          '<p class="ns-empty__hint">毎ループの先頭で、システムプロンプト / ツール定義 / 会話履歴 / 現在のターン を1つのコンテキストへ組み立てます（割合は説明用の概数）。</p>' +
+          stackBar(CTX_BEFORE) }) +
+        C.Panel({ title: 'コンパクション（圧縮）の概念', hint: 'ウィンドウが満杯に近づいたら古いターンを要約', body:
+          '<div class="ns-actions"><button id="ccCompact" class="ns-btn"></button></div>' +
+          '<div id="ccCompactState"></div>' });
+    },
+    onMount: function () {
+      var compacted = false;
+      function render() {
+        var btn = el('ccCompact'), out = el('ccCompactState');
+        if (btn) btn.textContent = compacted ? '元の状態に戻す' : 'コンパクションを実行 ▶';
+        if (!out) return;
+        if (!compacted) {
+          out.innerHTML = '<p class="cc-step-note">⚠ 会話履歴が膨らみ、空き容量が逼迫している状態（圧縮前）。</p>' +
+            stackBar(CTX_BEFORE);
+        } else {
+          out.innerHTML = '<p class="cc-step-note is-ok">✓ 古いターンを要約に置き換え、直近の履歴と空きを確保した状態（圧縮後）。</p>' +
+            stackBar(CTX_AFTER) +
+            '<p class="ns-empty__hint">古い会話は失われるのではなく「要約」として保持され、必要な情報を残しつつトークンを節約します。割合は説明用の概数です。</p>';
+        }
+      }
+      el('ccCompact').addEventListener('click', function () { compacted = !compacted; render(); });
+      render();
+    }
+  });
+
+})(window.NSCode);
