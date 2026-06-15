@@ -34,7 +34,7 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 > | **AI Coding Lab** | ツール比較マトリクス(編集可・参考) |
 > | **Build Lab** | RAG/Agent/MultiAgent/MCP/Workflow を JSON/YAML/Python/LangGraph 生成 → 成果物保存 |
 > | **Evaluation Lab** | ラベル付きデータで Precision@k/Recall@k を実測（他は推定明示） |
-> | **Research Lab** | PDF 解析（同梱 [pdf.js](https://github.com/mozilla/pdf.js) Apache-2.0）/ 図解 / 要約 / キーワード |
+> | **Research Lab** | PDF 解析（同梱 [pdf.js](https://github.com/mozilla/pdf.js) Apache-2.0）/ 図解 / TextRank 要約 / TF-IDF キーワード / **抽出型 QA**（RAG連携）/ 文書内検索 |
 
 | 種別 | 場所 | 内容 |
 | --- | --- | --- |
