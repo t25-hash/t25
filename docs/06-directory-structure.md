@@ -31,6 +31,7 @@ t25/  (NSCode)
 │       ├── nav.js            # サイドバー定義（グループ×モジュール）
 │       ├── api.js            # API レイヤ（雛形=localStorage モック）
 │       ├── research-engine.js # PDF解析(pdf.js遅延ロード) + オフライン要約/キーワード
+│       ├── rag-engine.js      # RAGパイプライン(chunk/TF-IDF検索/MMR/ハルシネーション検出)
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js

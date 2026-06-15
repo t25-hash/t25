@@ -16,9 +16,11 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 要件定義書 v1.0 を実装可能なレベルへ落とし込んだ **設計書** と、
 プレーンな HTML/CSS/JS による **画面雛形 (SPA スケルトン)** を含みます。
 
-> ✅ **Research Lab は実動します。** PDF をドロップすると、ブラウザ内だけで
-> テキスト抽出・ページ図解・抽出型要約・キーワード抽出を行います（外部送信なし）。
-> PDF 解析には同梱の [pdf.js](https://github.com/mozilla/pdf.js)（Apache-2.0）を使用。
+> ✅ **Research Lab / RAG Lab は実動します**（ともにブラウザ内のみ・外部送信なし）。
+> - **Research Lab**: PDF をドロップ → テキスト抽出・ページ図解・抽出型要約・キーワード抽出。
+>   PDF 解析は同梱の [pdf.js](https://github.com/mozilla/pdf.js)（Apache-2.0）。
+> - **RAG Lab**: Chunk → Retrieval（TF-IDF コサイン）→ ReRank（MMR）→ Context Builder →
+>   Hallucination 検出、の5段パイプラインがパラメータ連動で動きます。
 
 | 種別 | 場所 | 内容 |
 | --- | --- | --- |
