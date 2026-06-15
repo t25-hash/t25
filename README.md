@@ -21,6 +21,7 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 >
 > | Lab | 実装内容 |
 > | --- | --- |
+> | **Ask (RAG)** ⭐ | 自分の文書を追加（貼付 / .txt・.md・.pdf）→ 質問 → **その文書に基づく回答＋出典**。検索=TF-IDF（実物）/ 回答=抽出型。トップ常設 |
 > | **Academy** | 全トピックに解説テキスト + 関連 Lab リンク |
 > | **Playground** | LLM: 実トークン数 + リクエスト構造 + モデル別コスト試算（応答は擬似）/ Prompt: 6観点ヒューリスティック評価 + 改善案 |
 > | **Embedding Lab** | Token 可視化 / 埋め込み(hashing trick) / 類似度(cos·euclid·dot) / PCA 2D 散布図 |

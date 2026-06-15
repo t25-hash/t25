@@ -2,6 +2,7 @@
 (function (NSCode) {
   'use strict';
   NSCode.nav = [
+    { group: 'Home',         label: 'Ask (RAG)',            route: '#/ask' },
     { group: 'Home',         label: 'Dashboard',            route: '#/dashboard' },
     { group: 'Learn',        label: 'Academy',              route: '#/academy' },
     { group: 'Experiment',   label: 'LLM Playground',       route: '#/playground/llm' },

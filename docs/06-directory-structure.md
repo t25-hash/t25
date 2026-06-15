@@ -43,6 +43,7 @@ t25/  (NSCode)
 │       ├── codegen-engine.js  # JSON/YAML/Python/LangGraph 生成
 │       ├── eval-engine.js     # ラベル付き評価(Precision@k/Recall@k)
 │       ├── harness-engine.js  # 最小Claude Codeハーネスのブラウザ実行版
+│       ├── ask-engine.js      # 実RAG（自前文書→chunk→TF-IDF検索→抽出回答）
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js
