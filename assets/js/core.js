@@ -73,7 +73,7 @@
       if (view && view.onMount) view.onMount(ctx);
       mount.scrollTop = 0;
       window.dispatchEvent(new CustomEvent('nscode:navigated', { detail: match }));
-      document.title = (view && view.title ? view.title + ' · ' : '') + 'NSCode';
+      document.title = (view && view.title ? view.title + ' · ' : '') + 'Ask the baby';
     },
 
     /* ---- Store: localStorage-backed key/value (see docs/04 mapping) ---- */
