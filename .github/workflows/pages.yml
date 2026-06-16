@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/nscode-requirements-spec-vyv5ud
   workflow_dispatch:
 
 permissions:
