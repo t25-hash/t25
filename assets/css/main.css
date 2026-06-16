@@ -118,6 +118,12 @@ a { color: inherit; text-decoration: none; }
 .ns-doc-rm { margin-left: auto; background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; }
 .ns-doc-rm:hover { color: var(--danger); }
 
+/* ---- Doc 生成 preview ---- */
+.dg-blocks { display: flex; flex-direction: column; gap: 4px; }
+.dg-h { font-weight: 700; margin-top: 6px; }
+.dg-b { color: var(--text-dim); padding-left: 8px; }
+.dg-p { color: var(--text); font-size: 13.5px; }
+
 /* ---- Lesson text (Academy) ---- */
 .ns-lesson { margin: 0; font-size: 14.5px; line-height: 1.8; }
 

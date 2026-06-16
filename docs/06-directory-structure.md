@@ -27,6 +27,9 @@ t25/  (NSCode)
 │   │       ├── pdf.min.js
 │   │       ├── pdf.worker.min.js
 │   │       └── LICENSE       # Apache-2.0 (Mozilla)
+│   │   └── xlsx/             # SheetJS（Excel .xlsx 生成・遅延ロード）
+│   │       ├── xlsx.full.min.js
+│   │       └── LICENSE       # Apache-2.0 (SheetJS)
 │   └── js/
 │       ├── core.js           # NSCode 名前空間 / registry / router / store
 │       ├── components.js      # 共通UI（PageHeader, Card, Panel, Tabs, ...）
@@ -44,6 +47,7 @@ t25/  (NSCode)
 │       ├── eval-engine.js     # ラベル付き評価(Precision@k/Recall@k)
 │       ├── harness-engine.js  # 最小Claude Codeハーネスのブラウザ実行版
 │       ├── ask-engine.js      # 実RAG（自前文書→chunk→TF-IDF検索→抽出回答）
+│       ├── docgen-engine.js   # プロンプト→Excel/Word/Markdown/CSV 生成
 │       ├── app.js            # 起動（DOM結線 / 初期ルート）
 │       └── views/            # 画面モジュール（1モジュール=1ファイル）
 │           ├── dashboard.js
