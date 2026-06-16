@@ -1,7 +1,8 @@
-/* Ask (RAG) — educational page that runs the Claude Code procedure end-to-end:
- * retrieve (TF-IDF) → train a tiny in-browser LM on the retrieved context →
- * GENERATE an answer by next-token prediction (a real, baby-level statistical
- * LM; no neural net, no API). The generation steps are shown for learning. */
+/* Ask (RAG) — educational page that runs the RAG procedure end-to-end:
+ * retrieve (TF-IDF) → COMPOSE a natural-language answer from the retrieved
+ * passages (the sentences best matching the question). A baby-level in-browser
+ * n-gram LM also "generates" token-by-token, shown separately for learning
+ * (no neural net, no API). */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
@@ -41,9 +42,9 @@
               { label: '検索 TopK: <b id="askKv">' + state.topK + '</b>', control: '<input id="askK" class="ns-range" type="range" min="1" max="8" value="' + state.topK + '">' },
               { label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.1" max="1.5" step="0.1" value="' + state.temperature + '">' }
             ]) }) +
-        C.Panel({ title: '3. 回答（極小LLMが生成）', hint: '本物の n-gram 言語モデルが次トークン予測で生成（赤ちゃん級・ニューラルでない・API不要）',
+        C.Panel({ title: '3. 回答（根拠に基づく）', hint: '検索した文脈から質問に最も関連する文を抽出して構成（自然な日本語）。根拠も併記',
           body: '<div id="askAns"></div>' }) +
-        C.Panel({ title: '生成のしくみ（次トークン予測・最初の数手）', hint: '各ステップの候補と確率＝LLM の中核', body: '<div id="askTrace"></div>' }) +
+        C.Panel({ title: '参考: 極小LLMの「生成」デモ（次トークン予測）', hint: '回答とは別に、ブラウザ内の n-gram LLM が1トークンずつ生成する様子を学習用に表示（赤ちゃん級・API不要）', body: '<div id="askTrace"></div>' }) +
         C.Panel({ title: 'モデルに渡した文脈プロンプト（参考）', body: '<pre id="askPrompt" class="ns-code"></pre>' });
     },
     onMount: function () {
@@ -114,12 +115,14 @@
       if (pr) pr.textContent = ''; if (tr) tr.innerHTML = ''; return;
     }
     var srcs = {}; res.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
+    var ansHtml = (res.answer && res.answer.length)
+      ? '<ul class="ns-qa-answer__list">' + res.answer.map(function (s) { return '<li>' + highlight(s, q) + '</li>'; }).join('') + '</ul>'
+      : '<p class="ns-empty__hint">関連する文が見つかりませんでした。文書を追加するか質問を変えてください。</p>';
     out.innerHTML =
-      '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（生成）</div>' +
-        '<p class="ns-qa-answer__lead">' + highlight(res.generated || '(生成できませんでした)', q) + '</p>' +
-        '<div class="ns-qa-answer__src">seed: <span class="ns-tag">' + C.esc(res.seed) + '</span>'
-          + ' ／ 学習語彙: ' + res.vocab + ' ／ 出典: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>' +
-      '<p class="ns-empty__hint">根拠（検索された関連チャンク・スコア順）— この文脈でモデルを学習:</p>' +
+      '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（根拠に基づく）</div>' +
+        ansHtml +
+        '<div class="ns-qa-answer__src">出典: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>' +
+      '<p class="ns-empty__hint">根拠（検索された関連チャンク・スコア順）— この文脈で回答を構成:</p>' +
       res.hits.map(function (h, i) {
         return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
           '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
@@ -128,7 +131,10 @@
       }).join('');
 
     if (tr) {
-      tr.innerHTML = (res.trace && res.trace.length)
+      var genLine = '<div class="ns-qa-answer__src" style="margin-bottom:8px">' +
+        '<span class="ns-tag">極小LLMの生成（参考・赤ちゃん級）</span> ' + highlight(res.generated || '(生成できませんでした)', q) +
+        ' <span class="ns-empty__hint">seed: ' + C.esc(res.seed) + ' ／ 学習語彙: ' + res.vocab + '</span></div>';
+      tr.innerHTML = genLine + ((res.trace && res.trace.length)
         ? '<div class="ns-trace2">' + res.trace.map(function (r) {
             return '<div class="ns-trace2__row"><span class="ns-trace2__ctx">' + C.esc(r.context || '(先頭)') + ' →</span>' +
               r.top.map(function (t) {
@@ -136,7 +142,7 @@
               }).join('') + '</div>';
           }).join('') + '</div>' +
           '<p class="ns-empty__hint">温度を上げると候補が平準化（多様）、下げると最有力に集中（決定的）。再生成で別のサンプルになります。</p>'
-        : '<p class="ns-empty__hint">生成過程を表示できませんでした。</p>';
+        : '<p class="ns-empty__hint">生成過程を表示できませんでした。</p>');
     }
     if (pr) pr.textContent = res.prompt;
   }
