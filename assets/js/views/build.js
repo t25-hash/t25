@@ -1,6 +1,6 @@
 /* Build Lab (BUILD) — Agent/RAG/MCP/Workflow 構築。
  * 左にフォーム（spec をライブ編集・永続化）、右に生成物（JSON/YAML/Python/LangGraph）。
- * 保存で NSCode.api.createArtifact({kind,name,spec}) → Dashboard に表示。 */
+ * 編集内容は labState に自動保存され、出力はコピーして利用する。 */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C;
@@ -73,7 +73,7 @@
       var cards = BUILDERS.map(function (b) {
         return C.Card({ title: b.label, badge: b.id, body: C.esc(b.desc), href: b.route });
       }).join('');
-      return C.PageHeader({ title: 'Build Lab', purpose: '構成を編集して JSON / YAML / Python / LangGraph を生成し、成果物として保存' }) +
+      return C.PageHeader({ title: 'Build Lab', purpose: '構成を編集して JSON / YAML / Python / LangGraph を生成し、コピーして利用' }) +
         C.Grid(cards, 3);
     }
   });
@@ -93,9 +93,7 @@
                 FORMATS.map(function (f) { return '<option value="' + f.id + '">' + f.label + '</option>'; }).join('') + '</select>' }]) +
               '<pre id="blOut" class="ns-code"></pre>' +
               '<div class="ns-actions">' +
-                '<button id="blCopy" class="ns-btn ns-btn--ghost">コピー</button>' +
-                '<button id="blSave" class="ns-btn">保存（成果物に追加）</button>' +
-                '<span id="blMsg" class="bl-msg"></span>' +
+                '<button id="blCopy" class="ns-btn">コピー</button>' +
               '</div>' }) +
           '</div>';
       },
@@ -120,15 +118,6 @@
           if (navigator.clipboard) navigator.clipboard.writeText(t);
           el('blCopy').textContent = 'コピーしました ✓';
           setTimeout(function () { var c = el('blCopy'); if (c) c.textContent = 'コピー'; }, 1500);
-        });
-        el('blSave').addEventListener('click', function () {
-          var name = (spec.name || spec.serverName || spec.manager || b.label);
-          var art = NSCode.api.createArtifact({
-            kind: kind, name: name,
-            spec: JSON.parse(JSON.stringify(spec))
-          });
-          var msg = el('blMsg');
-          if (msg) msg.textContent = '保存しました ✓ (id: ' + art.id + ') — Dashboard に表示';
         });
 
         // builder-specific wiring; gets {spec, commit, refresh}

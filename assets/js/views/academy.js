@@ -108,7 +108,7 @@
       var body = CONTENT[key]
         ? '<p class="ns-lesson">' + C.esc(CONTENT[key]) + '</p>'
         : C.EmptyState({ icon: '📘', message: 'このトピックの解説は準備中です。' });
-      var related = (RELATED[ctx.params.category] || [{ t: 'Dashboard', r: '#/dashboard' }])
+      var related = (RELATED[ctx.params.category] || [{ t: 'Ask (RAG)', r: '#/ask' }])
         .map(function (l) { return C.Card({ title: l.t, href: l.r }); }).join('');
       return C.PageHeader({ title: name, purpose: (c ? c.name : '') + ' のトピック',
         breadcrumb: ['Academy', c ? c.name : ctx.params.category, name] }) +

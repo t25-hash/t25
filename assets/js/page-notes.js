@@ -32,12 +32,10 @@
     'ai-coding':
       '主要な AI コーディングツールを項目別に比較する参考マトリクス（一般的特徴・編集可）。ベンチマークではありません。',
     build:
-      'RAG / Agent / MultiAgent / MCP / Workflow の構成をフォームで編集し、<b>JSON / YAML / Python / LangGraph</b> を生成・保存するページ。',
+      'RAG / Agent / MultiAgent / MCP / Workflow の構成をフォームで編集し、<b>JSON / YAML / Python / LangGraph</b> を生成してコピーできるページ。',
     evaluation:
       'RAG をラベル付きデータセットで<b>実測評価</b>（Precision@k / Recall@k）するページ。Agent / Prompt / Tool は推定値（プレースホルダ）と明示します。',
     research:
-      'PDF を投入して解析するページ。テキスト抽出・ページ図解・TextRank 要約・TF-IDF キーワード・抽出型 QA・文書内検索。すべて端末内処理で外部送信はありません。',
-    challenge:
-      'RAG → Agent → MCP → Multi-Agent → Claude Code Mini … と段階的に構築する課題ページです。'
+      'PDF を投入して解析するページ。テキスト抽出・ページ図解・TextRank 要約・TF-IDF キーワード・抽出型 QA・文書内検索。すべて端末内処理で外部送信はありません。'
   };
 })(window.NSCode);
