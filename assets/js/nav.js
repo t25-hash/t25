@@ -29,8 +29,6 @@
     { group: 'Build',       label: 'Build Lab',            route: '#/build' },
     { group: 'Build',       label: 'Evaluation Lab',       route: '#/evaluation' },
     { group: 'Build',       label: 'Research Lab',         route: '#/research' },
-    { group: 'Build',       label: 'AI Coding Lab',        route: '#/ai-coding' },
-
-    { group: 'Challenge',   label: 'Challenge Mode',       route: '#/challenge' }
+    { group: 'Build',       label: 'AI Coding Lab',        route: '#/ai-coding' }
   ];
 })(window.NSCode);

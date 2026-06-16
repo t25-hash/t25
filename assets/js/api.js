@@ -6,31 +6,6 @@
   var store = NSCode.store;
 
   NSCode.api = {
-    /* progress: { [topicId]: { status, percent } } */
-    getProgress: function () { return store.get('progress', {}); },
-    putProgress: function (topicId, data) {
-      var p = store.get('progress', {});
-      p[topicId] = Object.assign({ status: 'in_progress', percent: 0 }, p[topicId], data);
-      store.set('progress', p);
-      return p[topicId];
-    },
-
-    listArtifacts: function () { return store.get('artifacts', []); },
-    createArtifact: function (a) {
-      var list = store.get('artifacts', []);
-      a = Object.assign({ id: 'art_' + Date.now(), created_at: new Date().toISOString() }, a);
-      list.push(a); store.set('artifacts', list);
-      return a;
-    },
-
-    listChallenges: function () { return store.get('challenges', {}); },
-    submitChallenge: function (id, artifactId) {
-      var c = store.get('challenges', {});
-      c[id] = { status: 'submitted', artifact: artifactId, score: null };
-      store.set('challenges', c);
-      return c[id];
-    },
-
     /* papers: metadata + offline summary/keywords (full text is not persisted
      * to stay within localStorage quota — see docs/04). */
     listPapers: function () { return store.get('papers', []); },
