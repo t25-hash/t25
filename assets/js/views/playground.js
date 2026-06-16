@@ -13,8 +13,8 @@
   var state = Object.assign({
     model: 'claude-opus-4-8', temp: 0.7,
     system: 'あなたは簡潔で正確な日本語アシスタントです。',
-    prompt: 'RAG とは何かを3文で説明してください。',
-    promptEval: 'AIについて教えて。'
+    prompt: 'ポンプ P-101 の軸振動アラームが出たときの初動対応を3つ挙げてください。',
+    promptEval: '設備について教えて。'
   }, NSCode.api.labState('#/playground') || {});
 
   function persist() { NSCode.api.labState('#/playground', state); }

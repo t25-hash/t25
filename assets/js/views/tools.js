@@ -9,7 +9,7 @@
 
   var CAT_LABEL = { read: '読み取り', write: '書き込み', exec: '実行' };
 
-  var DEFAULT_GOAL = 'リポジトリ内で TODO を検索して一覧化する';
+  var DEFAULT_GOAL = '保全記録から P-101 の過去の不具合を検索して一覧化する';
 
   var state = NSCode.api.labState('#/tools') || {};
   state = Object.assign({
