@@ -76,6 +76,16 @@
   function setDocs(docs) { store.set('ask.docs', docs); }
   function resetDocs() { store.set('ask.docs', DEFAULT_DOCS); return DEFAULT_DOCS; }
 
+  /* lexical features for sentence ranking: latin words + CJK character bigrams
+   * (mirrors NSCode.research.terms so query/sentence overlap is meaningful for
+   * Japanese, where there are no spaces between words). */
+  function gram(t) {
+    var g = (t.toLowerCase().match(/[a-z][a-z0-9\-]{1,}/g) || []);
+    var cjk = t.match(/[぀-ヿ一-鿿ｦ-ﾟ]/g) || [];
+    for (var i = 0; i < cjk.length - 1; i++) g.push(cjk[i] + cjk[i + 1]);
+    return g;
+  }
+
   /* chunk every doc, tagging each chunk with its source document name */
   function buildChunks(docs) {
     var all = [];
@@ -86,9 +96,16 @@
     return all;
   }
 
-  /* ask a question over the docs, the Claude Code way (RAG → generate):
-   * retrieve relevant chunks → train a tiny in-browser LM on them → GENERATE an
-   * answer by next-token prediction. Returns { generated, seed, trace, hits, prompt }. */
+  /* ask a question over the docs, the Claude Code way (RAG → compose → show how
+   * generation works):
+   *   1. retrieve relevant chunks (TF-IDF cosine)
+   *   2. COMPOSE the answer from the retrieved passages — pick the sentences that
+   *      best match the question. These are real sentences from the docs, so the
+   *      answer is always natural language (a tiny n-gram LM alone cannot reliably
+   *      form grammatical sentences; composing from retrieval is the missing step).
+   *   3. also train a baby n-gram LM and GENERATE, kept as an educational demo of
+   *      next-token prediction.
+   * Returns { answer, generated, seed, trace, hits, prompt }. */
   function ask(query, opts) {
     opts = opts || {};
     var docs = opts.docs || getDocs();
@@ -97,6 +114,30 @@
     var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0 });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var L = NSCode.babyLLM;
+
+    // (2) compose a natural-language answer. Rank the WHOLE sentences of the
+    // source documents behind the top hits (not the overlapping chunk windows,
+    // which can start mid-word) by lexical overlap + semantic similarity, then
+    // take the best few, deduped. The result is always grammatical Japanese.
+    var hitSources = {};
+    res.hits.forEach(function (h) { hitSources[h.chunk.source] = 1; });
+    var poolText = docs.filter(function (d) { return hitSources[d.name]; })
+                       .map(function (d) { return d.text; }).join('\n\n');
+    var poolSents = NSCode.research.splitSentences(poolText)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 6; });
+    var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
+    var ranked = poolSents.map(function (s) {
+      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+      return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
+    }).sort(function (a, b) { return b.score - a.score; });
+    var answer = [];
+    for (var ai = 0; ai < ranked.length && answer.length < 3; ai++) {
+      if (ranked[ai].score <= 0) break;
+      var cand = ranked[ai].s;
+      if (!answer.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; })) answer.push(cand);
+    }
 
     // training text: whole corpus + retrieved context (context weighted x3 so the
     // generated answer is grounded in what was retrieved for THIS question).
@@ -113,12 +154,17 @@
     var seedToks = L.tokenize(seedSent).slice(0, 4);
     if (!seedToks.length) seedToks = L.tokenize(query).slice(0, 4);
 
+    // fallback: if no sentence shared a query term, answer with the most
+    // semantically similar retrieved sentence so the answer is never empty.
+    if (!answer.length && sents[0]) answer = [sents[0]];
+
     // repetitionPenalty discourages the loops a tiny n-gram model falls into.
     var genOpts = { temperature: opts.temperature == null ? 0.8 : opts.temperature, topK: opts.topK2 || 8,
       maxTokens: opts.maxTokens || 60, repetitionPenalty: opts.repetitionPenalty || 1.4 };
     var gen = L.generate(model, seedToks, genOpts);
 
     return {
+      answer: answer,
       generated: L.join(gen),
       seed: L.join(seedToks),
       trace: L.trace(model, seedToks, 5, genOpts),
