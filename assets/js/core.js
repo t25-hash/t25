@@ -66,6 +66,10 @@
       var html = view && view.render ? view.render(ctx) : '<p>View not found.</p>';
       mount.innerHTML = typeof html === 'string' ? html : '';
       if (typeof html !== 'string' && html instanceof Node) mount.appendChild(html);
+      // inject the page explanation (under the title) — data lives in NSCode.pageNotes
+      var note = view && view.module && NSCode.pageNotes ? NSCode.pageNotes[view.module] : null;
+      var hdr = note ? mount.querySelector('.ns-page-header') : null;
+      if (hdr) { var ab = document.createElement('div'); ab.className = 'ns-about'; ab.innerHTML = note; hdr.appendChild(ab); }
       if (view && view.onMount) view.onMount(ctx);
       mount.scrollTop = 0;
       window.dispatchEvent(new CustomEvent('nscode:navigated', { detail: match }));

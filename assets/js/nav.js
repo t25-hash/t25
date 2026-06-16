@@ -3,8 +3,8 @@
   'use strict';
   NSCode.nav = [
     { group: 'Home',         label: 'Ask (RAG)',            route: '#/ask' },
+    { group: 'Home',         label: 'How To Answer',        route: '#/howto' },
     { group: 'Home',         label: 'Doc 生成',             route: '#/generate' },
-    { group: 'Home',         label: 'Dashboard',            route: '#/dashboard' },
     { group: 'Learn',        label: 'Academy',              route: '#/academy' },
     { group: 'Experiment',   label: 'Playground',           route: '#/playground' },
     { group: 'Simulator',    label: 'Embedding Lab',        route: '#/embedding' },
