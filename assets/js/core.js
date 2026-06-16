@@ -35,7 +35,7 @@
     },
 
     resolve: function (hash) {
-      var route = hash || '#/dashboard';
+      var route = hash || '#/ask';
       var qIndex = route.indexOf('?');
       var query = {};
       if (qIndex !== -1) {

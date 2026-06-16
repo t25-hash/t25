@@ -19,7 +19,7 @@
   }
 
   function highlightNav() {
-    var hash = window.location.hash || '#/dashboard';
+    var hash = window.location.hash || '#/ask';
     var links = document.querySelectorAll('.ns-navlink');
     links.forEach(function (a) {
       var route = a.getAttribute('data-route');
