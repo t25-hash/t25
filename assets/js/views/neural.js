@@ -1,0 +1,191 @@
+/* Neural Lab — explains the in-browser neural network, lets you ADD training
+ * data (which retrains it), and at the bottom shows Ask's ACTUAL base neural
+ * model (NSCode.neuralLab) as it really is: live loss, real weight counts, the
+ * softmax distribution, embedding values, and generation. */
+(function (NSCode) {
+  'use strict';
+  var C = NSCode.C, A = NSCode.askEngine, NLM = NSCode.neuralLM, LAB = NSCode.neuralLab;
+  function el(id) { return document.getElementById(id); }
+
+  var unsub = null, autoFilled = false;
+
+  var EXPLAIN =
+    '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。</p>' +
+    '<pre class="ns-code">前の C 個のトークン\n' +
+    '   │  ① 埋め込み（各トークン → ベクトル）\n' +
+    '   ▼\n' +
+    ' 連結ベクトル x\n' +
+    '   │  ② 隠れ層  h = tanh(W1·x + b1)\n' +
+    '   ▼\n' +
+    ' 隠れ表現 h\n' +
+    '   │  ③ 出力層  logits = W2·h + b2\n' +
+    '   ▼\n' +
+    ' softmax → 次トークンの確率分布</pre>' +
+    '<p class="ns-lesson">学習では、正解トークンの確率が上がるように、誤差（クロスエントロピー）を<b>逆伝播</b>して重み W1・W2 と埋め込みを少しずつ更新します（勾配降下／SGD）。これを何千回も繰り返すと loss が下がり、文章を生成できるようになります。</p>' +
+    '<p class="ns-empty__hint">n-gram（数え上げ）と違い、こちらは<b>重みを学習する本物のニューラルネット</b>です。規模は赤ちゃん級なので生成は素朴ですが、中で起きていることは実機と同じです。</p>';
+
+  var ADD =
+    '<p class="ns-lesson">このモデルは Ask と同じナレッジベース（文書）から学習します。文章を追加すると KB に文書が増え、モデルを<b>再学習</b>します。</p>' +
+    '<textarea id="nlAddText" class="ns-input" rows="4" placeholder="学習させたい文章を貼り付け…（例：自社プラントの運転手順 / トラブル事例 / 仕様）"></textarea>' +
+    '<div class="ns-actions">' +
+      '<button id="nlAdd" class="ns-btn">学習データに追加して再学習</button>' +
+      '<button id="nlReset" class="ns-btn ns-btn--ghost">サンプル（廃棄物発電ほか）に戻す</button>' +
+    '</div>' +
+    '<div id="nlAddStatus" class="ns-empty__hint"></div>' +
+    '<div id="nlKb"></div>';
+
+  function hyperBody() {
+    var o = LAB.state.opts;
+    return C.Controls([
+      { label: '学習ステップ: <b id="nlStepsV">' + o.steps + '</b>', control: '<input id="nlSteps" class="ns-range" type="range" min="2000" max="30000" step="1000" value="' + o.steps + '">' },
+      { label: '学習率 lr: <b id="nlLrV">' + o.lr + '</b>', control: '<input id="nlLr" class="ns-range" type="range" min="0.05" max="0.30" step="0.01" value="' + o.lr + '">' },
+      { label: '隠れ層ユニット H: <b id="nlHidV">' + o.hidden + '</b>', control: '<input id="nlHid" class="ns-range" type="range" min="16" max="96" step="8" value="' + o.hidden + '">' }
+    ]) + '<div class="ns-actions"><button id="nlRetrain" class="ns-btn">この設定で再学習</button></div>' +
+      '<p class="ns-empty__hint">ステップや隠れ層を増やすと loss は下がりやすくなりますが、学習時間は延びます（端末内で実行）。</p>';
+  }
+
+  var LIVE =
+    '<p class="ns-lesson">下は Ask が回答生成に使っている<b>実物のニューラルネット</b>です。学習の進み（loss）と内部の数値をそのまま表示します。</p>' +
+    '<div id="nlProg"></div>' +
+    '<div id="nlStats"></div>' +
+    '<p class="ns-lesson" style="margin-top:16px"><b>① このモデルで生成する</b></p>' +
+    '<div class="ns-qa-bar"><input id="nlSeed" class="ns-input" value="蒸気タービン"><button id="nlGen" class="ns-btn">生成</button></div>' +
+    '<div id="nlGenOut"></div>' +
+    '<p class="ns-lesson" style="margin-top:16px"><b>② 次トークンの確率（softmax の実値）</b></p>' +
+    '<div class="ns-qa-bar"><input id="nlCtx" class="ns-input" value="廃熱"><button id="nlProbBtn" class="ns-btn ns-btn--ghost">予測</button></div>' +
+    '<div id="nlProbOut"></div>' +
+    '<p class="ns-lesson" style="margin-top:16px"><b>③ 埋め込みの実値（学習で得たベクトル）</b></p>' +
+    '<div id="nlEmbOut"></div>';
+
+  NSCode.registerView({
+    route: '#/neural', module: 'neural', title: 'Neural Lab',
+    render: function () {
+      return C.PageHeader({ title: '🧠 Neural Lab', purpose: 'Ask のベースになる極小ニューラルネットを学習・観察する' }) +
+        C.Panel({ title: 'ニューラルネットとは', body: EXPLAIN }) +
+        C.Panel({ title: '学習データを追加して再学習', hint: 'Ask と共通のナレッジベースに文書を足してモデルを学習させる', body: ADD }) +
+        C.Panel({ title: '学習設定（ハイパーパラメータ）', body: hyperBody() }) +
+        C.Panel({ title: 'Ask のベースニューラル（実物）', hint: 'いま動いているモデルの中身をそのまま表示', body: LIVE });
+    },
+    onMount: function () {
+      renderKb();
+
+      el('nlAdd').addEventListener('click', function () {
+        var t = el('nlAddText').value.trim(); if (!t) return;
+        var docs = A.getDocs(); docs.push({ name: '追加テキスト' + (docs.length + 1), text: t }); A.setDocs(docs);
+        el('nlAddText').value = ''; renderKb();
+        setAddStatus('学習データに追加しました。再学習します…');
+        LAB.ensure();   // KB changed -> retrains
+      });
+      el('nlReset').addEventListener('click', function () {
+        A.resetDocs(); renderKb(); setAddStatus('サンプルのナレッジベースに戻しました。再学習します…'); LAB.ensure();
+      });
+
+      bindRange('nlSteps', 'nlStepsV', function (v) { return v; });
+      bindRange('nlLr', 'nlLrV', function (v) { return v; });
+      bindRange('nlHid', 'nlHidV', function (v) { return v; });
+      el('nlRetrain').addEventListener('click', function () {
+        setAddStatus('新しい設定で再学習します…');
+        LAB.retrain({ steps: +el('nlSteps').value, lr: +el('nlLr').value, hidden: +el('nlHid').value });
+      });
+
+      el('nlGen').addEventListener('click', renderGen);
+      el('nlSeed').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renderGen(); } });
+      el('nlProbBtn').addEventListener('click', renderProbs);
+      el('nlCtx').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renderProbs(); } });
+
+      if (unsub) unsub();
+      unsub = LAB.onChange(onLab);
+      LAB.ensure();              // train if not already
+      onLab();                   // paint current state immediately
+    }
+  });
+
+  function onLab() {
+    renderProg(); renderStats();
+    var st = LAB.state;
+    if (st.training) { autoFilled = false; return; }
+    if (st.model && !autoFilled) { autoFilled = true; renderGen(); renderProbs(); renderEmb(); }
+  }
+
+  function setAddStatus(m) { var s = el('nlAddStatus'); if (s) s.textContent = m || ''; }
+
+  function bindRange(id, valId, fmt) {
+    var r = el(id); if (!r) return;
+    r.addEventListener('input', function () { var v = el(valId); if (v) v.textContent = fmt(r.value); });
+  }
+
+  function renderKb() {
+    var box = el('nlKb'); if (!box) return;
+    var docs = A.getDocs();
+    box.innerHTML = '<p class="ns-empty__hint">学習データ: ' + docs.length + ' 文書（Ask と共通）</p>';
+  }
+
+  function renderProg() {
+    var box = el('nlProg'); if (!box) return;
+    var st = LAB.state;
+    if (st.training) {
+      var p = st.prog || { step: 0, total: st.opts.steps, loss: 0 };
+      var pct = Math.round(100 * p.step / p.total);
+      box.innerHTML = '<p class="ns-empty__hint">学習中… ' + pct + '%（loss ' + (p.loss ? p.loss.toFixed(3) : '—') + '）勾配降下で重みを更新しています。</p>' +
+        '<div class="ns-progress"><div class="ns-progress__fill" style="width:' + pct + '%"></div></div>';
+    } else if (st.model) {
+      box.innerHTML = '<p class="ns-empty__hint">学習完了 — 最終 loss <b>' + st.model.loss.toFixed(3) + '</b> / ' + st.model.steps.toLocaleString() + ' ステップ</p>';
+    } else {
+      box.innerHTML = '<p class="ns-empty__hint">未学習</p>';
+    }
+  }
+
+  function renderStats() {
+    var box = el('nlStats'); if (!box) return;
+    var st = LAB.state, m = st.model;
+    if (!m) { box.innerHTML = ''; return; }
+    box.innerHTML = C.Table(['項目', '値'], [
+      ['語彙数 V', String(m.V)],
+      ['埋め込み次元 D', String(m.D)],
+      ['隠れ層ユニット H', String(m.H)],
+      ['文脈長 C', String(m.C)],
+      ['学習可能な重み', st.params.toLocaleString() + ' 個'],
+      ['学習トークン数', m.ids.length.toLocaleString()],
+      ['学習ステップ', m.steps.toLocaleString()],
+      ['最終 loss', m.loss.toFixed(3)]
+    ]);
+  }
+
+  function renderGen() {
+    var out = el('nlGenOut'); if (!out) return;
+    var st = LAB.state;
+    if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると生成できます。</p>'; return; }
+    var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || '蒸気タービン';
+    var seed = NLM.tokenize(seedStr).slice(0, st.model.C);
+    if (!seed.length) seed = NLM.tokenize('蒸気').slice(0, st.model.C);
+    var g = NSCode.babyLLM.join(LAB.generate(seed, { temperature: 0.7, topK: 6, maxTokens: 48 }));
+    out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(g) + '</div>';
+  }
+
+  function renderProbs() {
+    var out = el('nlProbOut'); if (!out) return;
+    var st = LAB.state;
+    if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると予測できます。</p>'; return; }
+    var ctx = (el('nlCtx') && el('nlCtx').value.trim()) || '廃熱';
+    var top = LAB.nextProbs(ctx, 8) || [];
+    out.innerHTML = '<p class="ns-empty__hint">文脈「' + C.esc(ctx) + '」の次に来る確率が高いトークン（モデルの実出力）:</p>' +
+      '<div class="ns-trace2"><div class="ns-trace2__row">' + top.map(function (t) {
+        return '<span class="ns-tok">' + C.esc(t.tok === '\n' ? '⏎' : t.tok) + '<i>' + (t.prob * 100).toFixed(1) + '%</i></span>';
+      }).join('') + '</div></div>';
+  }
+
+  function renderEmb() {
+    var out = el('nlEmbOut'); if (!out) return;
+    var m = LAB.state.model;
+    if (!m) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると埋め込みを表示します。</p>'; return; }
+    var nTok = Math.min(8, m.V - 1), nDim = Math.min(8, m.D);
+    var headers = ['token']; for (var d = 0; d < nDim; d++) headers.push('e' + d);
+    var rows = [];
+    for (var i = 1; i <= nTok; i++) {
+      var r = [m.vocab.itos[i]];
+      for (var d2 = 0; d2 < nDim; d2++) r.push(m.Emb[i * m.D + d2].toFixed(2));
+      rows.push(r);
+    }
+    out.innerHTML = '<p class="ns-empty__hint">各トークンの埋め込みベクトル（先頭 ' + nDim + ' 次元・学習で得た実数値）:</p>' + C.Table(headers, rows);
+  }
+})(window.NSCode);

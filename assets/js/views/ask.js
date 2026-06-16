@@ -13,45 +13,31 @@
   function persist() { NSCode.api.labState('#/ask', state); }
   function el(id) { return document.getElementById(id); }
 
-  /* ---- in-browser NEURAL language model, trained on the current KB ---- */
-  var neural = { model: null, sig: '', training: false, prog: null, params: 0 };
-  var lastRes = null;
-  function corpusSig(docs) { return docs.map(function (d) { return d.name + ':' + (d.text || '').length; }).join('|'); }
-  function startNeural() {
-    var docs = A.getDocs(), sig = corpusSig(docs);
-    if ((neural.model && neural.sig === sig) || (neural.training && neural.sig === sig)) { renderNeural(); return; }
-    neural.sig = sig; neural.training = true; neural.model = null; neural.prog = { step: 0, total: 14000, loss: 0 };
-    var corpus = docs.map(function (d) { return d.text; }).join('\n');
-    var m = NLM.create(corpus, { context: 3, dim: 24, hidden: 64, maxVocab: 480 });
-    neural.params = (m.V * m.D) + (m.C * m.D * m.H) + (m.H * m.V);
-    renderNeural();
-    NLM.trainAsync(m, { steps: 14000, chunk: 500, lr: 0.15, onProgress: function (s) {
-      if (neural.sig !== sig) return;            // superseded by a newer KB
-      neural.prog = s; renderNeural();
-    } }).then(function () {
-      if (neural.sig !== sig) return;
-      neural.model = m; neural.training = false; renderNeural();
-    });
-  }
+  /* ---- Ask's shared base neural model (lives in NSCode.neuralLab) ---- */
+  var LAB = NSCode.neuralLab;
+  var lastRes = null, labUnsub = null;
+  function startNeural() { LAB.ensure(); }   // (re)train on the current KB when it changes
   function renderNeural() {
     var box = el('askNeural'); if (!box) return;
-    if (neural.training) {
-      var p = neural.prog || { step: 0, total: 6000, loss: 0 };
+    var st = LAB.state;
+    if (st.training) {
+      var p = st.prog || { step: 0, total: st.opts.steps, loss: 0 };
       var pct = Math.round(100 * p.step / p.total);
       box.innerHTML = '<p class="ns-empty__hint">ニューラルネットを学習中… ' + pct + '%（loss ' + (p.loss ? p.loss.toFixed(3) : '—') + '）</p>' +
         '<div class="ns-progress"><div class="ns-progress__fill" style="width:' + pct + '%"></div></div>';
       return;
     }
-    if (!neural.model) { box.innerHTML = '<p class="ns-empty__hint">学習待機中…</p>'; return; }
-    var m = neural.model;
+    if (!st.model) { box.innerHTML = '<p class="ns-empty__hint">学習待機中…</p>'; return; }
+    var m = st.model;
     var seed = (lastRes && lastRes.seed) ? NSCode.babyLLM.tokenize(lastRes.seed).slice(0, m.C) : NLM.tokenize(state.query).slice(0, m.C);
     if (!seed.length) seed = NLM.tokenize('蒸気タービン').slice(0, m.C);
-    var gen = NSCode.babyLLM.join(NLM.generate(m, seed, { temperature: state.temperature, topK: 6, maxTokens: 48 }));
+    var gen = NSCode.babyLLM.join(LAB.generate(seed, { temperature: state.temperature, topK: 6, maxTokens: 48 }));
     box.innerHTML =
       '<div class="ns-qa-answer__src" style="margin-bottom:6px"><span class="ns-tag">ニューラル生成</span> ' + highlight(gen, state.query) + '</div>' +
       '<p class="ns-empty__hint">構成: 埋め込み(' + m.D + ') → 隠れ層 tanh(' + m.H + ') → softmax(' + m.V + ' 語)。' +
-        '学習 ' + m.steps + ' ステップ / 最終 loss ' + m.loss.toFixed(3) + ' / 重み 約 ' + neural.params.toLocaleString() + ' 個。' +
-        'n-gram（数え上げ）と違い、勾配降下で重みを学習した<b>本物のニューラルネット</b>です。</p>';
+        '学習 ' + m.steps + ' ステップ / 最終 loss ' + m.loss.toFixed(3) + ' / 重み 約 ' + st.params.toLocaleString() + ' 個。' +
+        'n-gram（数え上げ）と違い、勾配降下で重みを学習した<b>本物のニューラルネット</b>です。' +
+        ' 仕組み・学習データの追加・実物の中身は <a href="#/neural">Neural Lab</a> で。</p>';
   }
 
   function highlight(text, query) {
@@ -104,6 +90,8 @@
       el('askBtn').addEventListener('click', runAsk);
       el('askRegen').addEventListener('click', runAsk);
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
+      if (labUnsub) labUnsub();
+      labUnsub = LAB.onChange(renderNeural);   // re-render the neural panel as it trains
       renderDocs(); startNeural(); runAsk();
     }
   });

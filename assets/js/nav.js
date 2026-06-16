@@ -14,6 +14,7 @@
 
     { group: 'Foundations', label: 'Academy',              route: '#/academy' },
     { group: 'Foundations', label: 'Playground',           route: '#/playground' },
+    { group: 'Foundations', label: 'Neural Lab',           route: '#/neural' },
 
     { group: 'Context',     label: 'Embedding Lab',        route: '#/embedding' },
     { group: 'Context',     label: 'RAG Lab',              route: '#/rag' },

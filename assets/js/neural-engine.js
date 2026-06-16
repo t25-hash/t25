@@ -163,6 +163,19 @@
     return e[0][0];
   }
 
+  /* next-token probabilities for a context string (for "show the internals"):
+   * returns the top-k tokens the net predicts, with their softmax probability. */
+  function nextProbs(m, contextText, k) {
+    var toks = tok(contextText), ids = [];
+    toks.forEach(function (t) { ids.push(idOf(m, t)); });
+    while (ids.length < m.C) ids.unshift(0);
+    var ctx = ids.slice(ids.length - m.C);
+    var p = forward(m, ctx).p, arr = [];
+    for (var i = 0; i < p.length; i++) arr.push([i, p[i]]);
+    arr.sort(function (a, b) { return b[1] - a[1]; });
+    return arr.slice(0, k || 8).map(function (x) { return { tok: m.vocab.itos[x[0]], prob: x[1] }; });
+  }
+
   /* autoregressive generation from seed tokens (strings) */
   function generate(m, seedToks, opts) {
     opts = opts || {};
@@ -189,6 +202,46 @@
 
   NSCode.neuralLM = {
     tokenize: tok, buildVocab: buildVocab, create: create,
-    forward: forward, step: step, trainAsync: trainAsync, generate: generate
+    forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs
   };
+
+  /* ---- shared singleton: Ask's "base neural" model ----
+   * Both the Ask page and the Neural Lab use THIS one instance, trained on the
+   * shared knowledge base (NSCode.askEngine docs). Subscribers are notified on
+   * every training-progress tick and on completion so the UI can show the real
+   * model as it learns. */
+  NSCode.neuralLab = (function () {
+    var DEFAULT_OPTS = { context: 3, dim: 24, hidden: 64, maxVocab: 480, steps: 14000, lr: 0.15 };
+    var state = { model: null, sig: '', training: false, prog: null, params: 0, opts: assign({}, DEFAULT_OPTS) };
+    var listeners = [];
+
+    function assign(t, s) { for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) t[k] = s[k]; return t; }
+    function sigOf(docs) { return docs.map(function (d) { return d.name + ':' + (d.text || '').length; }).join('|') + '|' + JSON.stringify(state.opts); }
+    function notify() { for (var i = 0; i < listeners.length; i++) { try { listeners[i](state); } catch (e) {} } }
+
+    function ensure(force) {
+      var docs = NSCode.askEngine.getDocs(), sig = sigOf(docs);
+      if (!force && ((state.model && state.sig === sig) || (state.training && state.sig === sig))) { notify(); return; }
+      state.sig = sig; state.training = true; state.model = null; state.prog = { step: 0, total: state.opts.steps, loss: 0 };
+      var corpus = docs.map(function (d) { return d.text; }).join('\n');
+      var m = create(corpus, state.opts);
+      state.params = (m.V * m.D) + (m.C * m.D * m.H) + (m.H * m.V);
+      notify();
+      trainAsync(m, { steps: state.opts.steps, chunk: 500, lr: state.opts.lr, onProgress: function (s) {
+        if (state.sig !== sig) return; state.prog = s; notify();
+      } }).then(function () {
+        if (state.sig !== sig) return; state.model = m; state.training = false; notify();
+      });
+    }
+
+    return {
+      DEFAULT_OPTS: DEFAULT_OPTS,
+      state: state,
+      onChange: function (fn) { listeners.push(fn); return function () { var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
+      ensure: ensure,
+      retrain: function (opts) { if (opts) assign(state.opts, opts); ensure(true); },
+      generate: function (seed, gopts) { return state.model ? generate(state.model, seed, gopts) : null; },
+      nextProbs: function (ctxText, k) { return state.model ? nextProbs(state.model, ctxText, k) : null; }
+    };
+  })();
 })(window.NSCode);
