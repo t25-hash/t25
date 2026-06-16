@@ -200,9 +200,53 @@
     return outToks;
   }
 
+  /* mean log-probability of a token sequence under the model — how "confident"
+   * (well-recalled) the net is about it. Used to pick the cleanest generation. */
+  function seqLogProb(m, toks) {
+    var ids = toks.map(function (t) { return m.vocab.stoi[t] == null ? 0 : m.vocab.stoi[t]; });
+    var lp = 0, n = 0;
+    for (var i = m.C; i < ids.length; i++) {
+      var p = forward(m, ids.slice(i - m.C, i)).p;
+      lp += Math.log(Math.max(p[ids[i]], 1e-9)); n++;
+    }
+    return n ? lp / n : -1e9;
+  }
+
+  /* seed the answer from the most specific term in the question that the net
+   * actually learned (longest in-vocab kanji/katakana/latin run). */
+  function keySeed(m, question) {
+    var runs = (question.match(/[一-鿿ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9]+/g) || []);
+    runs.sort(function (a, b) { return b.length - a.length; });
+    for (var i = 0; i < runs.length; i++) {
+      var t = tok(runs[i]);
+      if (t.filter(function (x) { return m.vocab.stoi[x] != null; }).length) return t.slice(0, m.C);
+    }
+    var qt = tok(question).filter(function (t) { return m.vocab.stoi[t] != null && !/[、。，．！？!?…・\n\s]/.test(t); });
+    return qt.length ? qt.slice(0, m.C) : null;
+  }
+
+  /* ANSWER a question from the net's weights (no document search): seed from a
+   * question keyword, sample several continuations, keep the one the net is most
+   * confident in. This is neural recall — the text comes from learned weights. */
+  function answer(m, question, opts) {
+    opts = opts || {};
+    var seed = keySeed(m, question);
+    if (!seed) return { text: '', seed: '' };
+    var K = opts.candidates || 12, best = null, bestScore = -1e9;
+    for (var i = 0; i < K; i++) {
+      var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
+      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52 });
+      var sc = seqLogProb(m, g);
+      if (sc > bestScore) { bestScore = sc; best = g; }
+    }
+    var join = NSCode.babyLLM.join;
+    return { text: join(best), seed: join(seed), score: bestScore };
+  }
+
   NSCode.neuralLM = {
     tokenize: tok, buildVocab: buildVocab, create: create,
-    forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs
+    forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
+    seqLogProb: seqLogProb, keySeed: keySeed, answer: answer
   };
 
   /* ---- shared singleton: Ask's "base neural" model ----
@@ -241,7 +285,8 @@
       ensure: ensure,
       retrain: function (opts) { if (opts) assign(state.opts, opts); ensure(true); },
       generate: function (seed, gopts) { return state.model ? generate(state.model, seed, gopts) : null; },
-      nextProbs: function (ctxText, k) { return state.model ? nextProbs(state.model, ctxText, k) : null; }
+      nextProbs: function (ctxText, k) { return state.model ? nextProbs(state.model, ctxText, k) : null; },
+      answer: function (question, gopts) { return state.model ? answer(state.model, question, gopts) : null; }
     };
   })();
 })(window.NSCode);
