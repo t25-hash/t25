@@ -1,22 +1,19 @@
-/* Sidebar navigation (data-driven). Structure mirrors Claude Code Explorer:
- * groups are named after Claude Code's subsystems, so each Lab sits under the
- * subsystem it teaches.
+/* Sidebar navigation (data-driven). Claude Code Explorer leads as the "map":
+ * the rest of the sidebar mirrors Claude Code's subsystems, and each system in
+ * the Explorer links to the matching group below.
  *   Context → Embedding / RAG     Tool → Tool Calling / MCP
- *   Memory  → Memory              Agent(loop/SubAgent) → Agent / Multi-Agent
- * Practical tools (Ask/Doc) and foundations (Academy/Playground) lead;
- * build/evaluate and Challenge close. */
+ *   Memory  → Memory              Agent(loop/SubAgent) → Agent / Multi-Agent */
 (function (NSCode) {
   'use strict';
   NSCode.nav = [
+    { group: 'Claude Code', label: 'Claude Code Explorer', route: '#/claude-code' },
+
     { group: 'Home',        label: 'Ask (RAG)',            route: '#/ask' },
     { group: 'Home',        label: 'How To Answer',        route: '#/howto' },
     { group: 'Home',        label: 'Doc 生成',             route: '#/generate' },
 
     { group: 'Foundations', label: 'Academy',              route: '#/academy' },
     { group: 'Foundations', label: 'Playground',           route: '#/playground' },
-
-    { group: 'Claude Code', label: 'Claude Code Explorer', route: '#/claude-code' },
-    { group: 'Claude Code', label: 'AI Coding Lab',        route: '#/ai-coding' },
 
     { group: 'Context',     label: 'Embedding Lab',        route: '#/embedding' },
     { group: 'Context',     label: 'RAG Lab',              route: '#/rag' },
@@ -32,6 +29,7 @@
     { group: 'Build',       label: 'Build Lab',            route: '#/build' },
     { group: 'Build',       label: 'Evaluation Lab',       route: '#/evaluation' },
     { group: 'Build',       label: 'Research Lab',         route: '#/research' },
+    { group: 'Build',       label: 'AI Coding Lab',        route: '#/ai-coding' },
 
     { group: 'Challenge',   label: 'Challenge Mode',       route: '#/challenge' }
   ];
