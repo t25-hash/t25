@@ -30,7 +30,8 @@
     '発電量 P</pre>' +
     '<p class="ns-empty__hint">成分発熱量（kJ/kg・概算）: ' +
       W.COMP.map(function (c) { return c.label + ' ' + c.H; }).join(' / ') +
-      '。発電端効率はタービン＋発電機の総合効率（ざっくり仮定）。</p>';
+      '。発電端効率はタービン＋発電機の総合効率で、蒸気条件により概ね 15〜26%（300℃/25bar≈15%、400℃/40bar≈17%、450℃/50bar≈25%、450℃/60bar≈26%）。' +
+      '<br>計算の組み立ては、ごみ処理設備の計算ツール（組成→低位発熱量→ボイラ→蒸気タービン発電）および伝熱計算スキルの考え方に準拠。</p>';
 
   NSCode.registerView({
     route: '#/wte', module: 'wte', title: '発電量予測 (Neural)',
@@ -56,6 +57,14 @@
               return { label: c.label + ': <b id="wC' + i + 'V">' + state.comp[i] + '</b>', control: range('wC' + i, 0, 50, 1, state.comp[i]) };
             })) +
             '<div id="wCompPct" class="ns-empty__hint"></div>' +
+            '<div class="ns-controls"><label class="ns-control"><span>蒸気条件プリセット（発電端効率の目安・出典: ごみ処理設備計算）</span>' +
+              '<select id="wPreset" class="ns-input">' +
+                '<option value="">— 手動設定 —</option>' +
+                '<option value="0.147">300℃ / 25 bar（≈14.7%）</option>' +
+                '<option value="0.17">400℃ / 40 bar（≈17%）</option>' +
+                '<option value="0.25">450℃ / 50 bar（≈25%）</option>' +
+                '<option value="0.26">450℃ / 60 bar（≈26%）</option>' +
+              '</select></label></div>' +
             C.Controls([
               { label: 'ボイラ効率: <b id="wEtaBV">' + state.etaB + '</b>', control: range('wEtaB', 0.6, 0.92, 0.01, state.etaB) },
               { label: '発電端効率（タービン+発電機）: <b id="wEtaGV">' + state.etaG + '</b>', control: range('wEtaG', 0.12, 0.32, 0.01, state.etaG) }
@@ -65,6 +74,9 @@
     onMount: function () {
       var ids = ['wTon', 'wEtaB', 'wEtaG', 'wC0', 'wC1', 'wC2', 'wC3', 'wC4'];
       ids.forEach(function (id) { var e = el(id); if (e) e.addEventListener('input', recompute); });
+
+      var ps = el('wPreset');
+      if (ps) ps.addEventListener('change', function () { if (ps.value) { el('wEtaG').value = ps.value; recompute(); } });
 
       bindLabel('wSteps', 'wStepsV');
       bindLabel('wHid', 'wHidV');

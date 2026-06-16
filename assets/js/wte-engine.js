@@ -46,8 +46,9 @@
     var raw = [0.20 + Math.random() * 0.30, 0.05 + Math.random() * 0.15, 0.15 + Math.random() * 0.25,
                0.03 + Math.random() * 0.12, 0.03 + Math.random() * 0.17];
     var fr = normalizeFracs(raw);
-    var etaB = 0.75 + Math.random() * 0.13;              // boiler 0.75..0.88
-    var etaG = 0.18 + Math.random() * 0.10;              // generation-end 0.18..0.28
+    var etaB = 0.72 + Math.random() * 0.16;              // boiler 0.72..0.88
+    var etaG = 0.12 + Math.random() * 0.16;              // generation-end 0.12..0.28
+                                                         // (covers 300℃/25bar≈0.15 〜 450℃/60bar≈0.26)
     var inp = { ton: ton, fr: fr, etaB: etaB, etaG: etaG };
     return { x: vecOf(inp), y: physics(ton, fr, etaB, etaG).P, inp: inp };
   }
