@@ -180,7 +180,10 @@
   function generate(m, seedToks, opts) {
     opts = opts || {};
     var maxTok = opts.maxTokens || 50, T = opts.temperature == null ? 0.8 : opts.temperature, K = opts.topK || 8;
-    var C = m.C;
+    var rep = opts.repetitionPenalty || 1.4, C = m.C;
+    // map "avoid" token strings (e.g. the separator 「・」) to vocab ids once
+    var avoidIds = null;
+    if (opts.avoid) { avoidIds = {}; for (var key in opts.avoid) { var aid = m.vocab.stoi[key]; if (aid != null) avoidIds[aid] = opts.avoid[key]; } }
     var ids = [];
     seedToks.forEach(function (t) { ids.push(idOf(m, t)); });
     while (ids.length < C) ids.unshift(0);
@@ -188,8 +191,10 @@
     for (var i = 0; i < maxTok; i++) {
       var ctx = ids.slice(ids.length - C);
       var f = forward(m, ctx), p = f.p;
-      // light repetition penalty (reuse the same idea as the n-gram LM)
-      for (var v = 0; v < p.length; v++) if (counts[v]) p[v] /= Math.pow(1.4, counts[v]);
+      for (var v = 0; v < p.length; v++) {
+        if (counts[v]) p[v] /= Math.pow(rep, counts[v]);          // repetition penalty
+        if (avoidIds && avoidIds[v] != null) p[v] *= avoidIds[v]; // down-weight separators etc.
+      }
       var nid = sampleNext(p, T, K);
       counts[nid] = (counts[nid] || 0) + 1;
       ids.push(nid);
@@ -232,10 +237,14 @@
     opts = opts || {};
     var seed = keySeed(m, question);
     if (!seed) return { text: '', seed: '' };
+    // down-weight separator/list tokens so the answer doesn't come out looking
+    // character-separated (the corpus is full of e.g. 「軸振動・軸受温度・…」),
+    // and use a stronger repetition penalty to avoid phrase loops.
+    var avoid = { '・': 0.02, '、': 0.45, '，': 0.05, '…': 0.05, '·': 0.02 };
     var K = opts.candidates || 12, best = null, bestScore = -1e9;
     for (var i = 0; i < K; i++) {
       var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
-      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52 });
+      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52, repetitionPenalty: 1.9, avoid: avoid });
       var sc = seqLogProb(m, g);
       if (sc > bestScore) { bestScore = sc; best = g; }
     }
@@ -263,15 +272,28 @@
     function sigOf(docs) { return docs.map(function (d) { return d.name + ':' + (d.text || '').length; }).join('|') + '|' + JSON.stringify(state.opts); }
     function notify() { for (var i = 0; i < listeners.length; i++) { try { listeners[i](state); } catch (e) {} } }
 
+    /* scale capacity with corpus size so larger (e.g. PDF-extracted) text is
+     * actually learned — bounded so training stays a few seconds in-browser.
+     * Never goes below the user/base opts (Neural Lab sliders can push higher). */
+    function scaledOpts(corpus) {
+      var T = corpus.length;                                  // ≈ tokens for CJK text
+      var o = assign({}, state.opts);
+      o.maxVocab = Math.max(o.maxVocab, Math.min(900, 480 + Math.round(T / 80)));
+      o.hidden   = Math.max(o.hidden,   Math.min(80, T > 30000 ? 80 : 64));
+      o.steps    = Math.max(o.steps,    Math.min(24000, 14000 + Math.round(T / 6)));
+      return o;
+    }
+
     function ensure(force) {
       var docs = NSCode.askEngine.getDocs(), sig = sigOf(docs);
       if (!force && ((state.model && state.sig === sig) || (state.training && state.sig === sig))) { notify(); return; }
-      state.sig = sig; state.training = true; state.model = null; state.prog = { step: 0, total: state.opts.steps, loss: 0 };
       var corpus = docs.map(function (d) { return d.text; }).join('\n');
-      var m = create(corpus, state.opts);
+      var opts = scaledOpts(corpus);
+      state.sig = sig; state.training = true; state.model = null; state.prog = { step: 0, total: opts.steps, loss: 0 };
+      var m = create(corpus, opts);
       state.params = (m.V * m.D) + (m.C * m.D * m.H) + (m.H * m.V);
       notify();
-      trainAsync(m, { steps: state.opts.steps, chunk: 500, lr: state.opts.lr, onProgress: function (s) {
+      trainAsync(m, { steps: opts.steps, chunk: 500, lr: opts.lr, onProgress: function (s) {
         if (state.sig !== sig) return; state.prog = s; notify();
       } }).then(function () {
         if (state.sig !== sig) return; state.model = m; state.training = false; notify();

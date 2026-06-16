@@ -15,7 +15,7 @@
     { group: 'Foundations', label: 'Academy',              route: '#/academy' },
     { group: 'Foundations', label: 'Playground',           route: '#/playground' },
     { group: 'Foundations', label: 'Neural Lab',           route: '#/neural' },
-    { group: 'Foundations', label: '発電量予測 (Neural)',  route: '#/wte' },
+    { group: 'Foundations', label: 'PDF抽出',              route: '#/pdf' },
 
     { group: 'Context',     label: 'Embedding Lab',        route: '#/embedding' },
     { group: 'Context',     label: 'RAG Lab',              route: '#/rag' },

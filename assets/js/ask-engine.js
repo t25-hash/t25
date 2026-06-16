@@ -123,6 +123,24 @@
   function setDocs(docs) { store.set('ask.docs', docs); }
   function resetDocs() { store.set('ask.docs', DEFAULT_DOCS); return DEFAULT_DOCS; }
 
+  /* clean PDF/extracted text before the net learns it: normalize unicode
+   * (NFKC: full-width→ASCII, half-width kana→full), drop bare page-number
+   * lines and obvious header/footer noise, collapse whitespace. Big quality
+   * win for messy PDF text. */
+  function cleanText(t) {
+    t = String(t || '');
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    t = t.replace(/\r\n?/g, '\n');
+    t = t.split('\n').filter(function (line) {
+      var s = line.trim();
+      if (!s) return false;
+      if (/^[-–—\s]*\d{1,4}[-–—\s]*$/.test(s)) return false;       // bare page number
+      if (/^(?:page|p\.?|ページ|第)\s*\d+/i.test(s) && s.length < 12) return false; // short page markers
+      return true;
+    }).join('\n');
+    return t.replace(/[ \t　]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   /* lexical features for sentence ranking: latin words + CJK character bigrams
    * (mirrors NSCode.research.terms so query/sentence overlap is meaningful for
    * Japanese, where there are no spaces between words). */
@@ -223,7 +241,7 @@
 
   NSCode.askEngine = {
     DEFAULT_DOCS: DEFAULT_DOCS,
-    getDocs: getDocs, setDocs: setDocs, resetDocs: resetDocs,
+    getDocs: getDocs, setDocs: setDocs, resetDocs: resetDocs, cleanText: cleanText,
     buildChunks: buildChunks, ask: ask
   };
 })(window.NSCode);

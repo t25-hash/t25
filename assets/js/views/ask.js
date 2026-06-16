@@ -25,7 +25,7 @@
     route: '#/ask', module: 'ask', title: 'Ask (Neural)',
     render: function () {
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '文書をニューラルネットに学習させ、その重みから質問に回答（RAG検索ではなく神経回路の記憶）' }) +
-        C.Panel({ title: '1. 知識を学習させる（任意）', hint: '文書は保存されず、ニューラルネットの重みに取り込まれます（ファイル一覧は持ちません）',
+        C.Panel({ title: '1. 知識を学習させる（任意）', hint: 'PDF/テキストは自動でクレンジング（全角半角統一・ページ番号除去）してから重みに取り込みます。大きいPDFは事前にテキスト抽出し、重要章に絞ると精度が上がります（赤ちゃん級のため数万字が目安）',
           body:
             '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
             '<div class="ns-actions">' +
@@ -48,9 +48,9 @@
     },
     onMount: function () {
       el('addDoc').addEventListener('click', function () {
-        var t = el('docText').value.trim(); if (!t) return;
+        var t = A.cleanText(el('docText').value); if (!t) return;
         var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
-        el('docText').value = ''; setStatus('学習中… ニューラルネットに取り込んでいます。'); LAB.ensure();
+        el('docText').value = ''; setStatus(learnMsg()); LAB.ensure();
       });
       el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。再学習します…'); LAB.ensure(); });
       el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
@@ -85,9 +85,17 @@
     });
     Promise.all(tasks).then(function (docsAdded) {
       var docs = A.getDocs();
-      docsAdded.filter(Boolean).forEach(function (d) { if (d.text && d.text.trim()) docs.push(d); });
-      A.setDocs(docs); setStatus(docsAdded.filter(Boolean).length + ' 件を学習中… ニューラルネットに取り込んでいます。'); LAB.ensure();
+      docsAdded.filter(Boolean).forEach(function (d) { var c = A.cleanText(d.text); if (c) docs.push({ name: d.name, text: c }); });
+      A.setDocs(docs); setStatus(learnMsg()); LAB.ensure();
     }).catch(function (e) { setStatus('読み込みエラー: ' + e.message); });
+  }
+
+  function kbSize() { return A.getDocs().reduce(function (s, d) { return s + (d.text || '').length; }, 0); }
+  function learnMsg() {
+    var n = kbSize();
+    var msg = '学習中… ニューラルネットに取り込んでいます（知識量 ' + n.toLocaleString() + ' 字）。';
+    if (n > 120000) msg += ' ※量が多いほど学習は薄く（赤ちゃん級のため）。重要な章に絞ると精度が上がります。';
+    return msg;
   }
 
   function runAsk() {
