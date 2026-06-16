@@ -51,6 +51,7 @@
                 return pdf.getPage(n).then(function (page) {
                   return page.getTextContent().then(function (tc) {
                     pages[n - 1] = tc.items.map(function (it) { return it.str; }).join(' ').replace(/\s+/g, ' ').trim();
+                    if (page.cleanup) { try { page.cleanup(); } catch (e) {} } // free page memory (large PDFs)
                     if (onProgress) onProgress(n, pdf.numPages);
                   });
                 });
