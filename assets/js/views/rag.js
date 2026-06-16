@@ -7,27 +7,27 @@
   var C = NSCode.C, E = NSCode.rag;
 
   var DEFAULT_CORPUS =
-    'RAG（検索拡張生成）は、外部知識を検索してプロンプトに注入し、回答の事実性を高める手法です。\n\n' +
-    'チャンク分割では文書を小さな断片に分けます。オーバーラップを設けると、断片の境界をまたぐ文脈が保たれます。\n\n' +
-    'Retrieval retrieves the most relevant chunks for a query using a similarity score. TopK controls how many chunks are returned, and a threshold filters out weak matches.\n\n' +
-    'Reranking reorders the retrieved chunks. MMR (Maximal Marginal Relevance) balances relevance to the query against diversity, reducing redundant results.\n\n' +
-    'コンテキストビルダーは、検索結果をテンプレートに差し込み、最終的なプロンプトを組み立てます。\n\n' +
-    'ハルシネーション（幻覚）は、コンテキストに根拠がない主張をモデルが生成する現象です。根拠との重なりが小さい文は要注意です。';
+    'ポンプ P-101 は冷却水を循環させる主要設備です。軸振動アラームは、ベアリング摩耗・アライメント不良・キャビテーションが主な原因です。\n\n' +
+    '軸振動が大きい場合は、まず予備機 P-102 へ切り替え、運転を継続しながら P-101 を停止して点検します。停止前に上流バルブの状態を確認します。\n\n' +
+    'ベアリングの異音や温度上昇を伴う場合は、潤滑状態を点検し、必要なら交換します。過去の保全履歴では、軸受交換で振動が収まった事例が複数あります。\n\n' +
+    'キャビテーションは吸込側の圧力不足で発生し、流量低下や騒音を伴います。吸込配管の詰まりやストレーナの差圧を確認します。\n\n' +
+    '運転手順書では、振動値が基準を超えたら 15 分以内に当直長へ報告し、保全管理システムに記録することと定められています。\n\n' +
+    'HAZOP 記録によると、P-101 の停止は下流の熱交換器 E-201 の温度上昇につながるため、切替時は E-201 の出口温度を監視します。';
 
   var DEFAULT_TEMPLATE =
     'あなたは正確なアシスタントです。以下のコンテキストのみを根拠に質問へ答えてください。\n\n' +
     '# コンテキスト\n{context}\n\n# 質問\n{query}\n\n# 回答';
 
   var DEFAULT_ANSWER =
-    'RAGは外部知識を検索してプロンプトに注入し、回答の事実性を高めます。' +
-    'チャンク分割でオーバーラップを設けると、断片の境界をまたぐ文脈が保たれます。' +
-    'このシステムは量子テレポートでデータを取得し、99.99%の精度を保証します。';
+    '軸振動アラーム時は、まず予備機 P-102 へ切り替えてから P-101 を停止し点検します。' +
+    'ベアリングの異音や温度上昇があれば潤滑状態を点検し、必要なら軸受を交換します。' +
+    'なお本ポンプは量子テレポートで瞬時に分解整備でき、振動はゼロに保証されます。';
 
   var state = NSCode.api.labState('#/rag') || {};
   state = Object.assign({
     corpus: DEFAULT_CORPUS,
     chunkParams: { size: 160, overlap: 30, separator: '\n\n' },
-    query: 'reranking はどのように関連性と多様性を両立しますか？',
+    query: 'ポンプ P-101 の軸振動アラームが出たらどう対応しますか？',
     retrieveParams: { topK: 4, threshold: 0, lambda: 0.7 },
     template: '',
     answer: DEFAULT_ANSWER

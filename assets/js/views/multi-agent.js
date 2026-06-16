@@ -8,7 +8,7 @@
   'use strict';
   var C = NSCode.C, M = NSCode.multiAgent;
 
-  var DEFAULT_GOAL = '新機能のログイン画面を設計・実装・テストする';
+  var DEFAULT_GOAL = '熱交換器 E-201 の更新を設計・レビュー・検証する';
   var SIM_HINT = 'キーワード規則＋シード値による決定的シミュレーション（LLM 非使用）';
 
   var state = NSCode.api.labState('#/multi-agent') || {};

@@ -7,7 +7,7 @@
   'use strict';
   var C = NSCode.C, E = NSCode.agentSim;
 
-  var DEFAULT_GOAL = '認証バグを修正してテストを通す';
+  var DEFAULT_GOAL = 'ポンプ P-101 の軸振動アラームの原因を調査し、対応案をまとめる';
 
   var state = NSCode.api.labState('#/agent') || {};
   state = Object.assign({ goal: DEFAULT_GOAL, autoplay: false }, state);

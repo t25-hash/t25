@@ -8,13 +8,13 @@
   var DIM = 64;
 
   var state = Object.assign({
-    tokenText: 'Embeddings は文を数値ベクトルに変換します。',
-    embText: 'retrieval augmented generation',
-    simA: 'cat dog animal pet',
-    simB: 'dog cat pet animal',
-    clusterText: ['cat dog pet animal', 'lion tiger wild animal', 'fish bird small pet',
-      'python javascript code function', 'java rust compiler code', 'variable loop function code',
-      'pizza sushi food meal', 'burger pasta dinner food', 'rice noodle lunch food'].join('\n')
+    tokenText: 'ポンプ P-101 の軸振動が大きい。',
+    embText: 'ポンプ 軸振動 ベアリング 異音',
+    simA: 'ポンプ 軸振動 ベアリング 異音',
+    simB: 'ベアリング 異音 ポンプ 軸振動',
+    clusterText: ['ポンプ 軸振動 ベアリング 異音', 'ポンプ キャビテーション 流量 低下', '回転機械 振動 軸受 異音',
+      'バルブ 漏れ 配管 シール', 'フランジ 漏洩 ガスケット 増締', '配管 腐食 減肉 漏れ',
+      '温度 センサ 計装 指示', '圧力 伝送器 計装 校正', '流量計 信号 計装 異常'].join('\n')
   }, NSCode.api.labState('#/embedding') || {});
 
   function persist() { NSCode.api.labState('#/embedding', state); }
