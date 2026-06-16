@@ -6,7 +6,7 @@
   'use strict';
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
 
-  var state = Object.assign({ query: 'チャンクサイズが大きすぎるとどうなる？', topK: 4, temperature: 0.8 },
+  var state = Object.assign({ query: 'プラントの運転手順書を RAG で活用するには？', topK: 4, temperature: 0.8 },
     NSCode.api.labState('#/ask') || {});
   function persist() { NSCode.api.labState('#/ask', state); }
   function el(id) { return document.getElementById(id); }
@@ -24,7 +24,7 @@
       return C.PageHeader({ title: '🔎 Ask (RAG)', purpose: '自分の文書を入れて質問 → 検索した文脈で極小LLMが回答を“生成”（API不要）' }) +
         C.Panel({ title: '1. ナレッジベース（文書を追加）', hint: '貼り付け or .txt/.md/.pdf をアップロード（端末内処理）',
           body:
-            '<textarea id="docText" class="ns-input" rows="4" placeholder="ここに文章を貼り付け…"></textarea>' +
+            '<textarea id="docText" class="ns-input" rows="4" placeholder="ここに技術文書を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
             '<div class="ns-actions">' +
               '<button id="addDoc" class="ns-btn">テキストを追加</button>' +
               '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +

@@ -68,15 +68,29 @@
     return list[list.length - 1].tok;
   }
 
+  /* down-weight tokens already produced, then renormalize (frequency penalty).
+   * Keeps a tiny n-gram model from collapsing into "…です。です。です。" loops. */
+  function penalize(list, counts, penalty) {
+    if (!penalty || penalty <= 1) return list;
+    var adj = list.map(function (p) {
+      return { tok: p.tok, prob: p.prob / Math.pow(penalty, counts[p.tok] || 0) };
+    });
+    var sum = adj.reduce(function (s, x) { return s + x.prob; }, 0) || 1;
+    return adj.map(function (x) { return { tok: x.tok, prob: x.prob / sum }; });
+  }
+
   /* autoregressive generation: predict one token at a time and sample */
   function generate(model, seedToks, opts) {
     opts = opts || {};
     var maxTok = opts.maxTokens || 50, T = opts.temperature == null ? 0.8 : opts.temperature, K = opts.topK || 8;
-    var out = seedToks.slice();
+    var penalty = opts.repetitionPenalty == null ? 1 : opts.repetitionPenalty;
+    var out = seedToks.slice(), counts = {};
+    seedToks.forEach(function (t) { counts[t] = (counts[t] || 0) + 1; });
     for (var i = 0; i < maxTok; i++) {
       var d = distTable(model, out);
       if (!d) break;
-      var nxt = sampleFrom(probs(d.tbl, T, K));
+      var nxt = sampleFrom(penalize(probs(d.tbl, T, K), counts, penalty));
+      counts[nxt] = (counts[nxt] || 0) + 1;
       out.push(nxt);
       if (ENDERS.test(nxt) && (out.length - seedToks.length) >= 8) break;
     }
