@@ -263,15 +263,28 @@
     function sigOf(docs) { return docs.map(function (d) { return d.name + ':' + (d.text || '').length; }).join('|') + '|' + JSON.stringify(state.opts); }
     function notify() { for (var i = 0; i < listeners.length; i++) { try { listeners[i](state); } catch (e) {} } }
 
+    /* scale capacity with corpus size so larger (e.g. PDF-extracted) text is
+     * actually learned — bounded so training stays a few seconds in-browser.
+     * Never goes below the user/base opts (Neural Lab sliders can push higher). */
+    function scaledOpts(corpus) {
+      var T = corpus.length;                                  // ≈ tokens for CJK text
+      var o = assign({}, state.opts);
+      o.maxVocab = Math.max(o.maxVocab, Math.min(900, 480 + Math.round(T / 80)));
+      o.hidden   = Math.max(o.hidden,   Math.min(80, T > 30000 ? 80 : 64));
+      o.steps    = Math.max(o.steps,    Math.min(24000, 14000 + Math.round(T / 6)));
+      return o;
+    }
+
     function ensure(force) {
       var docs = NSCode.askEngine.getDocs(), sig = sigOf(docs);
       if (!force && ((state.model && state.sig === sig) || (state.training && state.sig === sig))) { notify(); return; }
-      state.sig = sig; state.training = true; state.model = null; state.prog = { step: 0, total: state.opts.steps, loss: 0 };
       var corpus = docs.map(function (d) { return d.text; }).join('\n');
-      var m = create(corpus, state.opts);
+      var opts = scaledOpts(corpus);
+      state.sig = sig; state.training = true; state.model = null; state.prog = { step: 0, total: opts.steps, loss: 0 };
+      var m = create(corpus, opts);
       state.params = (m.V * m.D) + (m.C * m.D * m.H) + (m.H * m.V);
       notify();
-      trainAsync(m, { steps: state.opts.steps, chunk: 500, lr: state.opts.lr, onProgress: function (s) {
+      trainAsync(m, { steps: opts.steps, chunk: 500, lr: opts.lr, onProgress: function (s) {
         if (state.sig !== sig) return; state.prog = s; notify();
       } }).then(function () {
         if (state.sig !== sig) return; state.model = m; state.training = false; notify();
