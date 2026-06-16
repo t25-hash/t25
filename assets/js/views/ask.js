@@ -25,16 +25,15 @@
     route: '#/ask', module: 'ask', title: 'Ask (Neural)',
     render: function () {
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '文書をニューラルネットに学習させ、その重みから質問に回答（RAG検索ではなく神経回路の記憶）' }) +
-        C.Panel({ title: '1. ナレッジベース（ニューラルが学習する文書）', hint: '貼り付け or .txt/.md/.pdf を追加。追加・削除するとニューラルネットを再学習します',
+        C.Panel({ title: '1. 知識を学習させる（任意）', hint: '文書は保存されず、ニューラルネットの重みに取り込まれます（ファイル一覧は持ちません）',
           body:
-            '<textarea id="docText" class="ns-input" rows="4" placeholder="ここに文書を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
+            '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
             '<div class="ns-actions">' +
-              '<button id="addDoc" class="ns-btn">学習させる（追加）</button>' +
-              '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
-              '<button id="resetDocs" class="ns-btn ns-btn--ghost">サンプルに戻す</button>' +
+              '<button id="addDoc" class="ns-btn">学習させる</button>' +
+              '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイルで学習<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
+              '<button id="resetDocs" class="ns-btn ns-btn--ghost">既定の知識に戻す</button>' +
             '</div>' +
-            '<div id="docStatus" class="ns-empty__hint"></div>' +
-            '<div id="docList"></div>' }) +
+            '<div id="docStatus" class="ns-empty__hint"></div>' }) +
         C.Panel({ title: '2. 質問する', hint: '質問のキーワードからニューラルネットが記憶を引き出して回答を生成',
           body:
             '<div class="ns-qa-bar"><input id="askQ" class="ns-input" value="' + C.esc(state.query) + '">' +
@@ -50,10 +49,10 @@
     onMount: function () {
       el('addDoc').addEventListener('click', function () {
         var t = el('docText').value.trim(); if (!t) return;
-        var docs = A.getDocs(); docs.push({ name: 'テキスト' + (docs.length + 1), text: t }); A.setDocs(docs);
-        el('docText').value = ''; renderDocs(); setStatus('文書を追加。ニューラルネットを再学習します…'); LAB.ensure();
+        var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
+        el('docText').value = ''; setStatus('学習中… ニューラルネットに取り込んでいます。'); LAB.ensure();
       });
-      el('resetDocs').addEventListener('click', function () { A.resetDocs(); renderDocs(); setStatus('サンプル文書に戻しました。再学習します…'); LAB.ensure(); });
+      el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。再学習します…'); LAB.ensure(); });
       el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
@@ -63,7 +62,7 @@
 
       if (unsub) unsub();
       unsub = LAB.onChange(function () { renderModel(); runAsk(); });
-      renderDocs(); LAB.ensure(); renderModel(); runAsk();
+      LAB.ensure(); renderModel(); runAsk();
     }
   });
 
@@ -87,24 +86,8 @@
     Promise.all(tasks).then(function (docsAdded) {
       var docs = A.getDocs();
       docsAdded.filter(Boolean).forEach(function (d) { if (d.text && d.text.trim()) docs.push(d); });
-      A.setDocs(docs); renderDocs(); setStatus(docsAdded.filter(Boolean).length + ' 件を追加。再学習します…'); LAB.ensure();
+      A.setDocs(docs); setStatus(docsAdded.filter(Boolean).length + ' 件を学習中… ニューラルネットに取り込んでいます。'); LAB.ensure();
     }).catch(function (e) { setStatus('読み込みエラー: ' + e.message); });
-  }
-
-  function renderDocs() {
-    var out = el('docList'); if (!out) return;
-    var docs = A.getDocs();
-    out.innerHTML = '<div class="ns-empty__hint">' + docs.length + ' 文書（ニューラルネットの学習データ）</div>' +
-      '<div class="ns-doclist">' + docs.map(function (d, i) {
-        return '<div class="ns-docitem"><span class="ns-tag">' + C.esc(d.name) + '</span>' +
-          '<span class="ns-doc-meta">' + d.text.length + '字</span>' +
-          '<button class="ns-doc-rm" data-i="' + i + '" title="削除">✕</button></div>';
-      }).join('') + '</div>';
-    Array.prototype.forEach.call(out.querySelectorAll('.ns-doc-rm'), function (b) {
-      b.addEventListener('click', function () {
-        var docs = A.getDocs(); docs.splice(+b.getAttribute('data-i'), 1); A.setDocs(docs); renderDocs(); setStatus('削除。再学習します…'); LAB.ensure();
-      });
-    });
   }
 
   function runAsk() {
