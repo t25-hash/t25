@@ -31,7 +31,15 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; max-width: 100%; }
+body { overflow-x: hidden; } /* mobile: never allow horizontal page scroll/zoom-out */
+
+/* mobile hardening: let flex/grid children shrink instead of forcing page width */
+.ns-main, .ns-panel, .ns-panel__body, .ns-grid, .ns-card { min-width: 0; }
+.ns-grid > * { min-width: 0; }
+/* long code/prompt blocks wrap on narrow screens instead of widening the page */
+.ns-code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+img, svg, canvas, table { max-width: 100%; }
 
 body {
   background: var(--bg);
