@@ -1,11 +1,12 @@
-/* Ask (RAG) — a real, primitive RAG over your own documents. Top-level entry.
- * Add docs (paste text or upload .txt/.md/.pdf) -> ask -> grounded answer with
- * citations. Retrieval is TF-IDF (real); the answer is extractive (no LLM). */
+/* Ask (RAG) — educational page that runs the Claude Code procedure end-to-end:
+ * retrieve (TF-IDF) → train a tiny in-browser LM on the retrieved context →
+ * GENERATE an answer by next-token prediction (a real, baby-level statistical
+ * LM; no neural net, no API). The generation steps are shown for learning. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
 
-  var state = Object.assign({ query: 'チャンクサイズが大きすぎるとどうなる？', topK: 4 },
+  var state = Object.assign({ query: 'チャンクサイズが大きすぎるとどうなる？', topK: 4, temperature: 0.8 },
     NSCode.api.labState('#/ask') || {});
   function persist() { NSCode.api.labState('#/ask', state); }
   function el(id) { return document.getElementById(id); }
@@ -20,7 +21,7 @@
   NSCode.registerView({
     route: '#/ask', module: 'ask', title: 'Ask (RAG)',
     render: function () {
-      return C.PageHeader({ title: '🔎 Ask (RAG)', purpose: '自分の文書を入れて質問 → その文書に基づいて回答（実際に動く RAG）' }) +
+      return C.PageHeader({ title: '🔎 Ask (RAG)', purpose: '自分の文書を入れて質問 → 検索した文脈で極小LLMが回答を“生成”（API不要）' }) +
         C.Panel({ title: '1. ナレッジベース（文書を追加）', hint: '貼り付け or .txt/.md/.pdf をアップロード（端末内処理）',
           body:
             '<textarea id="docText" class="ns-input" rows="4" placeholder="ここに文章を貼り付け…"></textarea>' +
@@ -31,14 +32,19 @@
             '</div>' +
             '<div id="docStatus" class="ns-empty__hint"></div>' +
             '<div id="docList"></div>' }) +
-        C.Panel({ title: '2. 質問する', hint: 'TF-IDF で関連チャンクを検索（実物）',
+        C.Panel({ title: '2. 質問する', hint: '関連チャンクを検索 → その文脈で極小LLMが回答を生成（生成はランダム性あり）',
           body:
             '<div class="ns-qa-bar"><input id="askQ" class="ns-input" value="' + C.esc(state.query) + '">' +
-            '<button id="askBtn" class="ns-btn">検索して回答</button></div>' +
-            C.Controls([{ label: 'TopK: <b id="askKv">' + state.topK + '</b>', control: '<input id="askK" class="ns-range" type="range" min="1" max="8" value="' + state.topK + '">' }]) }) +
-        C.Panel({ title: '3. 回答', hint: '抽出型（生成なし）・出典付き。LLM 生成は docs/05 のバックエンド接続で',
+            '<button id="askBtn" class="ns-btn">回答を生成</button>' +
+            '<button id="askRegen" class="ns-btn ns-btn--ghost">再生成</button></div>' +
+            C.Controls([
+              { label: '検索 TopK: <b id="askKv">' + state.topK + '</b>', control: '<input id="askK" class="ns-range" type="range" min="1" max="8" value="' + state.topK + '">' },
+              { label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.1" max="1.5" step="0.1" value="' + state.temperature + '">' }
+            ]) }) +
+        C.Panel({ title: '3. 回答（極小LLMが生成）', hint: '本物の n-gram 言語モデルが次トークン予測で生成（赤ちゃん級・ニューラルでない・API不要）',
           body: '<div id="askAns"></div>' }) +
-        C.Panel({ title: 'LLM に渡されるプロンプト（参考）', body: '<pre id="askPrompt" class="ns-code"></pre>' });
+        C.Panel({ title: '生成のしくみ（次トークン予測・最初の数手）', hint: '各ステップの候補と確率＝LLM の中核', body: '<div id="askTrace"></div>' }) +
+        C.Panel({ title: 'モデルに渡した文脈プロンプト（参考）', body: '<pre id="askPrompt" class="ns-code"></pre>' });
     },
     onMount: function () {
       el('addDoc').addEventListener('click', function () {
@@ -50,7 +56,9 @@
       el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askK').addEventListener('input', function () { state.topK = +el('askK').value; el('askKv').textContent = state.topK; persist(); });
+      el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       el('askBtn').addEventListener('click', runAsk);
+      el('askRegen').addEventListener('click', runAsk);
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
       renderDocs(); runAsk();
     }
@@ -98,24 +106,38 @@
   }
 
   function runAsk() {
-    var out = el('askAns'), pr = el('askPrompt'); if (!out) return;
+    var out = el('askAns'), pr = el('askPrompt'), tr = el('askTrace'); if (!out) return;
     var q = (el('askQ') ? el('askQ').value : state.query).trim();
-    var res = q ? A.ask(q, { topK: state.topK }) : null;
-    if (!res) { out.innerHTML = C.EmptyState({ icon: '🔎', message: '文書を追加して質問してください。' }); if (pr) pr.textContent = ''; return; }
-    var srcs = {}; res.answer.forEach(function (a) { srcs[a.src] = 1; });
+    var res = q ? A.ask(q, { topK: state.topK, temperature: state.temperature, maxTokens: 60 }) : null;
+    if (!res) {
+      out.innerHTML = C.EmptyState({ icon: '🔎', message: '文書を追加して質問してください。' });
+      if (pr) pr.textContent = ''; if (tr) tr.innerHTML = ''; return;
+    }
+    var srcs = {}; res.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
     out.innerHTML =
-      (res.answer.length
-        ? '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
-            '<p class="ns-qa-answer__lead">' + highlight(res.lead, q) + '</p>' +
-            '<div class="ns-qa-answer__src">出典: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>'
-        : '<p class="ns-empty__hint">関連箇所が見つかりませんでした。文書か質問を変えてみてください。</p>') +
-      '<p class="ns-empty__hint">根拠（検索された関連チャンク・スコア順）:</p>' +
+      '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（生成）</div>' +
+        '<p class="ns-qa-answer__lead">' + highlight(res.generated || '(生成できませんでした)', q) + '</p>' +
+        '<div class="ns-qa-answer__src">seed: <span class="ns-tag">' + C.esc(res.seed) + '</span>'
+          + ' ／ 学習語彙: ' + res.vocab + ' ／ 出典: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>' +
+      '<p class="ns-empty__hint">根拠（検索された関連チャンク・スコア順）— この文脈でモデルを学習:</p>' +
       res.hits.map(function (h, i) {
         return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
           '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
           '<div class="ns-progress"><div class="ns-progress__fill" style="width:' + Math.round(h.score * 100) + '%"></div></div>' +
           '<p class="ns-hit__text">' + highlight(h.chunk.text.slice(0, 240), q) + (h.chunk.text.length > 240 ? '…' : '') + '</p></div>';
       }).join('');
+
+    if (tr) {
+      tr.innerHTML = (res.trace && res.trace.length)
+        ? '<div class="ns-trace2">' + res.trace.map(function (r) {
+            return '<div class="ns-trace2__row"><span class="ns-trace2__ctx">' + C.esc(r.context || '(先頭)') + ' →</span>' +
+              r.top.map(function (t) {
+                return '<span class="ns-tok' + (t.tok === r.chosen ? ' is-pick' : '') + '">' + C.esc(t.tok === '\n' ? '⏎' : t.tok) + '<i>' + Math.round(t.prob * 100) + '%</i></span>';
+              }).join('') + '</div>';
+          }).join('') + '</div>' +
+          '<p class="ns-empty__hint">温度を上げると候補が平準化（多様）、下げると最有力に集中（決定的）。再生成で別のサンプルになります。</p>'
+        : '<p class="ns-empty__hint">生成過程を表示できませんでした。</p>';
+    }
     if (pr) pr.textContent = res.prompt;
   }
 })(window.NSCode);

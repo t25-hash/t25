@@ -119,6 +119,14 @@ a { color: inherit; text-decoration: none; }
 
 .ns-scrim { display: none; }
 
+/* ---- Ask: next-token prediction trace ---- */
+.ns-trace2 { display: flex; flex-direction: column; gap: 6px; }
+.ns-trace2__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.ns-trace2__ctx { color: var(--text-dim); font-family: ui-monospace, monospace; font-size: 12px; }
+.ns-tok { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
+.ns-tok i { font-style: normal; color: var(--text-dim); font-size: 10px; }
+.ns-tok.is-pick { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+
 /* ---- Ask (RAG) doc list ---- */
 .ns-doclist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .ns-docitem { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; }

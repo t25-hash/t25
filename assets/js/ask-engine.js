@@ -32,7 +32,9 @@
     return all;
   }
 
-  /* ask a question over the docs -> { answer:[{s,src}], lead, hits, prompt, chunks } */
+  /* ask a question over the docs, the Claude Code way (RAG → generate):
+   * retrieve relevant chunks → train a tiny in-browser LM on them → GENERATE an
+   * answer by next-token prediction. Returns { generated, seed, trace, hits, prompt }. */
   function ask(query, opts) {
     opts = opts || {};
     var docs = opts.docs || getDocs();
@@ -40,54 +42,32 @@
     if (!chunks.length || !query) return null;
     var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0 });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
+    var L = NSCode.babyLLM;
 
-    // candidate sentences from retrieved passages, scored by relevance to query
-    var cands = [], idx = 0;
-    res.hits.forEach(function (h) {
-      NSCode.research.splitSentences(h.chunk.text).forEach(function (s) {
-        s = cleanSentence(s);
-        if (s.length < 6) return;
-        cands.push({ s: s, src: h.chunk.source, order: idx++, vec: emb.embed(s, 64), rel: emb.cosine(qv, emb.embed(s, 64)) });
-      });
-    });
-    // de-duplicate (substring / near-identical) keeping the higher-relevance one
-    cands.sort(function (a, b) { return b.rel - a.rel; });
-    var uniq = [];
-    cands.forEach(function (c) {
-      if (!uniq.some(function (p) { return p.s.indexOf(c.s) >= 0 || c.s.indexOf(p.s) >= 0; })) uniq.push(c);
-    });
+    // training text: whole corpus + retrieved context (context weighted x2 so the
+    // generated answer is grounded in what was retrieved for THIS question)
+    var contextText = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
+    var corpusText = docs.map(function (d) { return d.text; }).join('\n');
+    var model = L.train(corpusText + '\n' + contextText + '\n' + contextText, 3);
 
-    // MMR selection: relevance + diversity, so the answer isn't redundant
-    var k = Math.min(opts.sentences || 3, uniq.length), lambda = 0.72, sel = [], pool = uniq.slice();
-    while (sel.length < k && pool.length) {
-      var best = null, bs = -Infinity;
-      for (var i = 0; i < pool.length; i++) {
-        var c = pool[i], div = 0;
-        for (var j = 0; j < sel.length; j++) div = Math.max(div, emb.cosine(c.vec, sel[j].vec));
-        var sc = lambda * c.rel - (1 - lambda) * div;
-        if (sc > bs) { bs = sc; best = c; }
-      }
-      if (!best || best.rel <= 0.001) break;
-      sel.push(best); pool.splice(pool.indexOf(best), 1);
-    }
-    // lead with the most relevant sentence, then the rest in document order
-    var lead = sel.slice().sort(function (a, b) { return b.rel - a.rel; })[0];
-    var rest = sel.filter(function (x) { return x !== lead; }).sort(function (a, b) { return a.order - b.order; });
-    var ordered = lead ? [lead].concat(rest) : sel;
-    var answer = ordered.map(function (x) { return { s: x.s, src: x.src }; });
+    // seed: the opening tokens of the most query-relevant sentence (keeps it on-topic)
+    var sents = NSCode.research.splitSentences(contextText);
+    sents.sort(function (a, b) { return emb.cosine(qv, emb.embed(b, 64)) - emb.cosine(qv, emb.embed(a, 64)); });
+    var seedSent = sents[0] || query;
+    var seedToks = L.tokenize(seedSent).slice(0, 2);
+    if (!seedToks.length) seedToks = L.tokenize(query).slice(0, 2);
+
+    var genOpts = { temperature: opts.temperature == null ? 0.8 : opts.temperature, topK: opts.topK2 || 8, maxTokens: opts.maxTokens || 60 };
+    var gen = L.generate(model, seedToks, genOpts);
 
     return {
-      answer: answer,
-      lead: answer.map(function (a) { return a.s; }).join(' '),
+      generated: L.join(gen),
+      seed: L.join(seedToks),
+      trace: L.trace(model, seedToks, 5, genOpts),
+      vocab: model.vocab,
       hits: res.hits, chunks: chunks,
       prompt: NSCode.rag.buildContext(res.hits, null, query)
     };
-  }
-
-  function cleanSentence(s) {
-    return String(s).replace(/\s+/g, ' ').trim()
-      .replace(/^[\s,、。.;:：；・\-]+/, '')      // strip leading punctuation/fragments
-      .replace(/\s+([。.！？!?])/g, '$1');
   }
 
   NSCode.askEngine = {
