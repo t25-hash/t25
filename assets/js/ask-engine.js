@@ -239,9 +239,32 @@
     };
   }
 
+  /* HYBRID answer (search + weights) — the Claude-style pipeline that scales to
+   * large knowledge bases / PDFs:
+   *   1. SEARCH: retrieve the chunks most relevant to the question (TF-IDF).
+   *   2. WEIGHTS: train a small neural net on just those chunks (fast & focused),
+   *      then generate the answer from its weights, seeded by the question.
+   * Only the retrieved chunks are learned, so KB size doesn't blow up cost.
+   * Returns a Promise of { text, seed, hits, loss }. */
+  function hybridAnswer(question, opts) {
+    opts = opts || {};
+    var chunks = buildChunks(getDocs());
+    if (!chunks.length || !question) return Promise.resolve(null);
+    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0 });
+    if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
+    var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
+    var L = NSCode.neuralLM;
+    var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
+    return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
+      .then(function () {
+        var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 52 });
+        return { text: a.text, seed: a.seed, hits: res.hits, loss: m.loss };
+      });
+  }
+
   NSCode.askEngine = {
     DEFAULT_DOCS: DEFAULT_DOCS,
     getDocs: getDocs, setDocs: setDocs, resetDocs: resetDocs, cleanText: cleanText,
-    buildChunks: buildChunks, ask: ask
+    buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer
   };
 })(window.NSCode);
