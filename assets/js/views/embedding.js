@@ -1,18 +1,11 @@
 /* Embedding Lab (EMB) — working, offline embedding exploration.
- * Token Visualizer / Embedding Viewer / Similarity Viewer / Cluster Viewer.
+ * ONE page (no tabs): Token Visualizer / Embedding Viewer / Similarity Viewer / Cluster Viewer.
  * Vectors are local hashing-trick embeddings (lexical, deterministic); the UI
  * states this so the difference from neural embeddings is clear. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, E = NSCode.embeddings;
   var DIM = 64;
-
-  var tabs = [
-    { id: 'token', label: 'Token Visualizer', route: '#/embedding/token' },
-    { id: 'vector', label: 'Embedding Viewer', route: '#/embedding/vector' },
-    { id: 'similarity', label: 'Similarity Viewer', route: '#/embedding/similarity' },
-    { id: 'cluster', label: 'Cluster Viewer', route: '#/embedding/cluster' }
-  ];
 
   var state = Object.assign({
     tokenText: 'Embeddings は文を数値ベクトルに変換します。',
@@ -26,21 +19,64 @@
 
   function persist() { NSCode.api.labState('#/embedding', state); }
   function el(id) { return document.getElementById(id); }
-  function header(s) { return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Embedding Lab', s.title] }) + C.Tabs(tabs, s.route); }
+
+  /* ---------- One page render ---------- */
+  function render() {
+    return C.PageHeader({
+      title: 'Embedding Lab',
+      purpose: 'Token分解 → ベクトル化 → 類似度 → クラスタ可視化（signed hashing trick・語彙ベース）',
+      breadcrumb: ['Embedding Lab']
+    }) +
+
+      /* a) Token Visualizer */
+      C.Panel({
+        title: 'Token Visualizer',
+        hint: 'BPE ではない簡易分割（語/数字/CJK字/記号）',
+        body: '<textarea id="tkText" class="ns-input" rows="3">' + C.esc(state.tokenText) + '</textarea>' +
+          '<div id="tkOut"></div>'
+      }) +
+
+      /* b) Embedding Viewer */
+      C.Panel({
+        title: 'Embedding Viewer',
+        hint: 'local hashing embedding（signed, L2正規化）',
+        body: '<input id="emText" class="ns-input" value="' + C.esc(state.embText) + '">' +
+          '<div id="emOut"></div>'
+      }) +
+
+      /* c) Similarity Viewer */
+      C.Panel({
+        title: 'Similarity Viewer',
+        hint: 'Cosine / Euclidean / Dot Product',
+        body: '<div class="ns-grid" style="--cols:2">' +
+            '<label class="ns-control"><span>テキスト A</span><textarea id="simA" class="ns-input" rows="3">' + C.esc(state.simA) + '</textarea></label>' +
+            '<label class="ns-control"><span>テキスト B</span><textarea id="simB" class="ns-input" rows="3">' + C.esc(state.simB) + '</textarea></label>' +
+          '</div>' +
+          '<div id="simOut"></div>'
+      }) +
+
+      /* d) Cluster Viewer */
+      C.Panel({
+        title: 'Cluster Viewer',
+        hint: '近い点＝似た文（PCA 2D）',
+        body: '<textarea id="clText" class="ns-input" rows="6">' + C.esc(state.clusterText) + '</textarea>' +
+          C.Controls([{ label: '次元削減', control: '<select id="clMethod" class="ns-input"><option value="pca">PCA (2D)</option><option value="umap" disabled>UMAP (要ライブラリ)</option></select>' }]) +
+          '<div id="clOut"></div>'
+      });
+  }
+
+  function onMount() {
+    el('tkText').addEventListener('input', function () { state.tokenText = el('tkText').value; persist(); renderTokens(); });
+    el('emText').addEventListener('input', function () { state.embText = el('emText').value; persist(); renderEmbedding(); });
+    ['simA', 'simB'].forEach(function (id) { el(id).addEventListener('input', function () { state[id] = el(id).value; persist(); renderSim(); }); });
+    el('clText').addEventListener('input', function () { state.clusterText = el('clText').value; persist(); renderCluster(); });
+    renderTokens();
+    renderEmbedding();
+    renderSim();
+    renderCluster();
+  }
 
   /* ---------- Token Visualizer ---------- */
-  NSCode.registerView({
-    route: '#/embedding/token', module: 'embedding', title: 'Token Visualizer',
-    render: function () {
-      return header({ title: 'Token Visualizer', purpose: '入力文 → Token分解 → Token ID（簡易トークナイザ）', route: '#/embedding/token' }) +
-        C.Panel({ title: '入力文', body: '<textarea id="tkText" class="ns-input" rows="3">' + C.esc(state.tokenText) + '</textarea>' }) +
-        C.Panel({ title: 'Token 分解 / ID', hint: 'BPE ではない簡易分割（語/数字/CJK字/記号）', body: '<div id="tkOut"></div>' });
-    },
-    onMount: function () {
-      el('tkText').addEventListener('input', function () { state.tokenText = el('tkText').value; persist(); renderTokens(); });
-      renderTokens();
-    }
-  });
   function renderTokens() {
     var out = el('tkOut'); if (!out) return;
     var toks = E.tokenize(state.tokenText);
@@ -54,18 +90,6 @@
   }
 
   /* ---------- Embedding Viewer ---------- */
-  NSCode.registerView({
-    route: '#/embedding/vector', module: 'embedding', title: 'Embedding Viewer',
-    render: function () {
-      return header({ title: 'Embedding Viewer', purpose: 'ベクトル / 次元数 / モデル', route: '#/embedding/vector' }) +
-        C.Panel({ title: '入力文', body: '<input id="emText" class="ns-input" value="' + C.esc(state.embText) + '">' }) +
-        C.Panel({ title: 'ベクトル', hint: 'local hashing embedding（signed, L2正規化）', body: '<div id="emOut"></div>' });
-    },
-    onMount: function () {
-      el('emText').addEventListener('input', function () { state.embText = el('emText').value; persist(); renderEmbedding(); });
-      renderEmbedding();
-    }
-  });
   function barViz(vec) {
     var max = 0; vec.forEach(function (x) { max = Math.max(max, Math.abs(x)); }); max = max || 1;
     var w = 100 / vec.length;
@@ -90,21 +114,6 @@
   }
 
   /* ---------- Similarity Viewer ---------- */
-  NSCode.registerView({
-    route: '#/embedding/similarity', module: 'embedding', title: 'Similarity Viewer',
-    render: function () {
-      return header({ title: 'Similarity Viewer', purpose: 'Cos Similarity / Euclidean / Dot Product', route: '#/embedding/similarity' }) +
-        '<div class="ns-grid" style="--cols:2">' +
-          C.Panel({ title: 'テキスト A', body: '<textarea id="simA" class="ns-input" rows="3">' + C.esc(state.simA) + '</textarea>' }) +
-          C.Panel({ title: 'テキスト B', body: '<textarea id="simB" class="ns-input" rows="3">' + C.esc(state.simB) + '</textarea>' }) +
-        '</div>' +
-        C.Panel({ title: '類似度', body: '<div id="simOut"></div>' });
-    },
-    onMount: function () {
-      ['simA', 'simB'].forEach(function (id) { el(id).addEventListener('input', function () { state[id] = el(id).value; persist(); renderSim(); }); });
-      renderSim();
-    }
-  });
   function renderSim() {
     var out = el('simOut'); if (!out) return;
     var a = E.embed(state.simA, DIM), b = E.embed(state.simB, DIM);
@@ -119,19 +128,6 @@
   }
 
   /* ---------- Cluster Viewer ---------- */
-  NSCode.registerView({
-    route: '#/embedding/cluster', module: 'embedding', title: 'Cluster Viewer',
-    render: function () {
-      return header({ title: 'Cluster Viewer', purpose: '埋め込みを PCA で 2D 可視化', route: '#/embedding/cluster' }) +
-        C.Panel({ title: 'テキスト（1行=1点）', body: '<textarea id="clText" class="ns-input" rows="6">' + C.esc(state.clusterText) + '</textarea>' +
-          C.Controls([{ label: '次元削減', control: '<select id="clMethod" class="ns-input"><option value="pca">PCA (2D)</option><option value="umap" disabled>UMAP (要ライブラリ)</option></select>' }]) }) +
-        C.Panel({ title: '2D 散布図', hint: '近い点＝似た文', body: '<div id="clOut"></div>' });
-    },
-    onMount: function () {
-      el('clText').addEventListener('input', function () { state.clusterText = el('clText').value; persist(); renderCluster(); });
-      renderCluster();
-    }
-  });
   function renderCluster() {
     var out = el('clOut'); if (!out) return;
     var texts = state.clusterText.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
@@ -154,4 +150,10 @@
     out.innerHTML = '<svg class="ns-scatter" viewBox="0 0 100 100">' + dots + '</svg>' +
       '<p class="ns-empty__hint">PCA は語彙ベース埋め込みの上位2主成分です。3D/UMAP は可視化ライブラリ前提のため雛形では PCA(2D) のみ実装。</p>';
   }
+
+  /* ---------- Register: base route + former sub-routes as aliases ---------- */
+  ['#/embedding', '#/embedding/token', '#/embedding/vector', '#/embedding/similarity', '#/embedding/cluster']
+    .forEach(function (route) {
+      NSCode.registerView({ route: route, module: 'embedding', title: 'Embedding Lab', render: render, onMount: onMount });
+    });
 })(window.NSCode);

@@ -274,7 +274,10 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 }
 .ns-qa-bar { display: flex; gap: 8px; margin-bottom: 12px; }
 .ns-qa-bar .ns-input { flex: 1; }
-.ns-qa-answer { background: var(--accent-weak); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.ns-qa-answer { background: var(--accent-weak); border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; border: 1px solid var(--border); }
+.ns-qa-answer__label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; margin-bottom: 4px; }
+.ns-qa-answer__lead { margin: 0; font-size: 15px; line-height: 1.8; }
+.ns-qa-answer__src { margin-top: 8px; font-size: 12px; color: var(--text-dim); }
 .ns-qa-answer ul { margin: 6px 0 0; padding-left: 18px; }
 .ns-qa-answer li { margin-bottom: 6px; }
 .ns-search-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }

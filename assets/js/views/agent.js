@@ -1,17 +1,11 @@
-/* Agent Lab (AGENT) — a working, offline ReAct-style agent simulator across
- * 4 tabs. State (goal, autoplay) is shared and persisted so each view reflects
- * the same goal. The loop / plan / reflection / retry are produced by the
- * DETERMINISTIC rule-based simulator in agent-engine.js (no LLM, no network). */
+/* Agent Lab (AGENT) — a working, offline ReAct-style agent simulator on ONE
+ * page (no tabs). The shared GOAL is entered once at the top; Loop / Plan /
+ * Reflection / Retry are stacked sections below. State (goal, autoplay) is
+ * shared and persisted. All output is produced by the DETERMINISTIC rule-based
+ * simulator in agent-engine.js (no LLM, no network). */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, E = NSCode.agentSim;
-
-  var tabs = [
-    { id: 'loop', label: 'Loop Viewer', route: '#/agent/loop' },
-    { id: 'planner', label: 'Planner', route: '#/agent/planner' },
-    { id: 'reflection', label: 'Reflection', route: '#/agent/reflection' },
-    { id: 'retry', label: 'Retry', route: '#/agent/retry' }
-  ];
 
   var DEFAULT_GOAL = '認証バグを修正してテストを通す';
 
@@ -20,9 +14,6 @@
 
   function persist() { NSCode.api.labState('#/agent', state); }
   function el(id) { return document.getElementById(id); }
-  function header(s) {
-    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Agent Lab', s.title] }) + C.Tabs(tabs, s.route);
-  }
 
   var SIM_HINT = 'ルールベースの決定論的シミュレーション（LLM/通信なし）';
 
@@ -40,29 +31,55 @@
   var playTimer = null;
   function clearPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; } }
 
-  /* ===================== Loop Viewer ===================== */
-  NSCode.registerView({
-    route: '#/agent/loop', module: 'agent', title: 'Agent Loop Viewer',
-    render: function () {
-      return header({ title: 'Agent Loop Viewer', purpose: 'ReAct ループ（Goal→Plan→Action→Observation→…）を可視化', route: '#/agent/loop' }) +
-        C.Panel({ title: 'ゴール', hint: SIM_HINT, body:
-          '<input id="goal" class="ns-input" value="' + C.esc(state.goal) + '">' +
-          '<div class="ns-actions">' +
-            '<button id="runBtn" class="ns-btn">実行</button>' +
-            '<label class="ns-control ns-control--inline"><span>ステップ再生</span>' +
-              '<input id="autoplay" type="checkbox"' + (state.autoplay ? ' checked' : '') + '></label>' +
-          '</div>' }) +
-        C.Panel({ title: '実行サマリ', body: '<div id="loopSummary"></div>' }) +
-        C.Panel({ title: 'トレース', hint: '色付き左ボーダー＝フェーズ。✗＝失敗（意図的に1回挿入）', body: '<div id="loopOut"></div>' });
-    },
-    onMount: function () {
-      el('goal').addEventListener('input', function () { state.goal = el('goal').value; persist(); });
-      el('autoplay').addEventListener('change', function () { state.autoplay = el('autoplay').checked; persist(); renderLoop(); });
-      el('runBtn').addEventListener('click', function () { state.goal = el('goal').value; persist(); renderLoop(); });
-      renderLoop();
-    }
-  });
+  /* ===================== single-page render ===================== */
+  function render() {
+    return C.PageHeader({
+        title: 'Agent Lab',
+        purpose: 'ReAct エージェントの Loop / Planner / Reflection / Retry を1ページで可視化',
+        breadcrumb: ['Agent Lab']
+      }) +
+      // Shared goal — entered ONCE, drives every section below.
+      C.Panel({ title: 'ゴール', hint: SIM_HINT + '・編集すると各セクションが即更新', body:
+        '<input id="goal" class="ns-input" value="' + C.esc(state.goal) + '">' +
+        '<div class="ns-actions">' +
+          '<button id="runBtn" class="ns-btn">実行</button>' +
+          '<label class="ns-control ns-control--inline"><span>ステップ再生</span>' +
+            '<input id="autoplay" type="checkbox"' + (state.autoplay ? ' checked' : '') + '></label>' +
+        '</div>' }) +
 
+      // a) Loop Viewer
+      C.Panel({ title: 'Loop Viewer — 実行サマリ', body: '<div id="loopSummary"></div>' }) +
+      C.Panel({ title: 'Loop Viewer — トレース', hint: '色付き左ボーダー＝フェーズ。✗＝失敗（意図的に1回挿入）', body: '<div id="loopOut"></div>' }) +
+
+      // b) Planner
+      C.Panel({ title: 'Planner — 生成された計画', hint: 'キーワード（テスト/修正/作成/検索…）から決定論的に生成。末尾は必ず検証ステップ。', body: '<div id="planOut"></div>' }) +
+
+      // c) Reflection
+      C.Panel({ title: 'Reflection — 実行の結果', body: '<div id="reflectOutcome"></div>' }) +
+      C.Panel({ title: 'Reflection — 改善提案（チェックリスト）', hint: 'トレースの失敗/リトライ/ステップ数からヒューリスティックに導出', body: '<div id="reflectOut"></div>' }) +
+
+      // d) Retry
+      C.Panel({ title: 'Retry — 指数バックオフ', hint: SIM_HINT + '・1000→2000→4000ms のバックオフで試行3に成功', body:
+        '<div class="ns-actions"><button id="retryBtn" class="ns-btn">再試行を実行</button></div>' +
+        '<div id="retrySummary"></div>' +
+        '<div id="retryOut"></div>' });
+  }
+
+  function onMount() {
+    el('goal').addEventListener('input', function () {
+      state.goal = el('goal').value; persist();
+      renderLoop(); renderPlan(); renderReflection();
+    });
+    el('autoplay').addEventListener('change', function () { state.autoplay = el('autoplay').checked; persist(); renderLoop(); });
+    el('runBtn').addEventListener('click', function () {
+      state.goal = el('goal').value; persist();
+      renderLoop(); renderPlan(); renderReflection();
+    });
+    el('retryBtn').addEventListener('click', renderRetry);
+    renderLoop(); renderPlan(); renderReflection(); renderRetry();
+  }
+
+  /* ===================== Loop Viewer ===================== */
   function traceCardHtml(t, hidden) {
     var cls = 'ns-trace ns-trace--' + (PHASE_CLASS[t.phase] || 'action') + (t.ok === false ? ' is-fail' : '');
     if (hidden) cls += ' is-hidden';
@@ -106,21 +123,7 @@
     }
   }
 
-  /* ===================== Planner Simulator ===================== */
-  NSCode.registerView({
-    route: '#/agent/planner', module: 'agent', title: 'Planner Simulator',
-    render: function () {
-      return header({ title: 'Planner Simulator', purpose: 'ゴールをキーワード分解して実行計画を生成', route: '#/agent/planner' }) +
-        C.Panel({ title: 'ゴール', hint: SIM_HINT + '・編集すると計画が即更新', body:
-          '<input id="pgoal" class="ns-input" value="' + C.esc(state.goal) + '">' }) +
-        C.Panel({ title: '生成された計画', hint: 'キーワード（テスト/修正/作成/検索…）から決定論的に生成。末尾は必ず検証ステップ。', body: '<div id="planOut"></div>' });
-    },
-    onMount: function () {
-      el('pgoal').addEventListener('input', function () { state.goal = el('pgoal').value; persist(); renderPlan(); });
-      renderPlan();
-    }
-  });
-
+  /* ===================== Planner ===================== */
   function renderPlan() {
     var out = el('planOut'); if (!out) return;
     var steps = E.plan(state.goal);
@@ -134,24 +137,7 @@
     }).join('') + '</ol>';
   }
 
-  /* ===================== Reflection Simulator ===================== */
-  NSCode.registerView({
-    route: '#/agent/reflection', module: 'agent', title: 'Reflection Simulator',
-    render: function () {
-      return header({ title: 'Reflection Simulator', purpose: '実行トレースを分析して改善提案を生成', route: '#/agent/reflection' }) +
-        C.Panel({ title: 'ゴール', hint: SIM_HINT, body:
-          '<input id="rgoal" class="ns-input" value="' + C.esc(state.goal) + '">' +
-          '<div class="ns-actions"><button id="reflectBtn" class="ns-btn">分析する</button></div>' }) +
-        C.Panel({ title: '実行の結果', body: '<div id="reflectOutcome"></div>' }) +
-        C.Panel({ title: '改善提案（チェックリスト）', hint: 'トレースの失敗/リトライ/ステップ数からヒューリスティックに導出', body: '<div id="reflectOut"></div>' });
-    },
-    onMount: function () {
-      el('rgoal').addEventListener('input', function () { state.goal = el('rgoal').value; persist(); renderReflection(); });
-      el('reflectBtn').addEventListener('click', function () { state.goal = el('rgoal').value; persist(); renderReflection(); });
-      renderReflection();
-    }
-  });
-
+  /* ===================== Reflection ===================== */
   function renderReflection() {
     var out = el('reflectOut'), outcome = el('reflectOutcome'); if (!out) return;
     var trace = E.run(state.goal);
@@ -171,22 +157,7 @@
     }).join('') + '</ul>';
   }
 
-  /* ===================== Retry Simulator ===================== */
-  NSCode.registerView({
-    route: '#/agent/retry', module: 'agent', title: 'Retry Simulator',
-    render: function () {
-      return header({ title: 'Retry Simulator', purpose: '指数バックオフによる再試行を可視化', route: '#/agent/retry' }) +
-        C.Panel({ title: '再試行ループ', hint: SIM_HINT + '・1000→2000→4000ms のバックオフで試行3に成功', body:
-          '<div class="ns-actions"><button id="retryBtn" class="ns-btn">再試行を実行</button></div>' +
-          '<div id="retrySummary"></div>' +
-          '<div id="retryOut"></div>' });
-    },
-    onMount: function () {
-      el('retryBtn').addEventListener('click', renderRetry);
-      renderRetry();
-    }
-  });
-
+  /* ===================== Retry ===================== */
   function renderRetry() {
     var out = el('retryOut'), sum = el('retrySummary'); if (!out) return;
     var attempts = E.retryDemo();
@@ -212,4 +183,11 @@
     }).join('') + '</div>' +
     '<p class="ns-empty__hint">※ バックオフ時間は決定論的な固定値です（実際の待機は行いません）。</p>';
   }
+
+  /* ===================== route registration ===================== */
+  // ONE page: base route + every former sub-route as an alias.
+  var ROUTES = ['#/agent', '#/agent/loop', '#/agent/planner', '#/agent/reflection', '#/agent/retry'];
+  ROUTES.forEach(function (route) {
+    NSCode.registerView({ route: route, module: 'agent', title: 'Agent Lab', render: render, onMount: onMount });
+  });
 })(window.NSCode);

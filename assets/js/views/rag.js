@@ -1,17 +1,10 @@
-/* RAG Lab (RAG) — a working, offline RAG pipeline across 5 stages.
- * State (corpus / query / params / answer) is shared across tabs and persisted,
- * so the pipeline flows: Chunk -> Retrieval -> ReRank -> Context -> Hallucination. */
+/* RAG Lab (RAG) — a working, offline RAG pipeline on a SINGLE page.
+ * Shared inputs (corpus / chunk params / query / retrieve params) live once at the
+ * top; each section below recomputes live from that shared, persisted state, so the
+ * pipeline flows top-to-bottom: Chunk -> Retrieval -> ReRank -> Context -> Hallucination. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, E = NSCode.rag;
-
-  var tabs = [
-    { id: 'chunk', label: 'Chunk', route: '#/rag/chunk' },
-    { id: 'retrieval', label: 'Retrieval', route: '#/rag/retrieval' },
-    { id: 'rerank', label: 'ReRank', route: '#/rag/rerank' },
-    { id: 'context', label: 'Context Builder', route: '#/rag/context' },
-    { id: 'hallucination', label: 'Hallucination', route: '#/rag/hallucination' }
-  ];
 
   var DEFAULT_CORPUS =
     'RAG（検索拡張生成）は、外部知識を検索してプロンプトに注入し、回答の事実性を高める手法です。\n\n' +
@@ -50,9 +43,6 @@
   function range(id, min, max, step, val) {
     return '<input id="' + id + '" class="ns-range" type="range" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" value="' + val + '">';
   }
-  function header(s) {
-    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['RAG Lab', s.title] }) + C.Tabs(tabs, s.route);
-  }
   function highlight(text, query) {
     var ws = (query.toLowerCase().match(/[a-z][a-z0-9\-]{2,}/g) || []);
     var uniq = {}; ws = ws.filter(function (w) { return uniq[w] ? false : (uniq[w] = 1); });
@@ -63,37 +53,102 @@
     return html;
   }
 
-  /* ---------- Chunk ---------- */
-  NSCode.registerView({
-    route: '#/rag/chunk', module: 'rag', title: 'Chunk Simulator',
-    render: function () {
-      var p = state.chunkParams;
-      return header({ title: 'Chunk Simulator', purpose: 'チャンク分割パラメータの影響を体験', route: '#/rag/chunk' }) +
-        C.Panel({ title: '入力文書', body: '<textarea id="corpus" class="ns-input" rows="6">' + C.esc(state.corpus) + '</textarea>' }) +
-        C.Panel({ title: '設定', body: C.Controls([
-          { label: 'Chunk Size: <b id="vsize">' + p.size + '</b>', control: range('csize', 32, 600, 8, p.size) },
-          { label: 'Overlap: <b id="voverlap">' + p.overlap + '</b>', control: range('coverlap', 0, 200, 5, p.overlap) },
-          { label: 'Separator', control: '<select id="csep" class="ns-input"><option value="\\n\\n">段落 (\\n\\n)</option><option value="\\n">改行 (\\n)</option><option value=". ">文 (. )</option><option value="">文字単位 (なし)</option></select>' }
-        ]) }) +
-        C.Panel({ title: 'チャンク結果', hint: '色付きブロック＝1チャンク', body: '<div id="chunkOut"></div>' });
-    },
-    onMount: function () {
-      var sep = el('csep'); sep.value = state.chunkParams.separator;
-      function upd() {
-        state.chunkParams.size = +el('csize').value;
-        state.chunkParams.overlap = Math.min(+el('coverlap').value, state.chunkParams.size - 1);
-        state.chunkParams.separator = sep.value.replace(/\\n/g, '\n');
-        el('vsize').textContent = state.chunkParams.size;
-        el('voverlap').textContent = state.chunkParams.overlap;
-        persist(); renderChunks();
-      }
-      el('corpus').addEventListener('input', function () { state.corpus = el('corpus').value; persist(); renderChunks(); });
-      ['csize', 'coverlap'].forEach(function (id) { el(id).addEventListener('input', upd); });
-      sep.addEventListener('change', upd);
-      renderChunks();
-    }
-  });
+  /* ---------- Single page render ---------- */
+  function render() {
+    var cp = state.chunkParams, rp = state.retrieveParams;
+    return C.PageHeader({
+      title: 'RAG Lab',
+      purpose: 'チャンク分割から検索・ReRank・コンテキスト構築・ハルシネーション検出まで、オフラインで動く RAG パイプラインを1ページで体験できます。'
+    }) +
+      /* ---- shared inputs (top, once) ---- */
+      C.Panel({ title: '入力文書', hint: 'すべてのセクション共通のコーパス',
+        body: '<textarea id="corpus" class="ns-input" rows="6">' + C.esc(state.corpus) + '</textarea>' }) +
+      C.Panel({ title: 'チャンク設定', body: C.Controls([
+        { label: 'Chunk Size: <b id="vsize">' + cp.size + '</b>', control: range('csize', 32, 600, 8, cp.size) },
+        { label: 'Overlap: <b id="voverlap">' + cp.overlap + '</b>', control: range('coverlap', 0, 200, 5, cp.overlap) },
+        { label: 'Separator', control: '<select id="csep" class="ns-input"><option value="\\n\\n">段落 (\\n\\n)</option><option value="\\n">改行 (\\n)</option><option value=". ">文 (. )</option><option value="">文字単位 (なし)</option></select>' }
+      ]) }) +
+      C.Panel({ title: 'クエリ', body: '<input id="query" class="ns-input" value="' + C.esc(state.query) + '">' }) +
+      C.Panel({ title: '検索設定', hint: 'dense embedding ではなく lexical retrieval', body: C.Controls([
+        { label: 'TopK: <b id="vtopk">' + rp.topK + '</b>', control: range('topk', 1, 10, 1, rp.topK) },
+        { label: 'Threshold: <b id="vthr">' + rp.threshold + '</b>', control: range('thr', 0, 1, 0.05, rp.threshold) },
+        { label: 'λ (lambda): <b id="vlam">' + rp.lambda + '</b>', control: range('lam', 0, 1, 0.05, rp.lambda) }
+      ]) }) +
+      /* ---- sections (live) ---- */
+      C.Panel({ title: 'チャンク結果', hint: '色付きブロック＝1チャンク', body: '<div id="chunkOut"></div>' }) +
+      C.Panel({ title: '検索結果', hint: 'TF-IDF コサイン（語彙ベース）', body: '<div id="retOut"></div>' }) +
+      '<div class="ns-grid" style="--cols:2">' +
+        C.Panel({ title: 'ReRank — Before（cos 類似度順）', body: '<div id="beforeOut"></div>' }) +
+        C.Panel({ title: 'ReRank — After（MMR 順）', hint: 'λ=1: 関連性重視 / λ=0: 多様性重視', body: '<div id="afterOut"></div>' }) +
+      '</div>' +
+      C.Panel({ title: 'コンテキスト', hint: '{context} と {query} が置換されます', body:
+        '<textarea id="tmpl" class="ns-input" rows="4">' + C.esc(state.template || DEFAULT_TEMPLATE) + '</textarea>' +
+        '<div class="ns-actions"><button id="copyCtx" class="ns-btn ns-btn--ghost">コピー</button></div>' +
+        '<pre id="ctxOut" class="ns-code"></pre>' }) +
+      C.Panel({ title: 'ハルシネーション', hint: '緑＝根拠あり / 赤＝根拠が薄い（要確認）', body:
+        '<textarea id="answer" class="ns-input" rows="4">' + C.esc(state.answer) + '</textarea>' +
+        '<div id="halOut"></div>' });
+  }
 
+  function renderAll() {
+    renderChunks();
+    renderRetrieval();
+    renderRerank();
+    renderContext();
+    renderHalluc();
+  }
+
+  function onMount() {
+    /* shared corpus */
+    el('corpus').addEventListener('input', function () {
+      state.corpus = el('corpus').value; persist(); renderAll();
+    });
+
+    /* chunk params */
+    var sep = el('csep'); sep.value = state.chunkParams.separator;
+    function updChunk() {
+      state.chunkParams.size = +el('csize').value;
+      state.chunkParams.overlap = Math.min(+el('coverlap').value, state.chunkParams.size - 1);
+      state.chunkParams.separator = sep.value.replace(/\\n/g, '\n');
+      el('vsize').textContent = state.chunkParams.size;
+      el('voverlap').textContent = state.chunkParams.overlap;
+      persist(); renderAll();
+    }
+    ['csize', 'coverlap'].forEach(function (id) { el(id).addEventListener('input', updChunk); });
+    sep.addEventListener('change', updChunk);
+
+    /* query */
+    el('query').addEventListener('input', function () {
+      state.query = el('query').value; persist(); renderAll();
+    });
+
+    /* retrieve params */
+    function updRetrieve() {
+      state.retrieveParams.topK = +el('topk').value;
+      state.retrieveParams.threshold = +el('thr').value;
+      state.retrieveParams.lambda = +el('lam').value;
+      el('vtopk').textContent = state.retrieveParams.topK;
+      el('vthr').textContent = state.retrieveParams.threshold;
+      el('vlam').textContent = state.retrieveParams.lambda;
+      persist(); renderAll();
+    }
+    ['topk', 'thr', 'lam'].forEach(function (id) { el(id).addEventListener('input', updRetrieve); });
+
+    /* context */
+    el('tmpl').addEventListener('input', function () { state.template = el('tmpl').value; persist(); renderContext(); });
+    el('copyCtx').addEventListener('click', function () {
+      var t = el('ctxOut').textContent;
+      if (navigator.clipboard) navigator.clipboard.writeText(t);
+      el('copyCtx').textContent = 'コピーしました ✓';
+    });
+
+    /* hallucination */
+    el('answer').addEventListener('input', function () { state.answer = el('answer').value; persist(); renderHalluc(); });
+
+    renderAll();
+  }
+
+  /* ---------- section renderers ---------- */
   function renderChunks() {
     var out = el('chunkOut'); if (!out) return;
     var chunks = getChunks();
@@ -109,34 +164,6 @@
       }).join('') + '</div>';
   }
 
-  /* ---------- Retrieval ---------- */
-  NSCode.registerView({
-    route: '#/rag/retrieval', module: 'rag', title: 'Retrieval Simulator',
-    render: function () {
-      var p = state.retrieveParams;
-      return header({ title: 'Retrieval Simulator', purpose: 'TF-IDF コサイン類似度で検索（語彙ベース）', route: '#/rag/retrieval' }) +
-        C.Panel({ title: 'クエリ', body: '<input id="query" class="ns-input" value="' + C.esc(state.query) + '">' }) +
-        C.Panel({ title: '設定', hint: 'dense embedding ではなく lexical retrieval', body: C.Controls([
-          { label: 'TopK: <b id="vtopk">' + p.topK + '</b>', control: range('topk', 1, 10, 1, p.topK) },
-          { label: 'Threshold: <b id="vthr">' + p.threshold + '</b>', control: range('thr', 0, 1, 0.05, p.threshold) }
-        ]) }) +
-        C.Panel({ title: '検索結果', body: '<div id="retOut"></div>' });
-    },
-    onMount: function () {
-      function upd() {
-        state.query = el('query').value;
-        state.retrieveParams.topK = +el('topk').value;
-        state.retrieveParams.threshold = +el('thr').value;
-        el('vtopk').textContent = state.retrieveParams.topK;
-        el('vthr').textContent = state.retrieveParams.threshold;
-        persist(); renderRetrieval();
-      }
-      el('query').addEventListener('input', upd);
-      ['topk', 'thr'].forEach(function (id) { el(id).addEventListener('input', upd); });
-      renderRetrieval();
-    }
-  });
-
   function renderRetrieval() {
     var out = el('retOut'); if (!out) return;
     var res = getRetrieval();
@@ -148,30 +175,6 @@
         '<p class="ns-hit__text">' + highlight(h.chunk.text, state.query) + '</p></div>';
     }).join('');
   }
-
-  /* ---------- ReRank ---------- */
-  NSCode.registerView({
-    route: '#/rag/rerank', module: 'rag', title: 'ReRanking Simulator',
-    render: function () {
-      var p = state.retrieveParams;
-      return header({ title: 'ReRanking Simulator', purpose: 'MMR で関連性と多様性を両立（Before / After）', route: '#/rag/rerank' }) +
-        C.Panel({ title: '設定', hint: 'λ=1: 関連性重視 / λ=0: 多様性重視', body: C.Controls([
-          { label: 'λ (lambda): <b id="vlam">' + p.lambda + '</b>', control: range('lam', 0, 1, 0.05, p.lambda) }
-        ]) }) +
-        '<div class="ns-grid" style="--cols:2">' +
-          C.Panel({ title: 'Before（cos 類似度順）', body: '<div id="beforeOut"></div>' }) +
-          C.Panel({ title: 'After（MMR 順）', body: '<div id="afterOut"></div>' }) +
-        '</div>';
-    },
-    onMount: function () {
-      el('lam').addEventListener('input', function () {
-        state.retrieveParams.lambda = +el('lam').value;
-        el('vlam').textContent = state.retrieveParams.lambda;
-        persist(); renderRerank();
-      });
-      renderRerank();
-    }
-  });
 
   function rankList(items) {
     if (!items.length) return C.EmptyState({ message: '結果がありません。' });
@@ -186,47 +189,11 @@
     a.innerHTML = rankList(E.mmr(res.qvec, res.hits, { lambda: state.retrieveParams.lambda, k: res.hits.length }));
   }
 
-  /* ---------- Context Builder ---------- */
-  NSCode.registerView({
-    route: '#/rag/context', module: 'rag', title: 'Context Builder',
-    render: function () {
-      return header({ title: 'Context Builder', purpose: '検索結果からプロンプトを構築', route: '#/rag/context' }) +
-        C.Panel({ title: 'テンプレート', hint: '{context} と {query} が置換されます',
-          body: '<textarea id="tmpl" class="ns-input" rows="4">' + C.esc(state.template || DEFAULT_TEMPLATE) + '</textarea>' }) +
-        C.Panel({ title: '組み立てられたプロンプト', body:
-          '<div class="ns-actions"><button id="copyCtx" class="ns-btn ns-btn--ghost">コピー</button></div>' +
-          '<pre id="ctxOut" class="ns-code"></pre>' });
-    },
-    onMount: function () {
-      el('tmpl').addEventListener('input', function () { state.template = el('tmpl').value; persist(); renderContext(); });
-      el('copyCtx').addEventListener('click', function () {
-        var t = el('ctxOut').textContent;
-        if (navigator.clipboard) navigator.clipboard.writeText(t);
-        el('copyCtx').textContent = 'コピーしました ✓';
-      });
-      renderContext();
-    }
-  });
-
   function renderContext() {
     var out = el('ctxOut'); if (!out) return;
     var res = getRetrieval();
-    out.textContent = E.buildContext(res.hits, el('tmpl') ? el('tmpl').value : state.template, state.query);
+    out.textContent = E.buildContext(res.hits, el('tmpl') ? el('tmpl').value : (state.template || DEFAULT_TEMPLATE), state.query);
   }
-
-  /* ---------- Hallucination ---------- */
-  NSCode.registerView({
-    route: '#/rag/hallucination', module: 'rag', title: 'Hallucination Viewer',
-    render: function () {
-      return header({ title: 'Hallucination Viewer', purpose: '回答とコンテキストの語彙重なりで根拠の薄い文を検出', route: '#/rag/hallucination' }) +
-        C.Panel({ title: '回答（検証対象）', body: '<textarea id="answer" class="ns-input" rows="4">' + C.esc(state.answer) + '</textarea>' }) +
-        C.Panel({ title: '解析結果', hint: '緑＝根拠あり / 赤＝根拠が薄い（要確認）', body: '<div id="halOut"></div>' });
-    },
-    onMount: function () {
-      el('answer').addEventListener('input', function () { state.answer = el('answer').value; persist(); renderHalluc(); });
-      renderHalluc();
-    }
-  });
 
   function renderHalluc() {
     var out = el('halOut'); if (!out) return;
@@ -244,6 +211,11 @@
           '<span class="ns-hal__badge">' + (r.flagged ? '⚠ ' + Math.round(r.ratio * 100) + '%' : '✓ ' + Math.round(r.ratio * 100) + '%') + '</span>' +
           C.esc(r.sentence) + '</div>';
       }).join('') + '</div>' +
-      '<p class="ns-empty__hint">※ コンテキストは現在の検索結果（Retrieval タブの設定）を使用します。語彙重なりベースの簡易検出です。</p>';
+      '<p class="ns-empty__hint">※ コンテキストは現在の検索結果（上部の検索設定）を使用します。語彙重なりベースの簡易検出です。</p>';
   }
+
+  /* ---------- register ONE page for base route + all former sub-routes (aliases) ---------- */
+  ['#/rag', '#/rag/chunk', '#/rag/retrieval', '#/rag/rerank', '#/rag/context', '#/rag/hallucination'].forEach(function (r) {
+    NSCode.registerView({ route: r, module: 'rag', title: 'RAG Lab', render: render, onMount: onMount });
+  });
 })(window.NSCode);

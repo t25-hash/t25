@@ -1,16 +1,11 @@
-/* MCP Lab (MCP) — explore, build, and inspect an MCP server, fully offline.
- * A single server spec (tools / resources / prompts) is shared across tabs and
- * persisted. The Explorer diagrams it, the Builder edits it and live-renders the
- * generated config, and the Inspector shows a SIMULATED JSON-RPC handshake. */
+/* MCP Lab (MCP) — explore, build, and inspect an MCP server, fully offline,
+ * on ONE page (no tabs). A single server spec (tools / resources / prompts) is
+ * shared across sections and persisted. The Explorer diagrams it, the Builder
+ * edits it and live-renders the generated config, and the Inspector shows a
+ * SIMULATED JSON-RPC handshake. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, E = NSCode.mcp;
-
-  var tabs = [
-    { id: 'explorer', label: 'MCP Explorer', route: '#/mcp/explorer' },
-    { id: 'builder', label: 'Server Builder', route: '#/mcp/builder' },
-    { id: 'inspector', label: 'MCP Inspector', route: '#/mcp/inspector' }
-  ];
 
   var DEFAULT_SPEC = {
     name: 'demo-server',
@@ -38,9 +33,6 @@
 
   function persist() { NSCode.api.labState('#/mcp', state); }
   function el(id) { return document.getElementById(id); }
-  function header(o) {
-    return C.PageHeader({ title: o.title, purpose: o.purpose, breadcrumb: ['MCP Lab', o.title] }) + C.Tabs(tabs, o.route);
-  }
   function copyButton(id) {
     return '<div class="ns-actions"><button id="' + id + '" class="ns-btn ns-btn--ghost">コピー</button></div>';
   }
@@ -54,17 +46,86 @@
     });
   }
 
-  /* ============================================================ Explorer */
-  NSCode.registerView({
-    route: '#/mcp/explorer', module: 'mcp', title: 'MCP Explorer',
-    render: function () {
-      return header({ title: 'MCP Explorer', purpose: 'Client ⇄ MCP Server ⇄ 公開機能 の接続構造', route: '#/mcp/explorer' }) +
-        C.Panel({ title: 'メトリクス', body: '<div id="mcpMetrics"></div>' }) +
-        C.Panel({ title: '接続図', hint: 'JSON-RPC over stdio / HTTP（概念図）', body: '<div id="mcpDiagram" class="ns-mcp-diagram"></div>' });
-    },
-    onMount: function () { renderExplorer(); }
-  });
+  /* ============================================================ Single page */
+  function render() {
+    var sp = state.spec;
+    return C.PageHeader({
+        title: 'MCP Lab',
+        purpose: 'MCP サーバーをオフラインで探索・構築・検査します。1 つのサーバー定義（tools / resources / prompts）を全セクションで共有します。'
+      }) +
+      // a) Explorer
+      C.Panel({ title: 'Explorer — メトリクス', body: '<div id="mcpMetrics"></div>' }) +
+      C.Panel({ title: 'Explorer — 接続図', hint: 'Client ⇄ MCP Server ⇄ 公開機能（JSON-RPC over stdio / HTTP・概念図）', body: '<div id="mcpDiagram" class="ns-mcp-diagram"></div>' }) +
+      // b) Server Builder
+      C.Panel({ title: 'Server Builder — サーバー名', body:
+        '<label class="ns-control"><span>name</span><input id="srvName" class="ns-input" value="' + C.esc(sp.name) + '"></label>' }) +
+      C.Panel({ title: 'Server Builder — Tools', hint: 'name / description / params', body:
+        '<div id="toolsList"></div>' +
+        '<div class="ns-mcp-form">' +
+          '<input id="tName" class="ns-input" placeholder="tool name (例: search)">' +
+          '<input id="tDesc" class="ns-input" placeholder="description">' +
+          '<input id="tParams" class="ns-input" placeholder="params: name:type, name:type">' +
+          '<div class="ns-actions"><button id="tAdd" class="ns-btn">Tool を追加</button></div>' +
+        '</div>' }) +
+      C.Panel({ title: 'Server Builder — Resources', hint: 'uri / name', body:
+        '<div id="resList"></div>' +
+        '<div class="ns-mcp-form">' +
+          '<input id="rUri" class="ns-input" placeholder="uri (例: file:///data.json)">' +
+          '<input id="rName" class="ns-input" placeholder="name">' +
+          '<div class="ns-actions"><button id="rAdd" class="ns-btn">Resource を追加</button></div>' +
+        '</div>' }) +
+      C.Panel({ title: 'Server Builder — Prompts', hint: 'name / args (カンマ区切り)', body:
+        '<div id="prmList"></div>' +
+        '<div class="ns-mcp-form">' +
+          '<input id="pName" class="ns-input" placeholder="prompt name (例: review)">' +
+          '<input id="pArgs" class="ns-input" placeholder="args: a, b, c">' +
+          '<div class="ns-actions"><button id="pAdd" class="ns-btn">Prompt を追加</button></div>' +
+        '</div>' }) +
+      C.Panel({ title: 'Server Builder — 生成された MCP 構成', hint: 'toConfig(spec)', body:
+        copyButton('cfgCopy') + '<pre id="cfgOut" class="ns-code"></pre>' }) +
+      // c) Inspector
+      C.Panel({ title: 'Inspector — 通信シーケンス', hint: 'initialize → tools/list → tools/call ※ シミュレートされた JSON-RPC メッセージです（実際の通信は行いません）', body: '<div id="mcpSeq" class="ns-mcp-seq"></div>' });
+  }
 
+  function onMount() {
+    // Builder wiring
+    el('srvName').addEventListener('input', function () {
+      state.spec.name = el('srvName').value || 'mcp-server';
+      persist(); renderConfig(); renderExplorer(); renderInspector();
+    });
+    el('tAdd').addEventListener('click', function () {
+      var name = (el('tName').value || '').trim();
+      if (!name) return;
+      var params = parseParams(el('tParams').value);
+      state.spec.tools.push({ name: name, description: (el('tDesc').value || '').trim(), params: params });
+      el('tName').value = ''; el('tDesc').value = ''; el('tParams').value = '';
+      persist(); renderBuilderLists(); renderConfig(); renderExplorer(); renderInspector();
+    });
+    el('rAdd').addEventListener('click', function () {
+      var uri = (el('rUri').value || '').trim();
+      if (!uri) return;
+      state.spec.resources.push({ uri: uri, name: (el('rName').value || '').trim() || uri });
+      el('rUri').value = ''; el('rName').value = '';
+      persist(); renderBuilderLists(); renderConfig(); renderExplorer(); renderInspector();
+    });
+    el('pAdd').addEventListener('click', function () {
+      var name = (el('pName').value || '').trim();
+      if (!name) return;
+      var args = (el('pArgs').value || '').split(',').map(function (a) { return a.trim(); }).filter(Boolean);
+      state.spec.prompts.push({ name: name, args: args });
+      el('pName').value = ''; el('pArgs').value = '';
+      persist(); renderBuilderLists(); renderConfig(); renderExplorer(); renderInspector();
+    });
+
+    wireCopy('cfgCopy', function () { return el('cfgOut').textContent; });
+
+    renderExplorer();
+    renderBuilderLists();
+    renderConfig();
+    renderInspector();
+  }
+
+  /* ---- a) Explorer ---- */
   function chips(items, kind) {
     if (!items.length) return '<span class="ns-mcp-chip ns-mcp-chip--empty">なし</span>';
     return items.map(function (it) {
@@ -107,75 +168,7 @@
       '</div>';
   }
 
-  /* ============================================================ Builder */
-  NSCode.registerView({
-    route: '#/mcp/builder', module: 'mcp', title: 'MCP Server Builder',
-    render: function () {
-      var sp = state.spec;
-      return header({ title: 'MCP Server Builder', purpose: 'Tool / Resource / Prompt を定義し、構成を生成', route: '#/mcp/builder' }) +
-        C.Panel({ title: 'サーバー名', body:
-          '<label class="ns-control"><span>name</span><input id="srvName" class="ns-input" value="' + C.esc(sp.name) + '"></label>' }) +
-        C.Panel({ title: 'Tools', hint: 'name / description / params', body:
-          '<div id="toolsList"></div>' +
-          '<div class="ns-mcp-form">' +
-            '<input id="tName" class="ns-input" placeholder="tool name (例: search)">' +
-            '<input id="tDesc" class="ns-input" placeholder="description">' +
-            '<input id="tParams" class="ns-input" placeholder="params: name:type, name:type">' +
-            '<div class="ns-actions"><button id="tAdd" class="ns-btn">Tool を追加</button></div>' +
-          '</div>' }) +
-        C.Panel({ title: 'Resources', hint: 'uri / name', body:
-          '<div id="resList"></div>' +
-          '<div class="ns-mcp-form">' +
-            '<input id="rUri" class="ns-input" placeholder="uri (例: file:///data.json)">' +
-            '<input id="rName" class="ns-input" placeholder="name">' +
-            '<div class="ns-actions"><button id="rAdd" class="ns-btn">Resource を追加</button></div>' +
-          '</div>' }) +
-        C.Panel({ title: 'Prompts', hint: 'name / args (カンマ区切り)', body:
-          '<div id="prmList"></div>' +
-          '<div class="ns-mcp-form">' +
-            '<input id="pName" class="ns-input" placeholder="prompt name (例: review)">' +
-            '<input id="pArgs" class="ns-input" placeholder="args: a, b, c">' +
-            '<div class="ns-actions"><button id="pAdd" class="ns-btn">Prompt を追加</button></div>' +
-          '</div>' }) +
-        C.Panel({ title: '生成された MCP 構成', hint: 'toConfig(spec)', body:
-          copyButton('cfgCopy') + '<pre id="cfgOut" class="ns-code"></pre>' });
-    },
-    onMount: function () {
-      el('srvName').addEventListener('input', function () {
-        state.spec.name = el('srvName').value || 'mcp-server';
-        persist(); renderConfig();
-      });
-
-      el('tAdd').addEventListener('click', function () {
-        var name = (el('tName').value || '').trim();
-        if (!name) return;
-        var params = parseParams(el('tParams').value);
-        state.spec.tools.push({ name: name, description: (el('tDesc').value || '').trim(), params: params });
-        el('tName').value = ''; el('tDesc').value = ''; el('tParams').value = '';
-        persist(); renderBuilderLists(); renderConfig();
-      });
-      el('rAdd').addEventListener('click', function () {
-        var uri = (el('rUri').value || '').trim();
-        if (!uri) return;
-        state.spec.resources.push({ uri: uri, name: (el('rName').value || '').trim() || uri });
-        el('rUri').value = ''; el('rName').value = '';
-        persist(); renderBuilderLists(); renderConfig();
-      });
-      el('pAdd').addEventListener('click', function () {
-        var name = (el('pName').value || '').trim();
-        if (!name) return;
-        var args = (el('pArgs').value || '').split(',').map(function (a) { return a.trim(); }).filter(Boolean);
-        state.spec.prompts.push({ name: name, args: args });
-        el('pName').value = ''; el('pArgs').value = '';
-        persist(); renderBuilderLists(); renderConfig();
-      });
-
-      wireCopy('cfgCopy', function () { return el('cfgOut').textContent; });
-      renderBuilderLists();
-      renderConfig();
-    }
-  });
-
+  /* ---- b) Server Builder ---- */
   function parseParams(raw) {
     return (raw || '').split(',').map(function (p) {
       var t = p.trim(); if (!t) return null;
@@ -228,7 +221,7 @@
         if (!btn) return;
         var kind = btn.getAttribute('data-kind'), idx = +btn.getAttribute('data-idx');
         state.spec[kind].splice(idx, 1);
-        persist(); renderBuilderLists(); renderConfig();
+        persist(); renderBuilderLists(); renderConfig(); renderExplorer(); renderInspector();
       });
     });
   }
@@ -242,16 +235,7 @@
     out.textContent = E.toConfig(state.spec);
   }
 
-  /* ============================================================ Inspector */
-  NSCode.registerView({
-    route: '#/mcp/inspector', module: 'mcp', title: 'MCP Inspector',
-    render: function () {
-      return header({ title: 'MCP Inspector', purpose: 'initialize → tools/list → tools/call の通信を確認', route: '#/mcp/inspector' }) +
-        C.Panel({ title: '通信シーケンス', hint: '※ シミュレートされた JSON-RPC メッセージです（実際の通信は行いません）', body: '<div id="mcpSeq" class="ns-mcp-seq"></div>' });
-    },
-    onMount: function () { renderInspector(); }
-  });
-
+  /* ---- c) Inspector ---- */
   function renderInspector() {
     var box = el('mcpSeq'); if (!box) return;
     var msgs = E.handshake(state.spec);
@@ -270,4 +254,12 @@
       '</div>';
     }).join('');
   }
+
+  /* ---- Register ONE page for base route + former sub-routes (aliases) ---- */
+  ['#/mcp', '#/mcp/explorer', '#/mcp/builder', '#/mcp/inspector'].forEach(function (route) {
+    NSCode.registerView({
+      route: route, module: 'mcp', title: 'MCP Lab',
+      render: render, onMount: onMount
+    });
+  });
 })(window.NSCode);

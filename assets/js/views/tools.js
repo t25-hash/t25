@@ -1,17 +1,11 @@
 /* Tool Calling Lab (TOOL) — an offline, deterministic walkthrough of LLM
- * "tool use" across 3 tabs. State (selected tool, goal, execution log) is
- * shared across tabs and persisted, mirroring the RAG Lab structure.
+ * "tool use" on ONE page (no tabs). State (selected tool, goal, execution log)
+ * is shared across sections and persisted.
  * Registry -> pick a tool, Selection -> see why a tool is chosen for a goal,
  * Execution -> run a tool and inspect the simulated call log. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, T = NSCode.tools;
-
-  var tabs = [
-    { id: 'registry', label: 'Tool Registry', route: '#/tools/registry' },
-    { id: 'selection', label: 'Selection Viewer', route: '#/tools/selection' },
-    { id: 'execution', label: 'Execution Viewer', route: '#/tools/execution' }
-  ];
 
   var CAT_LABEL = { read: '読み取り', write: '書き込み', exec: '実行' };
 
@@ -20,16 +14,13 @@
   var state = NSCode.api.labState('#/tools') || {};
   state = Object.assign({
     selected: 'Search',   // tool selected from the Registry, used by Execution
-    goal: DEFAULT_GOAL,   // Selection Viewer goal
+    goal: DEFAULT_GOAL,   // Selection goal
     args: {},             // { ToolName: { paramName: value } } sticky arg inputs
     log: []               // execution log entries (most recent first)
   }, state);
 
   function persist() { NSCode.api.labState('#/tools', state); }
   function el(id) { return document.getElementById(id); }
-  function header(s) {
-    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Tool Calling Lab', s.title] }) + C.Tabs(tabs, s.route);
-  }
   function catBadge(cat) {
     return '<span class="ns-toolcat ns-toolcat--' + cat + '">' + C.esc(CAT_LABEL[cat] || cat) + '</span>';
   }
@@ -38,29 +29,86 @@
     return state.args[toolName];
   }
 
-  /* ========== Tool Registry ========== */
-  NSCode.registerView({
-    route: '#/tools/registry', module: 'tools', title: 'Tool Registry',
-    render: function () {
-      return header({ title: 'Tool Registry', purpose: '利用可能なツール一覧。カードをクリックすると Execution Viewer の対象ツールになります。', route: '#/tools/registry' }) +
-        C.Panel({
-          title: 'Tools', hint: 'すべてモックツール（オフライン・決定論的シミュレーション）',
-          body: '<div id="toolGrid"></div>'
-        });
-    },
-    onMount: function () {
-      renderRegistry();
-      var grid = el('toolGrid');
-      grid.addEventListener('click', function (e) {
-        var card = e.target.closest ? e.target.closest('.ns-toolcard') : null;
-        if (!card) return;
-        state.selected = card.getAttribute('data-tool');
-        persist();
-        renderRegistry();
-      });
-    }
-  });
+  /* ============================================================ Single page */
+  function render() {
+    var opts = T.list().map(function (t) {
+      var sel = t.name === state.selected ? ' selected' : '';
+      return '<option value="' + C.esc(t.name) + '"' + sel + '>' + C.esc(t.name) + ' (' + C.esc(CAT_LABEL[t.category]) + ')</option>';
+    }).join('');
 
+    return C.PageHeader({
+        title: 'Tool Calling Lab',
+        purpose: 'LLM の「ツール利用」をオフラインかつ決定論的に体験します。ツールを選び、ゴールに対する選択理由を見て、実行ログを確認します。'
+      }) +
+      // a) Tool Registry
+      C.Panel({
+        title: 'Tool Registry',
+        hint: 'カードをクリックすると実行対象ツールになります（すべてモックツール）',
+        body: '<div id="toolGrid"></div>'
+      }) +
+      // b) Selection Viewer
+      C.Panel({
+        title: 'Selection Viewer',
+        hint: 'スコア = ゴール語のうち一致した割合（lexical overlap・LLM 不使用）',
+        body:
+          '<label class="ns-control"><span>ゴール</span>' +
+          '<input id="goal" class="ns-input" value="' + C.esc(state.goal) + '" placeholder="例: ' + C.esc(DEFAULT_GOAL) + '"></label>' +
+          '<div id="selOut"></div>'
+      }) +
+      // c) Execution Viewer
+      '<div id="execMetrics"></div>' +
+      C.Panel({
+        title: 'Execution Viewer',
+        hint: '出力・所要時間はすべて引数のハッシュから決定論的に生成（モック）',
+        body:
+          C.Controls([{ label: 'ツール', control: '<select id="execTool" class="ns-input">' + opts + '</select>' }]) +
+          '<div id="execArgs" class="ns-controls"></div>' +
+          '<div class="ns-actions"><button id="execRun" class="ns-btn">実行</button>' +
+          '<button id="execClear" class="ns-btn ns-btn--ghost">ログをクリア</button></div>'
+      }) +
+      C.Panel({ title: '実行ログ', hint: '新しい呼び出しを先頭に追加', body: '<div id="execLog"></div>' });
+  }
+
+  function onMount() {
+    // Registry
+    var grid = el('toolGrid');
+    grid.addEventListener('click', function (e) {
+      var card = e.target.closest ? e.target.closest('.ns-toolcard') : null;
+      if (!card) return;
+      state.selected = card.getAttribute('data-tool');
+      persist();
+      renderRegistry();
+      syncExecTool();
+      renderArgFields();
+    });
+
+    // Selection
+    el('goal').addEventListener('input', function () {
+      state.goal = el('goal').value; persist(); renderSelection();
+    });
+
+    // Execution
+    var sel = el('execTool');
+    sel.addEventListener('change', function () {
+      state.selected = sel.value; persist(); renderArgFields(); renderRegistry();
+    });
+    el('execRun').addEventListener('click', runExecution);
+    el('execClear').addEventListener('click', function () {
+      state.log = []; persist(); renderLog(); renderMetrics();
+    });
+
+    renderRegistry();
+    renderSelection();
+    renderArgFields();
+    renderLog();
+    renderMetrics();
+  }
+
+  function syncExecTool() {
+    var sel = el('execTool'); if (sel) sel.value = state.selected;
+  }
+
+  /* ---- a) Tool Registry ---- */
   function renderRegistry() {
     var out = el('toolGrid'); if (!out) return;
     var cards = T.list().map(function (tool) {
@@ -78,29 +126,10 @@
         '</div>';
     }).join('');
     out.innerHTML = C.Grid(cards, 3) +
-      '<p class="ns-empty__hint">選択中: <b>' + C.esc(state.selected) + '</b> — Execution Viewer タブで実行できます。</p>';
+      '<p class="ns-empty__hint">選択中: <b>' + C.esc(state.selected) + '</b> — Execution Viewer で実行できます。</p>';
   }
 
-  /* ========== Tool Selection Viewer ========== */
-  NSCode.registerView({
-    route: '#/tools/selection', module: 'tools', title: 'Tool Selection Viewer',
-    render: function () {
-      return header({ title: 'Tool Selection Viewer', purpose: 'ゴール文とツールの語彙的な重なりで、どのツールを選ぶかを可視化します。', route: '#/tools/selection' }) +
-        C.Panel({ title: 'ゴール', body: '<input id="goal" class="ns-input" value="' + C.esc(state.goal) + '" placeholder="例: ' + C.esc(DEFAULT_GOAL) + '">' }) +
-        C.Panel({
-          title: '候補ツールのランキング',
-          hint: 'スコア = ゴール語のうち一致した割合（lexical overlap・LLM 不使用）',
-          body: '<div id="selOut"></div>'
-        });
-    },
-    onMount: function () {
-      el('goal').addEventListener('input', function () {
-        state.goal = el('goal').value; persist(); renderSelection();
-      });
-      renderSelection();
-    }
-  });
-
+  /* ---- b) Selection Viewer ---- */
   function renderSelection() {
     var out = el('selOut'); if (!out) return;
     var ranked = T.selectTool(state.goal);
@@ -122,41 +151,7 @@
     '<p class="ns-empty__hint">※ 実際のエージェントは説明文の意味やスキーマで選択しますが、ここでは決定論的なキーワード一致で近似しています。</p>';
   }
 
-  /* ========== Tool Execution Viewer ========== */
-  NSCode.registerView({
-    route: '#/tools/execution', module: 'tools', title: 'Tool Execution Viewer',
-    render: function () {
-      var opts = T.list().map(function (t) {
-        var sel = t.name === state.selected ? ' selected' : '';
-        return '<option value="' + C.esc(t.name) + '"' + sel + '>' + C.esc(t.name) + ' (' + C.esc(CAT_LABEL[t.category]) + ')</option>';
-      }).join('');
-      return header({ title: 'Tool Execution Viewer', purpose: 'ツールを選んで引数を入力し、シミュレートされた呼び出しログを確認します。', route: '#/tools/execution' }) +
-        '<div id="execMetrics"></div>' +
-        C.Panel({
-          title: 'ツール呼び出し', hint: '出力・所要時間はすべて引数のハッシュから決定論的に生成（モック）',
-          body:
-            C.Controls([{ label: 'ツール', control: '<select id="execTool" class="ns-input">' + opts + '</select>' }]) +
-            '<div id="execArgs" class="ns-controls"></div>' +
-            '<div class="ns-actions"><button id="execRun" class="ns-btn">実行</button>' +
-            '<button id="execClear" class="ns-btn ns-btn--ghost">ログをクリア</button></div>'
-        }) +
-        C.Panel({ title: '実行ログ', hint: '新しい呼び出しを先頭に追加', body: '<div id="execLog"></div>' });
-    },
-    onMount: function () {
-      var sel = el('execTool');
-      sel.addEventListener('change', function () {
-        state.selected = sel.value; persist(); renderArgFields();
-      });
-      el('execRun').addEventListener('click', runExecution);
-      el('execClear').addEventListener('click', function () {
-        state.log = []; persist(); renderLog(); renderMetrics();
-      });
-      renderArgFields();
-      renderLog();
-      renderMetrics();
-    }
-  });
-
+  /* ---- c) Execution Viewer ---- */
   function renderMetrics() {
     var out = el('execMetrics'); if (!out) return;
     var runs = state.log.length;
@@ -232,4 +227,12 @@
         '</div>';
     }).join('');
   }
+
+  /* ---- Register ONE page for base route + former sub-routes (aliases) ---- */
+  ['#/tools', '#/tools/registry', '#/tools/selection', '#/tools/execution'].forEach(function (route) {
+    NSCode.registerView({
+      route: route, module: 'tools', title: 'Tool Calling Lab',
+      render: render, onMount: onMount
+    });
+  });
 })(window.NSCode);

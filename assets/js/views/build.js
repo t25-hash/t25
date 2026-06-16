@@ -89,7 +89,8 @@
           '<div class="ns-grid bl-cols" style="--cols:2">' +
             C.Panel({ title: '構成', body: formBody() }) +
             C.Panel({ title: '出力', hint: 'JSON / YAML / Python / LangGraph', body:
-              C.Tabs(FORMATS.map(function (f) { return { label: f.label, route: '#bl-fmt-' + f.id }; }), '') +
+              C.Controls([{ label: '形式', control: '<select id="blFmt" class="ns-input">' +
+                FORMATS.map(function (f) { return '<option value="' + f.id + '">' + f.label + '</option>'; }).join('') + '</select>' }]) +
               '<pre id="blOut" class="ns-code"></pre>' +
               '<div class="ns-actions">' +
                 '<button id="blCopy" class="ns-btn ns-btn--ghost">コピー</button>' +
@@ -110,24 +111,9 @@
         }
         function commit() { persist(kind, spec); refresh(); }
 
-        // format tabs (intercept the placeholder hash links)
-        var tabEls = document.querySelectorAll('.ns-panel .ns-tab[href^="#bl-fmt-"]');
-        function setActiveTab() {
-          for (var i = 0; i < tabEls.length; i++) {
-            var on = tabEls[i].getAttribute('href') === '#bl-fmt-' + fmt;
-            if (on) tabEls[i].classList.add('is-active'); else tabEls[i].classList.remove('is-active');
-          }
-        }
-        for (var i = 0; i < tabEls.length; i++) {
-          (function (t) {
-            t.addEventListener('click', function (e) {
-              e.preventDefault();
-              fmt = t.getAttribute('href').replace('#bl-fmt-', '');
-              setActiveTab(); refresh();
-            });
-          })(tabEls[i]);
-        }
-        setActiveTab();
+        // format selector
+        var fmtSel = el('blFmt');
+        if (fmtSel) { fmtSel.value = fmt; fmtSel.addEventListener('change', function () { fmt = fmtSel.value; refresh(); }); }
 
         el('blCopy').addEventListener('click', function () {
           var t = el('blOut').textContent;

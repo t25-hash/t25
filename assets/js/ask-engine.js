@@ -32,7 +32,7 @@
     return all;
   }
 
-  /* ask a question over the docs -> { answer:[{s,src,score}], hits, prompt, chunks } */
+  /* ask a question over the docs -> { answer:[{s,src}], lead, hits, prompt, chunks } */
   function ask(query, opts) {
     opts = opts || {};
     var docs = opts.docs || getDocs();
@@ -40,20 +40,54 @@
     if (!chunks.length || !query) return null;
     var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0 });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
-    var sents = [];
+
+    // candidate sentences from retrieved passages, scored by relevance to query
+    var cands = [], idx = 0;
     res.hits.forEach(function (h) {
       NSCode.research.splitSentences(h.chunk.text).forEach(function (s) {
-        sents.push({ s: s, src: h.chunk.source, score: emb.cosine(qv, emb.embed(s, 64)) });
+        s = cleanSentence(s);
+        if (s.length < 6) return;
+        cands.push({ s: s, src: h.chunk.source, order: idx++, vec: emb.embed(s, 64), rel: emb.cosine(qv, emb.embed(s, 64)) });
       });
     });
-    sents.sort(function (a, b) { return b.score - a.score; });
-    var answer = [];
-    for (var i = 0; i < sents.length && answer.length < 3; i++) {
-      var c = sents[i].s;
-      var dup = answer.some(function (p) { return p.s.indexOf(c) >= 0 || c.indexOf(p.s) >= 0; });
-      if (!dup) answer.push(sents[i]);
+    // de-duplicate (substring / near-identical) keeping the higher-relevance one
+    cands.sort(function (a, b) { return b.rel - a.rel; });
+    var uniq = [];
+    cands.forEach(function (c) {
+      if (!uniq.some(function (p) { return p.s.indexOf(c.s) >= 0 || c.s.indexOf(p.s) >= 0; })) uniq.push(c);
+    });
+
+    // MMR selection: relevance + diversity, so the answer isn't redundant
+    var k = Math.min(opts.sentences || 3, uniq.length), lambda = 0.72, sel = [], pool = uniq.slice();
+    while (sel.length < k && pool.length) {
+      var best = null, bs = -Infinity;
+      for (var i = 0; i < pool.length; i++) {
+        var c = pool[i], div = 0;
+        for (var j = 0; j < sel.length; j++) div = Math.max(div, emb.cosine(c.vec, sel[j].vec));
+        var sc = lambda * c.rel - (1 - lambda) * div;
+        if (sc > bs) { bs = sc; best = c; }
+      }
+      if (!best || best.rel <= 0.001) break;
+      sel.push(best); pool.splice(pool.indexOf(best), 1);
     }
-    return { answer: answer, hits: res.hits, chunks: chunks, prompt: NSCode.rag.buildContext(res.hits, null, query) };
+    // lead with the most relevant sentence, then the rest in document order
+    var lead = sel.slice().sort(function (a, b) { return b.rel - a.rel; })[0];
+    var rest = sel.filter(function (x) { return x !== lead; }).sort(function (a, b) { return a.order - b.order; });
+    var ordered = lead ? [lead].concat(rest) : sel;
+    var answer = ordered.map(function (x) { return { s: x.s, src: x.src }; });
+
+    return {
+      answer: answer,
+      lead: answer.map(function (a) { return a.s; }).join(' '),
+      hits: res.hits, chunks: chunks,
+      prompt: NSCode.rag.buildContext(res.hits, null, query)
+    };
+  }
+
+  function cleanSentence(s) {
+    return String(s).replace(/\s+/g, ' ').trim()
+      .replace(/^[\s,、。.;:：；・\-]+/, '')      // strip leading punctuation/fragments
+      .replace(/\s+([。.！？!?])/g, '$1');
   }
 
   NSCode.askEngine = {

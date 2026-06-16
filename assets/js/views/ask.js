@@ -102,13 +102,14 @@
     var q = (el('askQ') ? el('askQ').value : state.query).trim();
     var res = q ? A.ask(q, { topK: state.topK }) : null;
     if (!res) { out.innerHTML = C.EmptyState({ icon: '🔎', message: '文書を追加して質問してください。' }); if (pr) pr.textContent = ''; return; }
+    var srcs = {}; res.answer.forEach(function (a) { srcs[a.src] = 1; });
     out.innerHTML =
       (res.answer.length
-        ? '<div class="ns-qa-answer"><b>回答（文書からの抜粋）:</b><ul>' + res.answer.map(function (a) {
-            return '<li>' + highlight(a.s, q) + ' <span class="ns-tag">' + C.esc(a.src) + '</span></li>';
-          }).join('') + '</ul></div>'
+        ? '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
+            '<p class="ns-qa-answer__lead">' + highlight(res.lead, q) + '</p>' +
+            '<div class="ns-qa-answer__src">出典: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>'
         : '<p class="ns-empty__hint">関連箇所が見つかりませんでした。文書か質問を変えてみてください。</p>') +
-      '<p class="ns-empty__hint">出典（検索された関連チャンク・スコア順）:</p>' +
+      '<p class="ns-empty__hint">根拠（検索された関連チャンク・スコア順）:</p>' +
       res.hits.map(function (h, i) {
         return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
           '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +

@@ -1,19 +1,14 @@
-/* Memory Lab (MEM) — an offline, deterministic tour of agent memory.
- * Four stores (Short / Long / Semantic / Episodic) are shared across tabs and
- * persisted, so adding a turn in Viewer feeds Compression, and Semantic items
- * power Recall. All processing is heuristic & local (no LLM / no backend):
+/* Memory Lab (MEM) — an offline, deterministic tour of agent memory on ONE
+ * page (no tabs). Four stores (Short / Long / Semantic / Episodic) are shared
+ * across sections and persisted, so adding a turn in the Viewer feeds
+ * Compression, and Semantic items power Recall. Sections (stacked):
+ *   a) Memory Viewer  b) Compression  c) Summary  d) Recall
+ * All processing is heuristic & local (no LLM / no backend):
  *  - compression/summary  -> NSCode.research.summarize (frequency-based)
  *  - recall               -> NSCode.embeddings cosine (lexical hashing trick) */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, M = NSCode.memory;
-
-  var tabs = [
-    { id: 'viewer', label: 'Memory Viewer', route: '#/memory/viewer' },
-    { id: 'compression', label: 'Compression', route: '#/memory/compression' },
-    { id: 'summary', label: 'Summary', route: '#/memory/summary' },
-    { id: 'recall', label: 'Recall', route: '#/memory/recall' }
-  ];
 
   var SEED_SEMANTIC = [
     { text: 'RAG（検索拡張生成）は外部知識を検索してプロンプトに注入し、回答の事実性を高める手法です。' },
@@ -54,58 +49,126 @@
   function range(id, min, max, step, val) {
     return '<input id="' + id + '" class="ns-range" type="range" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" value="' + val + '">';
   }
-  function header(s) {
-    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Memory Lab', s.title] }) + C.Tabs(tabs, s.route);
-  }
   function shortText() {
     return state.short.map(function (t) { return t.text; }).join(' ');
   }
 
-  /* ============================================================
-   * Memory Viewer
-   * ============================================================ */
-  NSCode.registerView({
-    route: '#/memory/viewer', module: 'memory', title: 'Memory Viewer',
-    render: function () {
-      return header({ title: 'Memory Viewer', purpose: '4種のメモリストアを確認・編集', route: '#/memory/viewer' }) +
-        C.Panel({ title: 'メモリ概況', hint: '各ストアの件数', body: '<div id="memCounts"></div>' }) +
-        C.Panel({ title: '会話ターンを追加', hint: 'Short メモリと Episodic イベントに同時追記',
-          body: C.Controls([
-            { label: 'Role', control: '<select id="turnRole" class="ns-input"><option value="user">user</option><option value="assistant">assistant</option></select>' },
-            { label: '発話テキスト', control: '<input id="turnText" class="ns-input" placeholder="メッセージを入力…">' }
-          ]) + '<div class="ns-actions"><button id="addTurn" class="ns-btn">追加</button></div>' }) +
-        '<div class="ns-grid" style="--cols:2">' +
-          C.Panel({ title: 'Short Memory', hint: '直近の会話ターン',
-            body: '<div class="ns-actions"><button id="clearShort" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeShort"></div>' }) +
-          C.Panel({ title: 'Long Memory', hint: '永続化された事実',
-            body: '<div class="ns-actions"><button id="clearLong" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeLong"></div>' }) +
-          C.Panel({ title: 'Semantic Memory', hint: '知識アイテム（Recall の対象）',
-            body: '<div class="ns-actions"><button id="clearSem" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeSem"></div>' }) +
-          C.Panel({ title: 'Episodic Memory', hint: '時刻付きの出来事',
-            body: '<div class="ns-actions"><button id="clearEpi" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeEpi"></div>' }) +
-        '</div>';
-    },
-    onMount: function () {
-      el('addTurn').addEventListener('click', function () {
-        var text = el('turnText').value.trim();
-        if (!text) return;
-        var role = el('turnRole').value;
-        state.short.push({ role: role, text: text });
-        state.episodic.push({ ts: new Date().toISOString(), text: '会話ターン追加 (' + role + '): ' + text });
-        el('turnText').value = '';
-        persist(); renderViewer();
-      });
-      el('turnText').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); el('addTurn').click(); }
-      });
-      el('clearShort').addEventListener('click', function () { state.short = []; persist(); renderViewer(); });
-      el('clearLong').addEventListener('click', function () { state.long = []; persist(); renderViewer(); });
-      el('clearSem').addEventListener('click', function () { state.semantic = []; persist(); renderViewer(); });
-      el('clearEpi').addEventListener('click', function () { state.episodic = []; persist(); renderViewer(); });
-      renderViewer();
-    }
-  });
+  /* ===================== single-page render ===================== */
+  function render() {
+    var c = state.compress;
+    var cmpInitial = c.fromShort ? shortText() : (c.text || shortText());
+    var sm = state.summary;
+    var r = state.recall;
 
+    return C.PageHeader({
+        title: 'Memory Lab',
+        purpose: '4種のメモリストアと Compression / Summary / Recall を1ページで確認',
+        breadcrumb: ['Memory Lab']
+      }) +
+
+      /* a) Memory Viewer */
+      C.Panel({ title: 'Memory Viewer — 概況', hint: '各ストアの件数', body: '<div id="memCounts"></div>' }) +
+      C.Panel({ title: 'Memory Viewer — 会話ターンを追加', hint: 'Short メモリと Episodic イベントに同時追記',
+        body: C.Controls([
+          { label: 'Role', control: '<select id="turnRole" class="ns-input"><option value="user">user</option><option value="assistant">assistant</option></select>' },
+          { label: '発話テキスト', control: '<input id="turnText" class="ns-input" placeholder="メッセージを入力…">' }
+        ]) + '<div class="ns-actions"><button id="addTurn" class="ns-btn">追加</button></div>' }) +
+      '<div class="ns-grid" style="--cols:2">' +
+        C.Panel({ title: 'Short Memory', hint: '直近の会話ターン',
+          body: '<div class="ns-actions"><button id="clearShort" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeShort"></div>' }) +
+        C.Panel({ title: 'Long Memory', hint: '永続化された事実',
+          body: '<div class="ns-actions"><button id="clearLong" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeLong"></div>' }) +
+        C.Panel({ title: 'Semantic Memory', hint: '知識アイテム（Recall の対象）',
+          body: '<div class="ns-actions"><button id="clearSem" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeSem"></div>' }) +
+        C.Panel({ title: 'Episodic Memory', hint: '時刻付きの出来事',
+          body: '<div class="ns-actions"><button id="clearEpi" class="ns-btn ns-btn--ghost">クリア</button></div><div id="storeEpi"></div>' }) +
+      '</div>' +
+
+      /* b) Compression */
+      C.Panel({ title: 'Compression — 圧縮対象テキスト', hint: '初期値は Short メモリの結合。編集も可能',
+        body: '<div class="ns-actions"><button id="loadShort" class="ns-btn ns-btn--ghost">Short メモリを読込</button></div>' +
+          '<textarea id="cmpIn" class="ns-input" rows="6">' + C.esc(cmpInitial) + '</textarea>' }) +
+      C.Panel({ title: 'Compression — 設定', hint: 'frequency-based 抽出型要約（LLM 不使用）', body: C.Controls([
+        { label: '目標文数: <b id="vcmpN">' + c.nSentences + '</b>', control: range('cmpN', 1, 8, 1, c.nSentences) }
+      ]) }) +
+      C.Panel({ title: 'Compression — 結果', hint: 'before / after 文字数と削減率', body: '<div id="cmpOut"></div>' }) +
+
+      /* c) Summary */
+      C.Panel({ title: 'Summary — 入力テキスト', body: '<textarea id="sumIn" class="ns-input" rows="7">' + C.esc(sm.text) + '</textarea>' }) +
+      C.Panel({ title: 'Summary — 設定', hint: 'frequency-based 抽出型要約（LLM 不使用）', body: C.Controls([
+        { label: '要約文数: <b id="vsumN">' + sm.nSentences + '</b>', control: range('sumN', 1, 8, 1, sm.nSentences) }
+      ]) }) +
+      C.Panel({ title: 'Summary — 要約', hint: '選抜された文を箇条書きで表示', body: '<div id="sumOut"></div>' }) +
+
+      /* d) Recall */
+      C.Panel({ title: 'Recall — クエリ', hint: 'クエリに近い Semantic メモリをコサイン類似度で想起', body: '<input id="rqQuery" class="ns-input" value="' + C.esc(r.query) + '">' }) +
+      C.Panel({ title: 'Recall — 設定', hint: 'lexical なハッシュ埋め込みの類似度（学習済みニューラル埋め込みではありません）', body: C.Controls([
+        { label: 'TopK: <b id="vrqK">' + r.k + '</b>', control: range('rqK', 1, 6, 1, r.k) }
+      ]) }) +
+      C.Panel({ title: 'Recall — 想起結果', hint: 'Semantic メモリを類似度順に表示', body: '<div id="rqOut"></div>' });
+  }
+
+  function onMount() {
+    /* a) Viewer wiring */
+    el('addTurn').addEventListener('click', function () {
+      var text = el('turnText').value.trim();
+      if (!text) return;
+      var role = el('turnRole').value;
+      state.short.push({ role: role, text: text });
+      state.episodic.push({ ts: new Date().toISOString(), text: '会話ターン追加 (' + role + '): ' + text });
+      el('turnText').value = '';
+      persist(); renderViewer();
+    });
+    el('turnText').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); el('addTurn').click(); }
+    });
+    el('clearShort').addEventListener('click', function () { state.short = []; persist(); renderViewer(); });
+    el('clearLong').addEventListener('click', function () { state.long = []; persist(); renderViewer(); });
+    el('clearSem').addEventListener('click', function () { state.semantic = []; persist(); renderViewer(); renderRecall(); });
+    el('clearEpi').addEventListener('click', function () { state.episodic = []; persist(); renderViewer(); });
+
+    /* b) Compression wiring */
+    el('loadShort').addEventListener('click', function () {
+      state.compress.fromShort = true;
+      state.compress.text = '';
+      el('cmpIn').value = shortText();
+      persist(); renderCompression();
+    });
+    el('cmpIn').addEventListener('input', function () {
+      state.compress.fromShort = false;
+      state.compress.text = el('cmpIn').value;
+      persist(); renderCompression();
+    });
+    el('cmpN').addEventListener('input', function () {
+      state.compress.nSentences = +el('cmpN').value;
+      el('vcmpN').textContent = state.compress.nSentences;
+      persist(); renderCompression();
+    });
+
+    /* c) Summary wiring */
+    el('sumIn').addEventListener('input', function () {
+      state.summary.text = el('sumIn').value; persist(); renderSummary();
+    });
+    el('sumN').addEventListener('input', function () {
+      state.summary.nSentences = +el('sumN').value;
+      el('vsumN').textContent = state.summary.nSentences;
+      persist(); renderSummary();
+    });
+
+    /* d) Recall wiring */
+    function updRecall() {
+      state.recall.query = el('rqQuery').value;
+      state.recall.k = +el('rqK').value;
+      el('vrqK').textContent = state.recall.k;
+      persist(); renderRecall();
+    }
+    el('rqQuery').addEventListener('input', updRecall);
+    el('rqK').addEventListener('input', updRecall);
+
+    renderViewer(); renderCompression(); renderSummary(); renderRecall();
+  }
+
+  /* ===================== a) Memory Viewer ===================== */
   function renderViewer() {
     var counts = el('memCounts');
     if (counts) {
@@ -150,44 +213,7 @@
     return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  /* ============================================================
-   * Compression Viewer
-   * ============================================================ */
-  NSCode.registerView({
-    route: '#/memory/compression', module: 'memory', title: 'Compression Viewer',
-    render: function () {
-      var c = state.compress;
-      var initial = c.fromShort ? shortText() : (c.text || shortText());
-      return header({ title: 'Compression Viewer', purpose: '長い会話履歴を要約して圧縮（コンテキスト節約）', route: '#/memory/compression' }) +
-        C.Panel({ title: '圧縮対象テキスト', hint: '初期値は Short メモリの結合。編集も可能',
-          body: '<div class="ns-actions"><button id="loadShort" class="ns-btn ns-btn--ghost">Short メモリを読込</button></div>' +
-            '<textarea id="cmpIn" class="ns-input" rows="6">' + C.esc(initial) + '</textarea>' }) +
-        C.Panel({ title: '設定', hint: 'frequency-based 抽出型要約（LLM 不使用）', body: C.Controls([
-          { label: '目標文数: <b id="vcmpN">' + c.nSentences + '</b>', control: range('cmpN', 1, 8, 1, c.nSentences) }
-        ]) }) +
-        C.Panel({ title: '圧縮結果', hint: 'before / after 文字数と削減率', body: '<div id="cmpOut"></div>' });
-    },
-    onMount: function () {
-      el('loadShort').addEventListener('click', function () {
-        state.compress.fromShort = true;
-        state.compress.text = '';
-        el('cmpIn').value = shortText();
-        persist(); renderCompression();
-      });
-      el('cmpIn').addEventListener('input', function () {
-        state.compress.fromShort = false;
-        state.compress.text = el('cmpIn').value;
-        persist(); renderCompression();
-      });
-      el('cmpN').addEventListener('input', function () {
-        state.compress.nSentences = +el('cmpN').value;
-        el('vcmpN').textContent = state.compress.nSentences;
-        persist(); renderCompression();
-      });
-      renderCompression();
-    }
-  });
-
+  /* ===================== b) Compression ===================== */
   function renderCompression() {
     var out = el('cmpOut'); if (!out) return;
     var text = el('cmpIn') ? el('cmpIn').value : shortText();
@@ -208,33 +234,7 @@
       '<p class="ns-empty__hint">※ 抽出型の簡易要約です。原文の文を頻度スコアで選抜しています（生成・言い換えはしません）。</p>';
   }
 
-  /* ============================================================
-   * Summary Viewer
-   * ============================================================ */
-  NSCode.registerView({
-    route: '#/memory/summary', module: 'memory', title: 'Summary Viewer',
-    render: function () {
-      var s = state.summary;
-      return header({ title: 'Summary Viewer', purpose: '文書を要点（箇条書き）に要約', route: '#/memory/summary' }) +
-        C.Panel({ title: '入力テキスト', body: '<textarea id="sumIn" class="ns-input" rows="7">' + C.esc(s.text) + '</textarea>' }) +
-        C.Panel({ title: '設定', hint: 'frequency-based 抽出型要約（LLM 不使用）', body: C.Controls([
-          { label: '要約文数: <b id="vsumN">' + s.nSentences + '</b>', control: range('sumN', 1, 8, 1, s.nSentences) }
-        ]) }) +
-        C.Panel({ title: '要約', hint: '選抜された文を箇条書きで表示', body: '<div id="sumOut"></div>' });
-    },
-    onMount: function () {
-      el('sumIn').addEventListener('input', function () {
-        state.summary.text = el('sumIn').value; persist(); renderSummary();
-      });
-      el('sumN').addEventListener('input', function () {
-        state.summary.nSentences = +el('sumN').value;
-        el('vsumN').textContent = state.summary.nSentences;
-        persist(); renderSummary();
-      });
-      renderSummary();
-    }
-  });
-
+  /* ===================== c) Summary ===================== */
   function renderSummary() {
     var out = el('sumOut'); if (!out) return;
     var text = el('sumIn') ? el('sumIn').value : state.summary.text;
@@ -245,33 +245,7 @@
     }).join('') + '</ul>';
   }
 
-  /* ============================================================
-   * Recall Viewer
-   * ============================================================ */
-  NSCode.registerView({
-    route: '#/memory/recall', module: 'memory', title: 'Recall Viewer',
-    render: function () {
-      var r = state.recall;
-      return header({ title: 'Recall Viewer', purpose: 'クエリに近い Semantic メモリをコサイン類似度で想起', route: '#/memory/recall' }) +
-        C.Panel({ title: 'クエリ', body: '<input id="rqQuery" class="ns-input" value="' + C.esc(r.query) + '">' }) +
-        C.Panel({ title: '設定', hint: 'lexical なハッシュ埋め込みの類似度（学習済みニューラル埋め込みではありません）', body: C.Controls([
-          { label: 'TopK: <b id="vrqK">' + r.k + '</b>', control: range('rqK', 1, 6, 1, r.k) }
-        ]) }) +
-        C.Panel({ title: '想起結果', hint: 'Semantic メモリを類似度順に表示', body: '<div id="rqOut"></div>' });
-    },
-    onMount: function () {
-      function upd() {
-        state.recall.query = el('rqQuery').value;
-        state.recall.k = +el('rqK').value;
-        el('vrqK').textContent = state.recall.k;
-        persist(); renderRecall();
-      }
-      el('rqQuery').addEventListener('input', upd);
-      el('rqK').addEventListener('input', upd);
-      renderRecall();
-    }
-  });
-
+  /* ===================== d) Recall ===================== */
   function renderRecall() {
     var out = el('rqOut'); if (!out) return;
     if (!state.semantic.length) {
@@ -288,4 +262,11 @@
     }).join('') +
     '<p class="ns-empty__hint">※ コサイン類似度は本物ですが、埋め込みは語彙ベースのハッシュトリック（同じ語の有無に敏感／意味の汎化は限定的）です。</p>';
   }
+
+  /* ===================== route registration ===================== */
+  // ONE page: base route + every former sub-route as an alias.
+  var ROUTES = ['#/memory', '#/memory/viewer', '#/memory/compression', '#/memory/summary', '#/memory/recall'];
+  ROUTES.forEach(function (route) {
+    NSCode.registerView({ route: route, module: 'memory', title: 'Memory Lab', render: render, onMount: onMount });
+  });
 })(window.NSCode);

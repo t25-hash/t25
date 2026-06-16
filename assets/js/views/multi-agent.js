@@ -1,17 +1,12 @@
 /* Multi-Agent Lab (MULTI) — visualize how a team of role-based agents
- * coordinate on a single goal: a transcript (Chat), task distribution
- * (Tasks), and a vote-based consensus (Consensus). Goal text is shared
- * across tabs and persisted. All simulation is DETERMINISTIC and OFFLINE
- * (rule-based, no LLM) — see multiagent-engine.js. */
+ * coordinate on a single goal. ONE page (no tabs): a shared goal control
+ * at the top, then stacked sections — Chat (transcript), Task Distribution
+ * (tasks + per-role summary), and Consensus (proposal + votes + decision).
+ * Goal text is shared across sections and persisted. All simulation is
+ * DETERMINISTIC and OFFLINE (rule-based, no LLM) — see multiagent-engine.js. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, M = NSCode.multiAgent;
-
-  var tabs = [
-    { id: 'chat', label: 'Chat Viewer', route: '#/multi-agent/chat' },
-    { id: 'tasks', label: 'Task Distribution', route: '#/multi-agent/tasks' },
-    { id: 'consensus', label: 'Consensus', route: '#/multi-agent/consensus' }
-  ];
 
   var DEFAULT_GOAL = '新機能のログイン画面を設計・実装・テストする';
   var SIM_HINT = 'キーワード規則＋シード値による決定的シミュレーション（LLM 非使用）';
@@ -21,10 +16,6 @@
 
   function persist() { NSCode.api.labState('#/multi-agent', state); }
   function el(id) { return document.getElementById(id); }
-  function header(s) {
-    return C.PageHeader({ title: s.title, purpose: s.purpose, breadcrumb: ['Multi-Agent Lab', s.title] }) +
-      C.Tabs(tabs, s.route);
-  }
 
   /* role chip/avatar/tag helpers (deterministic colors from the engine) */
   function avatar(roleName) {
@@ -36,39 +27,50 @@
     return '<span class="ma-tag" style="--ma-c:' + r.color + '">' + r.icon + ' ' + C.esc(r.name) + '</span>';
   }
 
-  function goalPanel(idSuffix) {
-    return C.Panel({
-      title: 'ゴール', hint: SIM_HINT,
-      body: '<div class="ma-goalbar">' +
-        '<input id="goal' + idSuffix + '" class="ns-input" value="' + C.esc(state.goal) + '">' +
-        '<button id="run' + idSuffix + '" class="ns-btn">実行</button>' +
-        '</div>'
-    });
+  /* ---------- single page render ---------- */
+  function render() {
+    return C.PageHeader({
+      title: 'Multi-Agent Lab',
+      purpose: '1 つのゴールに対し、役割ベースのエージェント群が会話・タスク分担・合意形成で協調する様子を 1 ページで可視化',
+      breadcrumb: ['Multi-Agent Lab']
+    }) +
+      // shared goal control — appears ONCE
+      C.Panel({
+        title: 'ゴール', hint: SIM_HINT,
+        body: '<div class="ma-goalbar">' +
+          '<input id="maGoal" class="ns-input" value="' + C.esc(state.goal) + '">' +
+          '<button id="maRun" class="ns-btn">実行</button>' +
+          '</div>'
+      }) +
+      // a) Chat
+      C.Panel({ title: 'Chat — 会話トランスクリプト', hint: 'Manager が起点、各ロールが報告し収束', body: '<div id="maChatOut"></div>' }) +
+      // b) Task Distribution
+      C.Panel({ title: 'Task Distribution — タスク割当', hint: 'subtask / 担当 / 依存 / 状態', body: '<div id="maTaskOut"></div>' }) +
+      C.Panel({ title: 'ロール別サマリー', body: '<div id="maRoleOut"></div>' }) +
+      // c) Consensus
+      C.Panel({ title: 'Consensus — 提案', body: '<div id="maPropOut"></div>' }) +
+      C.Panel({ title: '投票', hint: '各ロールが 0〜1 でスコア。平均が 0.7 以上で承認', body: '<div id="maVoteOut"></div>' }) +
+      C.Panel({ title: '合意結果', body: '<div id="maDecOut"></div>' });
   }
-  function wireGoal(idSuffix, rerender) {
-    var input = el('goal' + idSuffix), btn = el('run' + idSuffix);
-    function run() { state.goal = input.value; persist(); rerender(); }
+
+  function onMount() {
+    var input = el('maGoal'), btn = el('maRun');
+    function run() { state.goal = input.value; persist(); renderAll(); }
     btn.addEventListener('click', run);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
     input.addEventListener('input', function () { state.goal = input.value; persist(); });
+    renderAll();
   }
 
-  /* ---------- Chat Viewer ---------- */
-  NSCode.registerView({
-    route: '#/multi-agent/chat', module: 'multi-agent', title: 'Agent Chat Viewer',
-    render: function () {
-      return header({ title: 'Agent Chat Viewer', purpose: 'エージェント間の会話を時系列で可視化', route: '#/multi-agent/chat' }) +
-        goalPanel('Chat') +
-        C.Panel({ title: '会話トランスクリプト', hint: 'Manager が起点、各ロールが報告し収束', body: '<div id="chatOut"></div>' });
-    },
-    onMount: function () {
-      wireGoal('Chat', renderChat);
-      renderChat();
-    }
-  });
+  function renderAll() {
+    renderChat();
+    renderTasks();
+    renderConsensus();
+  }
 
+  /* ---------- Chat ---------- */
   function renderChat() {
-    var out = el('chatOut'); if (!out) return;
+    var out = el('maChatOut'); if (!out) return;
     var msgs = M.chat(state.goal);
     var participants = {};
     msgs.forEach(function (m) { participants[m.role] = 1; });
@@ -97,21 +99,7 @@
       '<p class="ns-empty__hint">※ ' + C.esc(SIM_HINT) + '。同じゴールからは常に同じ会話が生成されます。</p>';
   }
 
-  /* ---------- Task Distribution Viewer ---------- */
-  NSCode.registerView({
-    route: '#/multi-agent/tasks', module: 'multi-agent', title: 'Task Distribution Viewer',
-    render: function () {
-      return header({ title: 'Task Distribution Viewer', purpose: 'ゴールを部分課題に分解し担当ロールへ割当', route: '#/multi-agent/tasks' }) +
-        goalPanel('Tasks') +
-        C.Panel({ title: 'タスク割当', hint: 'subtask / 担当 / 依存 / 状態', body: '<div id="taskOut"></div>' }) +
-        C.Panel({ title: 'ロール別サマリー', body: '<div id="roleOut"></div>' });
-    },
-    onMount: function () {
-      wireGoal('Tasks', renderTasks);
-      renderTasks();
-    }
-  });
-
+  /* ---------- Task Distribution ---------- */
   function statusBadge(st) {
     var map = { done: ['完了', 'is-done'], doing: ['進行中', 'is-doing'], todo: ['未着手', 'is-todo'] };
     var m = map[st] || map.todo;
@@ -119,10 +107,8 @@
   }
 
   function renderTasks() {
-    var out = el('taskOut'), rout = el('roleOut'); if (!out) return;
+    var out = el('maTaskOut'), rout = el('maRoleOut'); if (!out) return;
     var tasks = M.distribute(state.goal);
-    var byId = {};
-    tasks.forEach(function (t) { byId[t.id] = t; });
 
     var rows = tasks.map(function (t) {
       var deps = t.depends_on.length
@@ -159,24 +145,9 @@
     if (rout) rout.innerHTML = '<div class="ns-grid" style="--cols:3">' + cards + '</div>';
   }
 
-  /* ---------- Consensus Viewer ---------- */
-  NSCode.registerView({
-    route: '#/multi-agent/consensus', module: 'multi-agent', title: 'Consensus Viewer',
-    render: function () {
-      return header({ title: 'Consensus Viewer', purpose: '提案に各ロールが投票し合意を形成', route: '#/multi-agent/consensus' }) +
-        goalPanel('Cons') +
-        C.Panel({ title: '提案', body: '<div id="propOut"></div>' }) +
-        C.Panel({ title: '投票', hint: '各ロールが 0〜1 でスコア。平均が 0.7 以上で承認', body: '<div id="voteOut"></div>' }) +
-        C.Panel({ title: '合意結果', body: '<div id="decOut"></div>' });
-    },
-    onMount: function () {
-      wireGoal('Cons', renderConsensus);
-      renderConsensus();
-    }
-  });
-
+  /* ---------- Consensus ---------- */
   function renderConsensus() {
-    var pout = el('propOut'), vout = el('voteOut'), dout = el('decOut'); if (!pout) return;
+    var pout = el('maPropOut'), vout = el('maVoteOut'), dout = el('maDecOut'); if (!pout) return;
     var c = M.consensus(state.goal);
 
     pout.innerHTML = '<p class="ma-proposal">' + C.esc(c.proposal) + '</p>';
@@ -210,4 +181,13 @@
       '</div><span class="ma-aggbar__label">合意度 ' + aggPct + '%（破線＝しきい値 70%）</span></div>' +
       '<p class="ns-empty__hint">※ ' + C.esc(SIM_HINT) + '。スコアはロールごとの観点に基づく規則ベースの擬似値です。</p>';
   }
+
+  /* ---------- register the SAME page for base route + former sub-routes (aliases) ---------- */
+  var routes = ['#/multi-agent', '#/multi-agent/chat', '#/multi-agent/tasks', '#/multi-agent/consensus'];
+  routes.forEach(function (route) {
+    NSCode.registerView({
+      route: route, module: 'multi-agent', title: 'Multi-Agent Lab',
+      render: render, onMount: onMount
+    });
+  });
 })(window.NSCode);
