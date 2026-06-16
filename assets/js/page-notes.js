@@ -28,7 +28,7 @@
     'multi-agent':
       '複数の役割エージェント（Manager / Planner / Coder …）が協調する様子を体験。会話 → タスク分配 → 投票による合意形成。決定論的シミュレーションです。',
     'claude-code':
-      'Claude Code のアーキテクチャを学ぶ教育ページ＆<b>全機能の概念ハブ</b>。各システム（Context / Tool / Memory / Planning / SubAgent …）をクリックすると、対応する Lab（Ask / Tool / Memory / Agent / Multi-Agent …）へ飛べます。while ループ / 権限ゲート / セッション / メモリ、最後に最小ハーネスのブラウザ実行。公開分析に基づく概念モデル（数値は概数）。',
+      'Claude Code のアーキテクチャを学ぶ教育ページ＆<b>全機能の概念ハブ</b>。<b>サイドバーのグループ（Context / Tool / Memory / Agent）はこのアーキテクチャに対応</b>しています。各システムをクリックすると対応する Lab（Ask / Tool / Memory / Agent / Multi-Agent …）へ飛べます。while ループ / 権限ゲート / セッション / メモリ、最後に最小ハーネスのブラウザ実行。公開分析に基づく概念モデル（数値は概数）。',
     'ai-coding':
       '主要な AI コーディングツールを項目別に比較する参考マトリクス（一般的特徴・編集可）。ベンチマークではありません。',
     build:

@@ -1,33 +1,38 @@
-/* Sidebar navigation definition (see docs/01 §2, docs/02). Data-driven.
- * Order: tools first (Ask/Doc), then learning flow
- * LLM基礎 → Embedding → RAG → Tool → MCP → Agent → Memory → Multi-Agent
- * → Claude Code(概念ハブ) → 構築/評価 → Challenge. */
+/* Sidebar navigation (data-driven). Structure mirrors Claude Code Explorer:
+ * groups are named after Claude Code's subsystems, so each Lab sits under the
+ * subsystem it teaches.
+ *   Context → Embedding / RAG     Tool → Tool Calling / MCP
+ *   Memory  → Memory              Agent(loop/SubAgent) → Agent / Multi-Agent
+ * Practical tools (Ask/Doc) and foundations (Academy/Playground) lead;
+ * build/evaluate and Challenge close. */
 (function (NSCode) {
   'use strict';
   NSCode.nav = [
-    { group: 'Home',         label: 'Ask (RAG)',            route: '#/ask' },
-    { group: 'Home',         label: 'How To Answer',        route: '#/howto' },
-    { group: 'Home',         label: 'Doc 生成',             route: '#/generate' },
+    { group: 'Home',        label: 'Ask (RAG)',            route: '#/ask' },
+    { group: 'Home',        label: 'How To Answer',        route: '#/howto' },
+    { group: 'Home',        label: 'Doc 生成',             route: '#/generate' },
 
-    { group: 'Learn',        label: 'Academy',              route: '#/academy' },
-    { group: 'Learn',        label: 'Playground',           route: '#/playground' },
+    { group: 'Foundations', label: 'Academy',              route: '#/academy' },
+    { group: 'Foundations', label: 'Playground',           route: '#/playground' },
 
-    { group: 'Simulator',    label: 'Embedding Lab',        route: '#/embedding' },
-    { group: 'Simulator',    label: 'RAG Lab',              route: '#/rag' },
-    { group: 'Simulator',    label: 'Tool Calling Lab',     route: '#/tools' },
-    { group: 'Simulator',    label: 'MCP Lab',              route: '#/mcp' },
+    { group: 'Claude Code', label: 'Claude Code Explorer', route: '#/claude-code' },
+    { group: 'Claude Code', label: 'AI Coding Lab',        route: '#/ai-coding' },
 
-    { group: 'Agent',        label: 'Agent Lab',            route: '#/agent' },
-    { group: 'Agent',        label: 'Memory Lab',           route: '#/memory' },
-    { group: 'Agent',        label: 'Multi-Agent Lab',      route: '#/multi-agent' },
+    { group: 'Context',     label: 'Embedding Lab',        route: '#/embedding' },
+    { group: 'Context',     label: 'RAG Lab',              route: '#/rag' },
 
-    { group: 'Architecture', label: 'Claude Code Explorer', route: '#/claude-code' },
-    { group: 'Architecture', label: 'AI Coding Lab',        route: '#/ai-coding' },
+    { group: 'Tool',        label: 'Tool Calling Lab',     route: '#/tools' },
+    { group: 'Tool',        label: 'MCP Lab',              route: '#/mcp' },
 
-    { group: 'Build',        label: 'Build Lab',            route: '#/build' },
-    { group: 'Build',        label: 'Evaluation Lab',       route: '#/evaluation' },
-    { group: 'Build',        label: 'Research Lab',         route: '#/research' },
+    { group: 'Memory',      label: 'Memory Lab',           route: '#/memory' },
 
-    { group: 'Challenge',    label: 'Challenge Mode',       route: '#/challenge' }
+    { group: 'Agent',       label: 'Agent Lab',            route: '#/agent' },
+    { group: 'Agent',       label: 'Multi-Agent Lab',      route: '#/multi-agent' },
+
+    { group: 'Build',       label: 'Build Lab',            route: '#/build' },
+    { group: 'Build',       label: 'Evaluation Lab',       route: '#/evaluation' },
+    { group: 'Build',       label: 'Research Lab',         route: '#/research' },
+
+    { group: 'Challenge',   label: 'Challenge Mode',       route: '#/challenge' }
   ];
 })(window.NSCode);
