@@ -43,8 +43,8 @@
         '<p class="ns-empty__hint">これらを文脈にして回答を構成しています。</p>';
     },
     neural: function (run) {
-      return '<p class="ns-empty__hint">直近の質問「' + esc(run.query) + '」に対する生成:</p>' +
-        '<div class="ns-qa-answer__src">起点: <span class="ns-tag">' + esc(run.seed || '') + '</span></div>' +
+      return '<p class="ns-empty__hint">直近の質問「' + esc(run.query) + '」に対する赤ちゃんの回答:</p>' +
+        ((run.source || run.seed) ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + esc(run.source || run.seed) + '</span></div>' : '') +
         '<p class="ns-qa-answer__lead">' + esc(run.generated || '') + '</p>';
     },
     tools: function (run) {

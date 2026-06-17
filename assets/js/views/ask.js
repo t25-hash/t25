@@ -135,17 +135,14 @@
             ? '<p class="ns-qa-answer__lead">' + composed + '</p>'
             : '<p class="ns-empty__hint">関連する文を十分に抽出できませんでした。下のニューラル生成と根拠をご覧ください。</p>') +
           '<div class="ns-qa-answer__src">参照: ' + tags + '</div></div>' +
-        // secondary: the baby neural network's own generation (learning demo)
-        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 ニューラル生成（赤ちゃんモデルのデモ）</div>' +
+        // the baby model's answer: one concise, grounded ~100-char sentence,
+        // selected from the retrieved passages and re-ranked by the trained net.
+        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答（約100字・根拠から要約）</div>' +
           (a.text
             ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>'
-            : '<p class="ns-empty__hint">生成できませんでした。</p>') +
-          '<div class="ns-qa-answer__src">起点候補: ' +
-            ((a.seeds && a.seeds.length ? a.seeds : [a.seed]).map(function (s) {
-              return '<span class="ns-tag' + (s === a.seed ? ' ns-tag--on' : '') + '">' + C.esc(s) + '</span>';
-            }).join(' ')) +
-            (a.seeds && a.seeds.length > 1 ? '（採用: ' + C.esc(a.seed) + '）' : '') +
-          '</div></div>' +
+            : '<p class="ns-empty__hint">回答を構成できませんでした。</p>') +
+          (a.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>' : '') +
+        '</div>' +
         '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +

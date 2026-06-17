@@ -289,6 +289,115 @@
     return answer;
   }
 
+  /* CONCISE grounded answer (~target chars) — the baby model's natural reply.
+   * From the retrieved passages we take real sentences as candidates, rank them
+   * by question relevance (lexical + semantic), then RE-RANK the shortlist by the
+   * trained net's own confidence (mean log-prob / seqLogProb). The text is always
+   * real corpus text → grammatically clean; the net does the selection → it is
+   * the baby model's answer, just kept natural and short. Returns {text, source}. */
+  function composeConcise(question, hits, docs, model, target) {
+    target = target || 100;
+    var emb = NSCode.embeddings, qv = emb.embed(question, 64);
+    var qg = {}; gram(question).forEach(function (x) { qg[x] = 1; });
+    var ENDER = /[。．！？!?]/;
+    function clean(line) {
+      return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
+    }
+    // reject headings / captions / table rows / enumeration fragments — keep only
+    // things that read as real prose sentences (so the answer stays grammatical).
+    function isJunk(s) {
+      if (!ENDER.test(s)) return true;                                   // not a sentence
+      if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true; // caption
+      if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true; // enumerated/bulleted
+      var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿa-zA-Z]/g) || []).length;
+      if (letters < s.length * 0.5) return true;                         // mostly digits/middots (section no.)
+      return false;
+    }
+    // Rebuild whole sentences from a document. KB docs (PDF-extracted) hard-wrap
+    // lines MID-SENTENCE, so splitting per physical line yields broken fragments
+    // ("弾性限" / "度（…）という．"). We instead accumulate lines into a buffer and
+    // only emit when a sentence ender appears — re-joining soft wraps — while a
+    // blank line, a short line (heading) or a caption/section-number line resets
+    // the buffer so headings never glue onto the following sentence.
+    function isHeadingLine(line) {
+      if (ENDER.test(line)) return false;
+      if (line.length <= 9) return true;                                  // 「案内機構」「引張試験」等
+      if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(line)) return true;
+      if (/^[0-9０-９]+[\.\．・]/.test(line)) return true;                  // 「3・2・5 …」節番号
+      return false;
+    }
+    function buildSentences(text) {
+      var out = [], buf = '';
+      String(text || '').split('\n').forEach(function (raw) {
+        var line = clean(raw);
+        if (!line || isHeadingLine(line)) { buf = ''; return; }          // paragraph/heading break
+        buf += line;
+        var lastEnder = -1;
+        for (var i = 0; i < buf.length; i++) if ('。．！？!?'.indexOf(buf.charAt(i)) >= 0) lastEnder = i;
+        if (lastEnder >= 0) {
+          NSCode.research.splitSentences(buf.slice(0, lastEnder + 1)).forEach(function (s) { s = s.trim(); if (s) out.push(s); });
+          buf = buf.slice(lastEnder + 1);                                 // keep the dangling tail
+        }
+      });
+      return out;
+    }
+    // ordered whole sentences from the FULL source documents behind the hits
+    // (document order lets us join consecutive sentences into coherent ~target prose).
+    var hitSources = {}; (hits || []).forEach(function (h) { hitSources[h.chunk.source] = 1; });
+    var groups = [];
+    (docs || []).filter(function (d) { return hitSources[d.name]; }).forEach(function (d) {
+      groups.push({ src: d.name, arr: buildSentences(d.text) });
+    });
+    var seen = {}, cands = [];
+    groups.forEach(function (g) {
+      g.arr.forEach(function (s, idx) {
+        if (s.length < 18 || s.length > 200 || seen[s] || isJunk(s)) return;
+        seen[s] = 1; cands.push({ s: s, g: g, idx: idx });
+      });
+    });
+    if (!cands.length) return { text: '', source: '' };
+    // (1) relevance (same shape as composeAnswer): lexical overlap + cosine
+    function rel(s) {
+      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64));
+    }
+    cands.forEach(function (c) { c.rel = rel(c.s); });
+    cands.sort(function (a, b) { return b.rel - a.rel; });
+    var shortlist = cands.slice(0, 16);   // bound the neural scoring cost
+    // (2) neural confidence on the shortlist (how well the net recalls each line),
+    // normalized 0..1 and blended with relevance — the net picks the cleanest line.
+    var nl = (model && NSCode.neuralLM) ? NSCode.neuralLM : null;
+    shortlist.forEach(function (c) { c.nc = nl ? nl.seqLogProb(model, nl.encode(model, c.s)) : 0; });
+    var ncs = shortlist.map(function (c) { return c.nc; });
+    var mn = Math.min.apply(null, ncs), mx = Math.max.apply(null, ncs);
+    shortlist.forEach(function (c) {
+      c.ncn = (mx > mn) ? (c.nc - mn) / (mx - mn) : 0.5;
+      c.final = c.rel + 0.4 * c.ncn;
+    });
+    shortlist.sort(function (a, b) { return b.final - a.final; });
+    var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
+    used[top.s] = 1;
+    function tryAdd(s) {
+      if (!s || s.length < 8 || used[s] || isJunk(s)) return;
+      if (len + s.length > target + 45) return;
+      picked.push(s); used[s] = 1; len += s.length;
+    }
+    // (a) continue with the FOLLOWING sentences of the same passage (most coherent)
+    var arr = top.g.arr;
+    for (var i = top.idx + 1; i < arr.length && len < target - 15; i++) tryAdd(arr[i]);
+    // (b) still short → add the next best relevant clean sentences (same topic)
+    for (var k = 1; k < shortlist.length && len < target - 20; k++) tryAdd(shortlist[k].s);
+    var out = picked.join('');
+    // a single over-long sentence: trim at the last ender within range (grammatical)
+    if (out.length > target + 45) {
+      var head = out.slice(0, target + 45), pos = -1;
+      ['。', '．', '！', '？', '!', '?'].forEach(function (e) { var p = head.lastIndexOf(e); if (p > pos) pos = p; });
+      out = (pos >= 30) ? head.slice(0, pos + 1) : head.slice(0, target) + '。';
+    }
+    return { text: out.trim(), source: top.g.src };
+  }
+
   /* ask a question over the docs, the Claude Code way (RAG → compose → show how
    * generation works):
    *   1. retrieve relevant chunks (TF-IDF cosine)
@@ -370,15 +479,17 @@
     var compose = composeAnswer(question, res.hits, getDocs());
     return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
       .then(function () {
-        var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 64 });
+        // baby model's answer: one concise, grounded ~100-char sentence selected
+        // from the retrieved passages and re-ranked by the trained net (natural).
+        var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: compose, generated: a.text, seed: a.seed, seeds: a.seeds, ts: Date.now()
+          answer: compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
         });
-        return { text: a.text, seed: a.seed, seeds: a.seeds, compose: compose, hits: res.hits, loss: m.loss };
+        return { text: concise.text, source: concise.source, compose: compose, hits: res.hits, loss: m.loss };
       });
   }
 
@@ -432,14 +543,14 @@
         var compose = composeAnswer(question, res.hits, docs);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 64 });
+            var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: compose, generated: a.text, seed: a.seed, seeds: a.seeds, ts: Date.now()
+              answer: compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
             });
-            return { text: a.text, seed: a.seed, seeds: a.seeds, compose: compose, hits: res.hits, loss: m.loss };
+            return { text: concise.text, source: concise.source, compose: compose, hits: res.hits, loss: m.loss };
           });
       });
     });
