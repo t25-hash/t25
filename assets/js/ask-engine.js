@@ -179,8 +179,7 @@
   }
 
   /* COMPOSE a natural-language answer from the passages behind the top hits.
-   * Ranks the WHOLE sentences of those source documents (not the overlapping
-   * chunk windows, which can start mid-word) by lexical overlap + semantic
+   * Ranks the sentences of those source documents by lexical overlap + semantic
    * similarity to the question, then returns the best few, deduped. The result
    * is real sentences from the docs, so it is always grammatical Japanese —
    * the reliable answer a tiny neural LM cannot form on its own. */
@@ -188,27 +187,48 @@
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var hitSources = {};
     hits.forEach(function (h) { hitSources[h.chunk.source] = 1; });
-    // drop Markdown heading lines (titles / breadcrumbs) before splitting into
-    // sentences — otherwise a heading with no 。 gets glued onto the next
-    // sentence and the answer comes out littered with "# 1・2・13 …" prefixes.
-    var poolText = docs.filter(function (d) { return hitSources[d.name]; })
-                       .map(function (d) { return d.text; }).join('\n\n')
-                       .replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, '');
-    var poolSents = NSCode.research.splitSentences(poolText)
-      .map(function (s) { return s.trim(); })
-      .filter(function (s) { return s.length > 6; });
+    // Build the sentence pool line-by-line: split on newlines FIRST so a heading
+    // or list item (often without 。) becomes its own unit instead of gluing
+    // onto the next sentence. Strip Markdown markers but KEEP the heading text —
+    // in heading-dense docs (handbook TOCs) the heading IS the relevant content,
+    // so deleting headings would leave nothing to answer with.
+    var poolSents = [];
+    docs.filter(function (d) { return hitSources[d.name]; }).forEach(function (d) {
+      String(d.text || '').split('\n').forEach(function (line) {
+        line = line.replace(/^[ \t]*#{1,6}[ \t]+/, '')   // heading marker
+                   .replace(/^[ \t]*>[ \t]?/, '')          // blockquote marker
+                   .replace(/[*_`]+/g, '').trim();
+        if (!line) return;
+        NSCode.research.splitSentences(line).forEach(function (s) {
+          s = s.trim(); if (s.length > 6) poolSents.push(s);
+        });
+      });
+    });
     var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
-    var ranked = poolSents.map(function (s) {
-      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
-      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
-    }).sort(function (a, b) { return b.score - a.score; });
+    function rank(sents) {
+      return sents.map(function (s) {
+        var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+        var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+        return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
+      }).sort(function (a, b) { return b.score - a.score; });
+    }
+    var hasEnder = function (s) { return /[。．！？!?]/.test(s); };
+    var rankedProse = rank(poolSents.filter(hasEnder));        // real sentences first
+    var rankedHead  = rank(poolSents.filter(function (s) { return !hasEnder(s); }));
     var answer = [], lim = max || 3;
-    for (var ai = 0; ai < ranked.length && answer.length < lim; ai++) {
-      if (ranked[ai].score <= 0) break;
-      var cand = ranked[ai].s;
+    function pushUnique(cand) {
       if (!answer.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; })) answer.push(cand);
     }
+    function take(ranked, needScore, limN) {
+      for (var i = 0; i < ranked.length && answer.length < limN; i++) {
+        if (needScore && ranked[i].score <= 0) break;
+        pushUnique(ranked[i].s);
+      }
+    }
+    take(rankedProse, true, lim);                              // prose that shares query terms
+    if (!answer.length) take(rankedHead, true, lim);           // else headings that match (TOC docs)
+    if (!answer.length) take(rankedProse, false, Math.min(2, lim)); // else most similar prose
+    if (!answer.length) take(rankedHead, false, Math.min(2, lim));  // last resort: any heading
     return answer;
   }
 
