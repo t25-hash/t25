@@ -343,7 +343,7 @@
   function isJunkSent(s) {
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
-    if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞]/.test(s)) return true;
+    if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
     if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
     if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
     if ((s.match(/：/g) || []).length >= 2) return true;
@@ -393,12 +393,50 @@
     return out;
   }
   function cleanYield(sents) { var n = 0; for (var i = 0; i < sents.length; i++) if (sents[i].length >= 18 && !isJunkSent(sents[i])) n++; return n; }
+
+  /* character-bigram fluency model over the CLEAN, hand-written DEFAULT_DOCS — a
+   * tiny in-domain language model used only to compare two orderings of the SAME
+   * characters. Since original vs de-interleaved differ only at line seams, the
+   * mean log-prob cleanly separates fluent prose from interleaved/scrambled text. */
+  var _flu = null;
+  function fluModel() {
+    if (_flu) return _flu;
+    var uni = {}, bi = {}, U = 0, prev = '';
+    for (var d = 0; d < DEFAULT_DOCS.length; d++) {
+      var t = DEFAULT_DOCS[d].text || '';
+      for (var i = 0; i < t.length; i++) {
+        var c = t.charAt(i);
+        if (/\s/.test(c)) { prev = ''; continue; }
+        uni[c] = (uni[c] || 0) + 1; U++;
+        if (prev) bi[prev + c] = (bi[prev + c] || 0) + 1;
+        prev = c;
+      }
+    }
+    _flu = { uni: uni, bi: bi, U: U, V: Object.keys(uni).length };
+    return _flu;
+  }
+  function fluency(text) {                                // mean log P(c | prev), unigram-smoothed
+    var m = fluModel(), n = 0, lp = 0, k = 0.5, prev = '';
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charAt(i);
+      if (/\s/.test(c)) { prev = ''; continue; }
+      if (prev) {
+        var puni = ((m.uni[c] || 0) + 1) / (m.U + m.V);
+        var prob = ((m.bi[prev + c] || 0) + k * puni) / ((m.uni[prev] || 0) + k);
+        lp += Math.log(prob); n++;
+      }
+      prev = c;
+    }
+    return n ? lp / n : -1e9;
+  }
+
   // Rebuild whole sentences from a document. KB docs are extracted from TWO-COLUMN
-  // PDFs, where the columns are interleaved by alternating lines (line N = left,
+  // PDFs whose columns are interleaved by alternating lines (line N = left,
   // N+1 = right) — reading them in order produces garbled, spliced sentences. We
-  // therefore try both the original order AND a de-interleaved order (split body
-  // lines by parity = the two columns, read one then the other) and keep whichever
-  // yields more CLEAN sentences. Single-column docs keep their original order.
+  // try the original order AND a de-interleaved order (split body lines by parity =
+  // the two columns) and keep whichever reads better: a tiny in-domain LANGUAGE
+  // MODEL scores fluency (interleave/scramble lowers it), with clean-sentence yield
+  // as a guard. Single-column docs read better in original order, so they're kept.
   function buildSentences(text) {
     var body = [];
     String(text || '').split('\n').forEach(function (raw) {
@@ -410,7 +448,16 @@
     var odd = [], even = [];                             // the two interleaved columns
     for (var i = 0; i < body.length; i++) (i % 2 ? even : odd).push(body[i]);
     var B = emitSentences(odd.concat(even));
-    return (cleanYield(B) > cleanYield(A) * 1.2) ? B : A;
+    var ya = cleanYield(A), yb = cleanYield(B);
+    if (yb === 0) return A;
+    if (ya === 0) return B;
+    if (yb > ya * 1.2) return B;                         // clearly more clean sentences → de-interleave
+    // close call: let the language model pick the more fluent ordering (this is
+    // what catches columns that merged without spaces), guarded by clean yield.
+    var fa = fluency(A.join('')), fb = fluency(B.join(''));
+    if (fb > fa && yb >= ya * 0.7) return B;
+    if (fa > fb && ya >= yb * 0.7) return A;
+    return yb > ya ? B : A;
   }
   // ordered whole sentences from the FULL source documents behind the hits
   function hitDocGroups(hits, docs) {
