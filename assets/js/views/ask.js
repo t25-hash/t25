@@ -124,8 +124,6 @@
         out.innerHTML = '<p class="ns-empty__hint">関連する知識が見つかりませんでした。「知識に追加」で資料を学習させてください。</p>';
         return;
       }
-      var srcs = {}; a.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
-      var tags = Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ');
       if (a.weak) {           // relevance floor: don't present a confident off-topic answer
         out.innerHTML =
           '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
@@ -138,15 +136,7 @@
           }).join('');
         return;
       }
-      var composed = (a.compose && a.compose.length)
-        ? a.compose.map(function (s) { return highlight(s, q); }).join('<br>') : '';
       out.innerHTML =
-        // main answer: composed from the retrieved passages (real sentences)
-        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（検索した根拠から構成）</div>' +
-          (composed
-            ? '<p class="ns-qa-answer__lead">' + composed + '</p>'
-            : '<p class="ns-empty__hint">関連する文を十分に抽出できませんでした。下のニューラル生成と根拠をご覧ください。</p>') +
-          '<div class="ns-qa-answer__src">参照: ' + tags + '</div></div>' +
         // the baby model's answer: one concise, grounded ~100-char sentence,
         // selected from the retrieved passages and re-ranked by the trained net.
         '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答（約100字・根拠から要約）</div>' +
@@ -155,7 +145,13 @@
             : '<p class="ns-empty__hint">回答を構成できませんでした。</p>') +
           (a.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>' : '') +
         '</div>' +
-        '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
+        // memory summary: the retrieved context held in memory, compressed
+        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">🧠 メモリ内の要約</div>' +
+          (a.memo
+            ? '<p class="ns-qa-answer__lead">' + highlight(a.memo, q) + '</p>'
+            : '<p class="ns-empty__hint">要約できる十分な文脈がありません。</p>') +
+        '</div>' +
+        '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習し、メモリに要約）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
             '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +

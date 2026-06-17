@@ -295,6 +295,104 @@
     return answer;
   }
 
+  /* ---- shared clean-sentence extraction (used by the concise answer AND the
+   * memory summary) ---- */
+  var ENDER = /[。．！？!?]/;
+  function cleanLine(line) {
+    return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
+  }
+  // strip PDF-extraction noise from a sentence: leading bullets/dots, page
+  // header/footer tokens (「β9－140 β9編 法 工 学」), inline figure/table/equation
+  // refs and enumeration markers, then collapse spaces.
+  function sanitizeSent(s) {
+    s = String(s || '');
+    s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
+    s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
+    s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
+    s = s.replace(/[（(]\s*[0-9０-９]{1,2}\s*[）)]/g, '');          // (1)(2) インライン列挙/段組み混線
+    s = s.replace(/β\s*\d+\s*[－-]\s*\d+|β\s*\d+\s*編|[一-鿿]\d+\s*編/g, ''); // ページヘッダ/フッタ
+    s = s.replace(/^[\s.．。・･,，、:：;；)\]】」』>＞〕）]+/, '');     // 行頭ドット/記号
+    s = s.replace(/[ \t　]{2,}/g, ' ').replace(/\s+([、。，．）)」』])/g, '$1').trim();
+    return s;
+  }
+  // reject headings / captions / enumerations / fragments / garbled math so only
+  // real, readable prose sentences survive.
+  function isJunkSent(s) {
+    if (!ENDER.test(s)) return true;
+    if (s.replace(/[\s、，]/g, '').length < 14) return true;
+    if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞]/.test(s)) return true;
+    if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
+    if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
+    if ((s.match(/：/g) || []).length >= 2) return true;
+    if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;
+    if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;
+    if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;
+    // two-column PDF merge: Japanese text gets stray spaces after 、，or between
+    // CJK chars (e.g.「， は荷重， は試験前」). ≥2 such gaps ⇒ interleaved garbage.
+    if ((s.match(/[、，][ 　\t]/g) || []).length >= 2) return true;
+    if ((s.match(/[一-鿿ぁ-ヿ][ 　\t][一-鿿ぁ-ヿ]/g) || []).length >= 2) return true;
+    var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
+    if (letters < s.length * 0.55) return true;
+    return false;
+  }
+  function isHeadingLine(line) {
+    if (ENDER.test(line)) return false;
+    if (line.length <= 9) return true;
+    if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(line)) return true;
+    if (/^[0-9０-９]+[\.\．・]/.test(line)) return true;
+    return false;
+  }
+  // Rebuild whole sentences from a document. KB docs (PDF-extracted) hard-wrap
+  // lines MID-SENTENCE, so we accumulate lines into a buffer and only emit when a
+  // sentence ender appears (re-joining soft wraps); blank/heading lines reset it.
+  function buildSentences(text) {
+    var out = [], buf = '';
+    String(text || '').split('\n').forEach(function (raw) {
+      var line = cleanLine(raw);
+      if (!line || isHeadingLine(line)) { buf = ''; return; }
+      buf += line;
+      var lastEnder = -1;
+      for (var i = 0; i < buf.length; i++) if ('。．！？!?'.indexOf(buf.charAt(i)) >= 0) lastEnder = i;
+      if (lastEnder >= 0) {
+        NSCode.research.splitSentences(buf.slice(0, lastEnder + 1)).forEach(function (s) { s = sanitizeSent(s); if (s) out.push(s); });
+        buf = buf.slice(lastEnder + 1);
+      } else if (buf.length > 180) { buf = ''; }
+    });
+    return out;
+  }
+  // ordered whole sentences from the FULL source documents behind the hits
+  function hitDocGroups(hits, docs) {
+    var hitSources = {}; (hits || []).forEach(function (h) { hitSources[h.chunk.source] = 1; });
+    var groups = [];
+    (docs || []).filter(function (d) { return hitSources[d.name]; }).forEach(function (d) {
+      groups.push({ src: d.name, arr: buildSentences(d.text) });
+    });
+    return groups;
+  }
+  /* MEMORY summary: the retrieved context is the working memory for this question.
+   * We keep only the CLEAN sentences most relevant to the question (so off-topic
+   * docs among the top hits don't leak in), then compress them into a short
+   * extractive summary via the memory engine. Clean+relevant in → readable out. */
+  function contextMemo(question, hits, docs, n) {
+    if (!NSCode.memory) return '';
+    var emb = NSCode.embeddings, qv = emb.embed(question, 64);
+    var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });
+    var seen = {}, cands = [];
+    hitDocGroups(hits, docs).forEach(function (g) {
+      g.arr.forEach(function (s) {
+        if (seen[s] || isJunkSent(s) || s.length < 18 || s.length > 160) return;
+        seen[s] = 1;
+        var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+        var rel = (gs.length ? m / Math.sqrt(gs.length) : 0) + 0.25 * emb.cosine(qv, emb.embed(s, 64));
+        cands.push({ s: s, rel: rel });
+      });
+    });
+    if (!cands.length) return '';
+    cands.sort(function (a, b) { return b.rel - a.rel; });
+    var turns = cands.slice(0, 8).map(function (c) { return { text: c.s }; });   // relevant subset only
+    return (NSCode.memory.compress(turns, n || 3).summary || '').trim();
+  }
+
   /* CONCISE grounded answer (~target chars) — the baby model's natural reply.
    * From the retrieved passages we take real sentences as candidates, rank them
    * by question relevance (lexical + semantic), then RE-RANK the shortlist by the
@@ -305,82 +403,11 @@
     target = target || 100;
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });   // content words only
-    var ENDER = /[。．！？!?]/;
-    function clean(line) {
-      return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
-    }
-    // strip PDF-extraction noise from a sentence (P2/P5): leading bullets/dots,
-    // page header/footer tokens (「β9－140 β9編 法 工 学」), inline figure/table/
-    // equation refs and enumeration markers, then collapse spaces. Returns '' when
-    // nothing readable remains.
-    function sanitize(s) {
-      s = String(s || '');
-      s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
-      s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
-      s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
-      s = s.replace(/[（(]\s*[0-9０-９]{1,2}\s*[）)]/g, '');          // (1)(2) インライン列挙/段組み混線
-      s = s.replace(/β\s*\d+\s*[－-]\s*\d+|β\s*\d+\s*編|[一-鿿]\d+\s*編/g, ''); // ページヘッダ/フッタ
-      s = s.replace(/^[\s.．。・･,，、:：;；)\]】」』>＞〕）]+/, '');     // 行頭ドット/記号
-      s = s.replace(/[ \t　]{2,}/g, ' ').replace(/\s+([、。，．）)」』])/g, '$1').trim();
-      return s;
-    }
-    // reject headings / captions / enumerations / fragments / garbled math so only
-    // real, readable prose sentences survive (keeps the answer grammatical).
-    function isJunk(s) {
-      if (!ENDER.test(s)) return true;                                   // not a sentence
-      if (s.replace(/[\s、，]/g, '').length < 14) return true;            // too short to be informative
-      if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞]/.test(s)) return true; // fragment start (P3)
-      if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true; // caption
-      if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true; // enumerated/bulleted
-      if ((s.match(/：/g) || []).length >= 2) return true;               // 変数定義リスト（記号脱落）
-      if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;                          // 数式
-      if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;     // 段組み混線の (1)…(2)… マーカー
-      if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;        // ページヘッダ/フッタ残り
-      var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
-      if (letters < s.length * 0.55) return true;                        // 記号・数字が多すぎる（崩れ）
-      return false;
-    }
-    // Rebuild whole sentences from a document. KB docs (PDF-extracted) hard-wrap
-    // lines MID-SENTENCE, so splitting per physical line yields broken fragments
-    // ("弾性限" / "度（…）という．"). We instead accumulate lines into a buffer and
-    // only emit when a sentence ender appears — re-joining soft wraps — while a
-    // blank line, a short line (heading) or a caption/section-number line resets
-    // the buffer so headings never glue onto the following sentence.
-    function isHeadingLine(line) {
-      if (ENDER.test(line)) return false;
-      if (line.length <= 9) return true;                                  // 「案内機構」「引張試験」等
-      if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(line)) return true;
-      if (/^[0-9０-９]+[\.\．・]/.test(line)) return true;                  // 「3・2・5 …」節番号
-      return false;
-    }
-    function buildSentences(text) {
-      var out = [], buf = '';
-      String(text || '').split('\n').forEach(function (raw) {
-        var line = clean(raw);
-        if (!line || isHeadingLine(line)) { buf = ''; return; }          // paragraph/heading break
-        buf += line;
-        var lastEnder = -1;
-        for (var i = 0; i < buf.length; i++) if ('。．！？!?'.indexOf(buf.charAt(i)) >= 0) lastEnder = i;
-        if (lastEnder >= 0) {
-          NSCode.research.splitSentences(buf.slice(0, lastEnder + 1)).forEach(function (s) { s = sanitize(s); if (s) out.push(s); });
-          buf = buf.slice(lastEnder + 1);                                 // keep the dangling tail
-        } else if (buf.length > 180) {
-          buf = '';                                                       // runaway with no ender = TOC/heading dump → drop
-        }
-      });
-      return out;
-    }
-    // ordered whole sentences from the FULL source documents behind the hits
-    // (document order lets us join consecutive sentences into coherent ~target prose).
-    var hitSources = {}; (hits || []).forEach(function (h) { hitSources[h.chunk.source] = 1; });
-    var groups = [];
-    (docs || []).filter(function (d) { return hitSources[d.name]; }).forEach(function (d) {
-      groups.push({ src: d.name, arr: buildSentences(d.text) });
-    });
+    var groups = hitDocGroups(hits, docs);
     var seen = {}, cands = [];
     groups.forEach(function (g) {
       g.arr.forEach(function (s, idx) {
-        if (s.length < 18 || s.length > 140 || seen[s] || isJunk(s)) return;
+        if (s.length < 18 || s.length > 140 || seen[s] || isJunkSent(s)) return;
         seen[s] = 1; cands.push({ s: s, g: g, idx: idx });
       });
     });
@@ -408,7 +435,7 @@
     var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
     used[top.s] = 1;
     function tryAdd(s) {
-      if (!s || used[s] || isJunk(s)) return;
+      if (!s || used[s] || isJunkSent(s)) return;
       if (len + s.length > target + 20) return;                          // cap ~120字 (P4)
       picked.push(s); used[s] = 1; len += s.length;
     }
@@ -527,14 +554,15 @@
         var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
         var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '' };
+        var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
+          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, weak: weak, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
+        return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
       });
   }
 
@@ -591,13 +619,14 @@
             var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
             var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '' };
+            var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
+              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, weak: weak, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
+            return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
           });
       });
     });
