@@ -187,6 +187,12 @@
     return g;
   }
 
+  /* drop generic question scaffolding so retrieval/sentence-ranking key off the
+   * CONTENT words (歯車・軸受…), not boilerplate (「重要な点」「種類と特徴」「とは」).
+   * Without this, a doc dense in 重要/設計/種類 (e.g. 重要度分類) hijacks answers. */
+  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え/g;
+  function coreQuery(q) { return String(q == null ? '' : q).replace(Q_GENERIC, ''); }
+
   /* chunk every doc, tagging each chunk with its source document name */
   function buildChunks(docs) {
     var all = [];
@@ -298,7 +304,7 @@
   function composeConcise(question, hits, docs, model, target) {
     target = target || 100;
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
-    var qg = {}; gram(question).forEach(function (x) { qg[x] = 1; });
+    var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });   // content words only
     var ENDER = /[。．！？!?]/;
     function clean(line) {
       return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
@@ -429,8 +435,7 @@
    * with the question (generic template/stop words removed first). */
   function weakRelevance(question, answer, topCos) {
     if (!answer) return true;
-    var core = String(question).replace(/について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義/g, '');
-    var qg = {}; gram(core).forEach(function (x) { qg[x] = 1; });
+    var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });
     var m = 0; gram(answer).forEach(function (x) { if (qg[x]) m++; });
     if (m >= 1) return false;            // answer shares a content term with the question → trust it
     return topCos < 0.33;                // no shared term: trust only when retrieval is strong (avoids the 仕組み/特徴 catch-all)
@@ -570,7 +575,7 @@
     opts = opts || {};
     if (!question) return Promise.resolve(null);
     return loadKB().then(function (index) {
-      var top = searchKB(index, question, opts.topDocs || 6);
+      var top = searchKB(index, question, opts.topDocs || 10);
       if (!top.length) return { text: '', seed: '', hits: [] };
       return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
         var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
