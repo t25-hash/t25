@@ -203,6 +203,9 @@
     opts = opts || {};
     var maxTok = opts.maxTokens || 50, T = opts.temperature == null ? 0.8 : opts.temperature, K = opts.topK || 8;
     var rep = opts.repetitionPenalty || 1.4, C = m.C;
+    // tokens are single CJK chars, so don't end at the very first 。 — keep going
+    // until at least this many tokens so the answer is a full sentence or two.
+    var minProduced = opts.minProduced || 8;
     // map "avoid" token strings (e.g. the separator 「・」) to vocab ids once
     var avoidIds = null;
     if (opts.avoid) { avoidIds = {}; for (var key in opts.avoid) { var aid = m.vocab.stoi[key]; if (aid != null) avoidIds[aid] = opts.avoid[key]; } }
@@ -235,7 +238,7 @@
       ids.push(nid);
       var t2 = m.vocab.itos[nid];
       if (nid !== 0) { outToks.push(t2); produced++; }
-      if (ENDERS.test(t2) && produced >= 8) break;
+      if (ENDERS.test(t2) && produced >= minProduced) break;
     }
     return outToks;
   }
@@ -280,8 +283,8 @@
     var K = opts.candidates || 12, best = null, bestScore = -1e9;
     for (var i = 0; i < K; i++) {
       var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
-      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52,
-        repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true, allow: allow });
+      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 72,
+        minProduced: opts.minProduced || 22, repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true, allow: allow });
       var sc = seqLogProb(m, g);
       if (sc > bestScore) { bestScore = sc; best = g; }
     }
