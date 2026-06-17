@@ -13,8 +13,50 @@
   'use strict';
 
   var ENDERS = /[。．！？!?]/;
+  var BARRIER = /^[、。，．！？!?…・]$|^\n$/;   // never merge punctuation / newlines into a word
 
   function tok(text) { return NSCode.babyLLM.tokenize(text); }
+
+  /* ---- mini-BPE subword tokenizer (learned in-browser from the corpus) -------
+   * The base tokens are single CJK chars (+ latin runs). On their own the net
+   * predicts character-by-character and tends to produce non-words. Here we LEARN
+   * the most frequent adjacent pairs and merge them into subword units (e.g.
+   * 機械, 発電, 蒸気タービン) so the net models meaningful chunks → far more fluent,
+   * synthesis-like output. Fully local, no download. */
+  function learnMerges(chars, numMerges, minFreq) {
+    var seq = chars.slice(), merges = [];
+    for (var it = 0; it < (numMerges || 300); it++) {
+      var freq = {}, best = null, bestC = 0;
+      for (var i = 0; i < seq.length - 1; i++) {
+        var a = seq[i], b = seq[i + 1];
+        if (BARRIER.test(a) || BARRIER.test(b)) continue;
+        var key = a + '' + b, c = (freq[key] = (freq[key] || 0) + 1);
+        if (c > bestC) { bestC = c; best = key; }
+      }
+      if (!best || bestC < (minFreq || 3)) break;
+      var p = best.split(''), A = p[0], B = p[1], AB = A + B, out = [];
+      for (var j = 0; j < seq.length; j++) {
+        if (j < seq.length - 1 && seq[j] === A && seq[j + 1] === B) { out.push(AB); j++; }
+        else out.push(seq[j]);
+      }
+      seq = out; merges.push([A, B]);
+    }
+    return merges;
+  }
+  function applyMerges(chars, merges) {
+    if (!merges || !merges.length) return chars;
+    var seq = chars.slice();
+    for (var m = 0; m < merges.length; m++) {
+      var A = merges[m][0], B = merges[m][1], AB = A + B, out = [];
+      for (var j = 0; j < seq.length; j++) {
+        if (j < seq.length - 1 && seq[j] === A && seq[j + 1] === B) { out.push(AB); j++; }
+        else out.push(seq[j]);
+      }
+      seq = out;
+    }
+    return seq;
+  }
+  function encodeWith(m, text) { return applyMerges(tok(text), m.merges); }
 
   /* build a capped vocabulary (most frequent tokens) + <unk> */
   function buildVocab(tokens, cap) {
@@ -39,13 +81,18 @@
    * dim, H = hidden units, V = vocab size. */
   function create(text, opts) {
     opts = opts || {};
-    var tokens = tok(text);
+    // learn subword merges from the corpus, then tokenize with them so the net
+    // models word/phrase units instead of single characters.
+    var chars = tok(text);
+    var merges = opts.merges != null ? opts.merges
+      : (opts.subword === false ? [] : learnMerges(chars, opts.numMerges || 300, opts.minMerge || 3));
+    var tokens = applyMerges(chars, merges);
     var vocab = buildVocab(tokens, opts.maxVocab || 480);
     var C = opts.context || 2, D = opts.dim || 16, H = opts.hidden || 40, V = vocab.size;
     var ids = new Int32Array(tokens.length);
     for (var i = 0; i < tokens.length; i++) ids[i] = idOf({ vocab: vocab }, tokens[i]);
     return {
-      vocab: vocab, ids: ids, C: C, D: D, H: H, V: V,
+      vocab: vocab, ids: ids, merges: merges, C: C, D: D, H: H, V: V,
       Emb: rnd(V * D, 0.5),
       W1: rnd(C * D * H, Math.sqrt(1 / (C * D))), b1: new Float32Array(H),
       W2: rnd(H * V, Math.sqrt(1 / H)),          b2: new Float32Array(V),
@@ -166,7 +213,7 @@
   /* next-token probabilities for a context string (for "show the internals"):
    * returns the top-k tokens the net predicts, with their softmax probability. */
   function nextProbs(m, contextText, k) {
-    var toks = tok(contextText), ids = [];
+    var toks = encodeWith(m, contextText), ids = [];
     toks.forEach(function (t) { ids.push(idOf(m, t)); });
     while (ids.length < m.C) ids.unshift(0);
     var ctx = ids.slice(ids.length - m.C);
@@ -283,11 +330,11 @@
     var runs = (question.match(/[一-鿿ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9]+/g) || []);
     runs.sort(function (a, b) { return b.length - a.length; });
     runs.forEach(function (r) {
-      var kt = tok(r).filter(function (x) { return m.vocab.stoi[x] != null; });
+      var kt = encodeWith(m, r).filter(function (x) { return m.vocab.stoi[x] != null; });
       if (kt.length) add(anchored(m.vocab.stoi[kt[0]]) || kt);   // prefer a real corpus window
     });
     if (!seeds.length) {                                  // fallback: any content token
-      var qt = tok(question).filter(function (t) { return m.vocab.stoi[t] != null && !/[、。，．！？!?…・\n\s]/.test(t); });
+      var qt = encodeWith(m, question).filter(function (t) { return m.vocab.stoi[t] != null && !/[、。，．！？!?…・\n\s]/.test(t); });
       add(qt);
     }
     return seeds.slice(0, maxSeeds || 4);
@@ -331,7 +378,7 @@
   }
 
   NSCode.neuralLM = {
-    tokenize: tok, buildVocab: buildVocab, create: create,
+    tokenize: tok, encode: encodeWith, buildVocab: buildVocab, create: create,
     forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
     seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer
   };

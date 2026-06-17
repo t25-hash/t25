@@ -10,7 +10,7 @@
   var unsub = null, autoFilled = false, pendingReplace = false;
 
   var EXPLAIN =
-    '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。</p>' +
+    '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。トークンはコーパスから自動学習した<b>サブワード</b>（よく出る語のまとまり：「機械」「発電」「蒸気タービン」など）で、文字単位より自然な日本語を生成できます（端末内学習・DL なし）。</p>' +
     '<pre class="ns-code">前の C 個のトークン\n' +
     '   │  ① 埋め込み（各トークン → ベクトル）\n' +
     '   ▼\n' +
@@ -238,7 +238,8 @@
     var st = LAB.state, m = st.model;
     if (!m) { box.innerHTML = ''; return; }
     box.innerHTML = C.Table(['項目', '値'], [
-      ['語彙数 V', String(m.V)],
+      ['語彙数 V', String(m.V) + '（サブワード）'],
+      ['学習したサブワード結合', String((m.merges && m.merges.length) || 0) + ' 回（BPE）'],
       ['埋め込み次元 D', String(m.D)],
       ['隠れ層ユニット H', String(m.H)],
       ['文脈長 C', String(m.C)],
@@ -254,8 +255,8 @@
     var st = LAB.state;
     if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると生成できます。</p>'; return; }
     var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || '蒸気タービン';
-    var seed = NLM.tokenize(seedStr).slice(0, st.model.C);
-    if (!seed.length) seed = NLM.tokenize('蒸気').slice(0, st.model.C);
+    var seed = NLM.encode(st.model, seedStr).slice(0, st.model.C);
+    if (!seed.length) seed = NLM.encode(st.model, '蒸気').slice(0, st.model.C);
     var g = NSCode.babyLLM.join(LAB.generate(seed, { temperature: 0.7, topK: 6, maxTokens: 48 }));
     out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(g) + '</div>';
   }
