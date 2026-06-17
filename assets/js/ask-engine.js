@@ -369,6 +369,13 @@
     return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
       .then(function () {
         var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 64 });
+        // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
+        if (NSCode.lastRun) NSCode.lastRun.set({
+          query: question,
+          qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
+          hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
+          answer: compose, generated: a.text, seed: a.seed, seeds: a.seeds, ts: Date.now()
+        });
         return { text: a.text, seed: a.seed, seeds: a.seeds, compose: compose, hits: res.hits, loss: m.loss };
       });
   }
