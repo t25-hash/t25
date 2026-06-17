@@ -7,7 +7,7 @@
   var C = NSCode.C, A = NSCode.askEngine, NLM = NSCode.neuralLM, LAB = NSCode.neuralLab;
   function el(id) { return document.getElementById(id); }
 
-  var unsub = null, autoFilled = false;
+  var unsub = null, autoFilled = false, pendingReplace = false;
 
   var EXPLAIN =
     '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。</p>' +
@@ -33,6 +33,16 @@
     '</div>' +
     '<div id="nlAddStatus" class="ns-empty__hint"></div>' +
     '<div id="nlKb"></div>';
+
+  var ZIP =
+    '<p class="ns-lesson">フォルダごと ZIP にまとめた <b>Markdown(.md)</b> を渡すと、<b>階層（フォルダ構成）を保ったまま</b>一括で学習データに取り込みます。各ファイルのパスがそのまま出典名になり、フォルダ名は見出しとして本文先頭に付くので、モデルは<b>階層の文脈ごと</b>学習します。</p>' +
+    '<div class="ns-actions">' +
+      '<label id="nlZipPick" class="ns-btn" style="cursor:pointer">ZIP を選ぶ（.md を一括）<input id="nlZip" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden></label>' +
+      '<button id="nlZipReplace" class="ns-btn ns-btn--ghost" title="既存のサンプル文書を消してから取り込みます">サンプルを消して取り込む</button>' +
+    '</div>' +
+    '<p class="ns-empty__hint">端末内だけで展開します（外部送信なし）。対応: 無圧縮 / DEFLATE。暗号化・ZIP64 は非対応。.md / .markdown 以外は自動でスキップします。</p>' +
+    '<div id="nlZipStatus" class="ns-empty__hint"></div>' +
+    '<div id="nlZipTree"></div>';
 
   function hyperBody() {
     var o = LAB.state.opts;
@@ -63,6 +73,7 @@
       return C.PageHeader({ title: '🧠 Neural Lab', purpose: 'Ask のベースになる極小ニューラルネットを学習・観察する' }) +
         C.Panel({ title: 'ニューラルネットとは', body: EXPLAIN }) +
         C.Panel({ title: '学習データを追加して再学習', hint: 'Ask と共通のナレッジベースに文書を足してモデルを学習させる', body: ADD }) +
+        C.Panel({ title: 'ZIP（.md 一括）から階層ごと学習', hint: 'フォルダ構成を保ったまま Markdown をまとめて取り込む', body: ZIP }) +
         C.Panel({ title: '学習設定（ハイパーパラメータ）', body: hyperBody() }) +
         C.Panel({ title: 'Ask のベースニューラル（実物）', hint: 'いま動いているモデルの中身をそのまま表示', body: LIVE });
     },
@@ -78,6 +89,15 @@
       });
       el('nlReset').addEventListener('click', function () {
         A.resetDocs(); renderKb(); setAddStatus('サンプルのナレッジベースに戻しました。再学習します…'); LAB.ensure();
+      });
+
+      el('nlZip').addEventListener('change', function () {
+        if (this.files && this.files[0]) importZip(this.files[0], pendingReplace);
+        pendingReplace = false; this.value = '';
+      });
+      el('nlZipPick').addEventListener('click', function () { pendingReplace = false; });
+      el('nlZipReplace').addEventListener('click', function () {
+        pendingReplace = true; el('nlZip').click();
       });
 
       bindRange('nlSteps', 'nlStepsV', function (v) { return v; });
@@ -108,6 +128,84 @@
   }
 
   function setAddStatus(m) { var s = el('nlAddStatus'); if (s) s.textContent = m || ''; }
+  function setZipStatus(m) { var s = el('nlZipStatus'); if (s) s.textContent = m || ''; }
+
+  function isMd(path) { return /\.(md|markdown)$/i.test(path); }
+  function ignored(path) {
+    // macOS が ZIP に混ぜるメタデータを除外
+    return /(^|\/)__MACOSX\//.test(path) || /(^|\/)\._/.test(path) || /(^|\/)\.DS_Store$/i.test(path);
+  }
+  // パス（フォルダ階層）を Markdown 見出しに変換して本文先頭へ付与
+  function breadcrumbHeading(path) {
+    return '# ' + path.replace(/\.(md|markdown)$/i, '').split('/').join(' / ');
+  }
+  // 軽い正規化：改行を統一し NFKC するが、段落（空行）は保持する
+  function normalizeMd(raw) {
+    var t = String(raw || '').replace(/\r\n?/g, '\n');
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    return t.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function importZip(file, replace) {
+    setZipStatus('「' + file.name + '」を端末内で展開中…');
+    el('nlZipTree').innerHTML = '';
+    var reader = new FileReader();
+    reader.onerror = function () { setZipStatus('ファイルを読み込めませんでした。'); };
+    reader.onload = function () {
+      var entries;
+      try { entries = NSCode.unzip(reader.result); }
+      catch (e) { setZipStatus('ZIP を展開できませんでした: ' + (e && e.message ? e.message : e)); return; }
+
+      var mds = entries.filter(function (e) { return isMd(e.path) && !ignored(e.path) && e.text.trim(); })
+        .sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
+      if (!mds.length) {
+        setZipStatus('ZIP 内に学習できる .md / .markdown が見つかりませんでした（' + entries.length + ' エントリを確認）。');
+        return;
+      }
+
+      // 既存 KB に統合（同じパス名は置き換え）。replace 指定なら空から作る。
+      var docs = replace ? [] : A.getDocs();
+      var byName = {}; docs.forEach(function (d, i) { byName[d.name] = i; });
+      var added = 0, updated = 0, chars = 0;
+      mds.forEach(function (e) {
+        var text = breadcrumbHeading(e.path) + '\n\n' + normalizeMd(e.text);
+        chars += text.length;
+        var doc = { name: e.path, text: text };
+        if (Object.prototype.hasOwnProperty.call(byName, e.path)) { docs[byName[e.path]] = doc; updated++; }
+        else { byName[e.path] = docs.length; docs.push(doc); added++; }
+      });
+      A.setDocs(docs);
+      renderKb();
+      el('nlZipTree').innerHTML = renderZipTree(mds.map(function (e) { return e.path; }));
+      setZipStatus((replace ? 'サンプルを置き換えて ' : '') + mds.length + ' 件の Markdown を階層ごと取り込みました'
+        + '（新規 ' + added + ' / 更新 ' + updated + ' ／ 計 ' + chars.toLocaleString() + ' 字）。再学習します…');
+      LAB.ensure();   // KB が変わったので再学習
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // 取り込んだファイル群をフォルダ階層のツリーとして描画
+  function renderZipTree(paths) {
+    var root = {};
+    paths.forEach(function (p) {
+      var parts = p.split('/'), node = root;
+      parts.forEach(function (part, i) {
+        var leaf = i === parts.length - 1;
+        node[part] = node[part] || { __leaf: leaf, children: {} };
+        node = node[part].children;
+      });
+    });
+    function walk(node, depth) {
+      return Object.keys(node).sort().map(function (k) {
+        var info = node[k], pad = '';
+        for (var i = 0; i < depth; i++) pad += '  ';
+        var icon = info.__leaf ? '📄 ' : '📁 ';
+        return pad + icon + C.esc(k) + '\n' + walk(info.children, depth + 1);
+      }).join('');
+    }
+    return '<p class="ns-empty__hint">取り込んだ階層構成（' + paths.length + ' ファイル）:</p>' +
+      '<pre class="ns-code">' + walk(root, 0).replace(/\n+$/,'') + '</pre>';
+  }
 
   function bindRange(id, valId, fmt) {
     var r = el(id); if (!r) return;
