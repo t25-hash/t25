@@ -188,14 +188,21 @@
     seedToks.forEach(function (t) { ids.push(idOf(m, t)); });
     while (ids.length < C) ids.unshift(0);
     var outToks = seedToks.slice(), produced = 0, counts = {};
+    // no-repeat bigram: never emit the same (prev → next) pair twice. This is
+    // what stops the phrase loops a tiny LM falls into (e.g. reciting a heading
+    // over and over). Opt-in so the Neural Lab's raw demo is unaffected.
+    var blockBigram = opts.noRepeatBigram, seenBg = {};
     for (var i = 0; i < maxTok; i++) {
       var ctx = ids.slice(ids.length - C);
+      var prevId = ids[ids.length - 1];
       var f = forward(m, ctx), p = f.p;
       for (var v = 0; v < p.length; v++) {
         if (counts[v]) p[v] /= Math.pow(rep, counts[v]);          // repetition penalty
         if (avoidIds && avoidIds[v] != null) p[v] *= avoidIds[v]; // down-weight separators etc.
+        if (blockBigram && seenBg[prevId + ',' + v]) p[v] *= 0.001; // block repeated bigram
       }
       var nid = sampleNext(p, T, K);
+      seenBg[prevId + ',' + nid] = 1;
       counts[nid] = (counts[nid] || 0) + 1;
       ids.push(nid);
       var t2 = m.vocab.itos[nid];
@@ -244,12 +251,21 @@
     var K = opts.candidates || 12, best = null, bestScore = -1e9;
     for (var i = 0; i < K; i++) {
       var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
-      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52, repetitionPenalty: 1.9, avoid: avoid });
+      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52,
+        repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true });
       var sc = seqLogProb(m, g);
       if (sc > bestScore) { bestScore = sc; best = g; }
     }
     var join = NSCode.babyLLM.join;
-    return { text: join(best), seed: join(seed), score: bestScore };
+    return { text: trimToSentence(join(best)), seed: join(seed), score: bestScore };
+  }
+
+  /* cut a generated string at its last sentence ender so the answer doesn't end
+   * on a dangling, half-formed clause. Falls back to the whole string. */
+  function trimToSentence(s) {
+    var m2 = String(s || '').match(/^[\s\S]*[。．！？!?]/);
+    if (m2 && m2[0].replace(/[\s、,・]/g, '').length >= 8) return m2[0].trim();
+    return String(s || '').trim();
   }
 
   NSCode.neuralLM = {
