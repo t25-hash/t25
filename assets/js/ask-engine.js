@@ -279,9 +279,64 @@
       });
   }
 
+  /* ---------- Prebuilt knowledge base (機械工学, 5809 docs) ----------
+   * A pruned TF-IDF inverted index (assets/kb/index.json) is loaded once; the
+   * query picks the top docs, only those .md are fetched, then the SAME hybrid
+   * (search → neural learns retrieved chunks → generate) runs on them. This
+   * scales to thousands of docs without loading everything. */
+  var KB_INDEX_URL = 'assets/kb/index.json', KB_DOC_URL = 'assets/kb/docs/';
+  var kbPromise = null, kbDocCache = {};
+
+  function loadKB() {
+    if (kbPromise) return kbPromise;
+    kbPromise = fetch(KB_INDEX_URL).then(function (r) { if (!r.ok) throw new Error('index ' + r.status); return r.json(); });
+    return kbPromise;
+  }
+  function searchKB(index, query, k) {
+    var qt = gram(query), seen = {}, score = {};   // gram() == the index builder's term extraction
+    qt.forEach(function (t) {
+      if (seen[t]) return; seen[t] = 1;
+      var p = index.post[t]; if (!p) return;
+      p.forEach(function (e) { score[e[0]] = (score[e[0]] || 0) + e[1]; });
+    });
+    return Object.keys(score).map(function (i) { return { idx: +i, score: score[i], title: index.meta[+i] }; })
+      .sort(function (a, b) { return b.score - a.score; }).slice(0, k);
+  }
+  function fetchKBDoc(idx) {
+    if (kbDocCache[idx]) return Promise.resolve(kbDocCache[idx]);
+    var pad = ('0000' + (idx + 1)).slice(-4);
+    return fetch(KB_DOC_URL + pad + '.md').then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (t) { kbDocCache[idx] = t; return t; });
+  }
+
+  /* hybrid answer over the prebuilt KB -> Promise<{text,seed,hits}> */
+  function hybridAnswerKB(question, opts) {
+    opts = opts || {};
+    if (!question) return Promise.resolve(null);
+    return loadKB().then(function (index) {
+      var top = searchKB(index, question, opts.topDocs || 6);
+      if (!top.length) return { text: '', seed: '', hits: [] };
+      return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
+        var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
+        var chunks = buildChunks(docs);
+        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0 });
+        if (!res.hits.length) return { text: '', seed: '', hits: [] };
+        var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
+        var L = NSCode.neuralLM;
+        var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
+        return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
+          .then(function () {
+            var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 52 });
+            return { text: a.text, seed: a.seed, hits: res.hits, loss: m.loss };
+          });
+      });
+    });
+  }
+
   NSCode.askEngine = {
     DEFAULT_DOCS: DEFAULT_DOCS,
     getDocs: getDocs, setDocs: setDocs, resetDocs: resetDocs, cleanText: cleanText,
-    buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer
+    buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer,
+    loadKB: loadKB, searchKB: searchKB, hybridAnswerKB: hybridAnswerKB
   };
 })(window.NSCode);

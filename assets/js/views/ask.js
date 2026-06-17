@@ -8,7 +8,7 @@
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
   function el(id) { return document.getElementById(id); }
 
-  var state = Object.assign({ query: 'タービンとボイラを備える廃棄物発電施設の仕組みは？', temperature: 0.45 },
+  var state = Object.assign({ source: 'kb', query: '歯車の設計について教えて', temperature: 0.45 },
     NSCode.api.labState('#/ask') || {});
   function persist() { NSCode.api.labState('#/ask', state); }
   var askToken = 0;   // guards against overlapping async answers
@@ -20,19 +20,38 @@
     return html;
   }
 
+  function kbBody() {
+    return '<div class="ns-empty__hint">📚 機械工学の教科書 <b>5,809 文書</b>（α機械工学概説 / β設計工学 / γ産業機械）。事前に作った索引で関連文書だけを取り出し、その文脈をニューラルが学習して回答します（初回は索引 ~3MB を読み込み）。</div>';
+  }
+  function mineBody() {
+    return '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：運転手順書 / 仕様書）"></textarea>' +
+      '<div class="ns-actions">' +
+        '<button id="addDoc" class="ns-btn">知識に追加</button>' +
+        '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
+        '<button id="resetDocs" class="ns-btn ns-btn--ghost">既定の知識に戻す</button>' +
+      '</div><div id="docStatus" class="ns-empty__hint"></div>';
+  }
+  function wireMine() {
+    el('addDoc').addEventListener('click', function () {
+      var t = A.cleanText(el('docText').value); if (!t) return;
+      var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
+      el('docText').value = ''; setStatus('知識に追加しました（合計 ' + kbSize().toLocaleString() + ' 字）。質問できます。');
+    });
+    el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。'); });
+    el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
+  }
+
   NSCode.registerView({
     route: '#/ask', module: 'ask', title: 'Ask (Hybrid)',
     render: function () {
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '関連箇所を検索 → その文脈をニューラルが学習して回答（検索＋重み＝Claude型・API不要）' }) +
-        C.Panel({ title: '1. 知識を学習させる（任意）', hint: 'PDF/テキストはクレンジングして知識ベースに追加。質問ごとに関連部分だけ学習するので、大きい資料でも動きます（PDF抽出ページも利用可）',
+        C.Panel({ title: '1. 知識ベース', hint: '検索対象を選択',
           body:
-            '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
-            '<div class="ns-actions">' +
-              '<button id="addDoc" class="ns-btn">知識に追加</button>' +
-              '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
-              '<button id="resetDocs" class="ns-btn ns-btn--ghost">既定の知識に戻す</button>' +
-            '</div>' +
-            '<div id="docStatus" class="ns-empty__hint"></div>' }) +
+            C.Controls([{ label: '対象', control:
+              '<select id="srcSel" class="ns-input">' +
+                '<option value="kb"' + (state.source === 'kb' ? ' selected' : '') + '>機械工学 KB（5,809文書）</option>' +
+                '<option value="mine"' + (state.source === 'mine' ? ' selected' : '') + '>自分の知識（貼付/PDF）</option></select>' }]) +
+            '<div id="srcArea">' + (state.source === 'kb' ? kbBody() : mineBody()) + '</div>' }) +
         C.Panel({ title: '2. 質問する', hint: '質問→関連チャンクを検索→その文脈でニューラルが学習→重みから生成',
           body:
             '<div class="ns-qa-bar"><input id="askQ" class="ns-input" value="' + C.esc(state.query) + '">' +
@@ -47,13 +66,8 @@
           '<p class="ns-empty__hint">本物の LLM（Claude）と同じ二段構え：<b>検索</b>で関連箇所を取り出し、<b>重み</b>（ニューラルネット）が文脈を学習して回答を生成します。重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' }) ;
     },
     onMount: function () {
-      el('addDoc').addEventListener('click', function () {
-        var t = A.cleanText(el('docText').value); if (!t) return;
-        var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
-        el('docText').value = ''; setStatus('知識に追加しました（合計 ' + kbSize().toLocaleString() + ' 字）。質問できます。');
-      });
-      el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。'); });
-      el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
+      el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
+      if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       el('askBtn').addEventListener('click', runAsk);
@@ -95,7 +109,8 @@
     var token = ++askToken;
     out.innerHTML = '<p class="ns-empty__hint" id="askThinking">考え中… 関連箇所を検索し、ニューラルが学習しています（0%）</p>' +
       '<div class="ns-progress"><div id="askBar" class="ns-progress__fill" style="width:0%"></div></div>';
-    A.hybridAnswer(q, {
+    var run = state.source === 'kb' ? A.hybridAnswerKB : A.hybridAnswer;
+    run(q, {
       temperature: state.temperature,
       onProgress: function (s) {
         if (token !== askToken) return;
