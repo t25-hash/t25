@@ -8,7 +8,7 @@
   'use strict';
   var C = NSCode.C, M = NSCode.multiAgent;
 
-  var DEFAULT_GOAL = '熱交換器 E-201 の更新を設計・レビュー・検証する';
+  var DEFAULT_GOAL = '歯車減速機を設計・レビュー・検証する';
   var SIM_HINT = 'キーワード規則＋シード値による決定的シミュレーション（LLM 非使用）';
 
   var state = NSCode.api.labState('#/multi-agent') || {};
@@ -16,6 +16,12 @@
 
   function persist() { NSCode.api.labState('#/multi-agent', state); }
   function el(id) { return document.getElementById(id); }
+
+  /* dynamic: the team solves the latest Ask question */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.query) { state.goal = r.query; persist(); }
+  }
 
   /* role chip/avatar/tag helpers (deterministic colors from the engine) */
   function avatar(roleName) {
@@ -54,7 +60,9 @@
   }
 
   function onMount() {
+    syncFromAsk();
     var input = el('maGoal'), btn = el('maRun');
+    if (input) input.value = state.goal;
     function run() { state.goal = input.value; persist(); renderAll(); }
     btn.addEventListener('click', run);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });

@@ -20,10 +20,19 @@
   function persist() { NSCode.api.labState('#/embedding', state); }
   function el(id) { return document.getElementById(id); }
 
-  /* dynamic: token/embedding viewers reflect the latest Ask query */
+  /* dynamic: all viewers reflect the latest Ask run.
+   * Token/Embedding ← the question; Similarity ← question vs answer;
+   * Cluster ← the retrieved chunks (so the scatter shows THIS run's passages). */
   function syncFromAsk() {
     var r = NSCode.lastRun && NSCode.lastRun.get();
-    if (r && r.query) { state.tokenText = r.query; state.embText = r.query; persist(); }
+    if (!r || !r.query) return;
+    state.tokenText = r.query;
+    state.embText = r.query;
+    state.simA = r.query;
+    state.simB = r.generated || (r.answer && r.answer[0]) || ((r.hits && r.hits[0] && r.hits[0].text) || '').slice(0, 50) || r.query;
+    var lines = (r.hits || []).map(function (h) { return (h.text || '').replace(/\s+/g, ' ').trim().slice(0, 48); }).filter(Boolean);
+    if (lines.length >= 2) state.clusterText = lines.join('\n');
+    persist();
   }
 
   /* ---------- One page render ---------- */
@@ -75,6 +84,9 @@
     syncFromAsk();
     if (el('tkText')) el('tkText').value = state.tokenText;
     if (el('emText')) el('emText').value = state.embText;
+    if (el('simA')) el('simA').value = state.simA;
+    if (el('simB')) el('simB').value = state.simB;
+    if (el('clText')) el('clText').value = state.clusterText;
     el('tkText').addEventListener('input', function () { state.tokenText = el('tkText').value; persist(); renderTokens(); });
     el('emText').addEventListener('input', function () { state.embText = el('emText').value; persist(); renderEmbedding(); });
     ['simA', 'simB'].forEach(function (id) { el(id).addEventListener('input', function () { state[id] = el(id).value; persist(); renderSim(); }); });

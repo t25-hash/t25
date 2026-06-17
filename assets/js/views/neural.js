@@ -9,8 +9,35 @@
 
   var unsub = null, autoFilled = false, pendingReplace = false;
 
+  /* dynamic defaults (no hardcoded sample words): prefer the latest Ask question,
+   * else the most frequent multi-char subword the model actually learned — so the
+   * seed/context always match whatever corpus is loaded and generation works. */
+  function corpusToken() {
+    var m = LAB.state.model;
+    if (m && m.vocab && m.vocab.itos) {
+      var cand = m.vocab.itos.filter(function (t) { return t && t.length >= 2 && /[぀-ヿ一-鿿]/.test(t); });
+      if (cand.length) return cand[0];
+      for (var i = 1; i < m.vocab.itos.length; i++) { if (m.vocab.itos[i] && m.vocab.itos[i] !== '\n') return m.vocab.itos[i]; }
+    }
+    return '';
+  }
+  function askQuery() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    return (r && r.query) ? r.query : '';
+  }
+  function defaultSeed() { return askQuery() || corpusToken(); }
+  function defaultCtx() {
+    var q = askQuery(), m = LAB.state.model;
+    if (q && m) { var enc = NLM.encode(m, q); if (enc.length) return m.vocab.itos[enc[0]] || corpusToken(); }
+    return corpusToken();
+  }
+  function fillSeedDefaults() {
+    var s = el('nlSeed'); if (s && !s.value.trim()) s.value = defaultSeed();
+    var c = el('nlCtx'); if (c && !c.value.trim()) c.value = defaultCtx();
+  }
+
   var EXPLAIN =
-    '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。トークンはコーパスから自動学習した<b>サブワード</b>（よく出る語のまとまり：「機械」「発電」「蒸気タービン」など）で、文字単位より自然な日本語を生成できます（端末内学習・DL なし）。</p>' +
+    '<p class="ns-lesson">ニューラルネットは、入力を数値ベクトルに変換し、重み付き和と非線形関数を重ねて出力を計算する仕組みです。ここで動くのは、文章の「次のトークン」を予測する小さな<b>ニューラル言語モデル</b>です。トークンはコーパスから自動学習した<b>サブワード</b>（よく出る語のまとまり：「機械」「歯車」「軸受」など）で、文字単位より自然な日本語を生成できます（端末内学習・DL なし）。</p>' +
     '<pre class="ns-code">前の C 個のトークン\n' +
     '   │  ① 埋め込み（各トークン → ベクトル）\n' +
     '   ▼\n' +
@@ -26,10 +53,10 @@
 
   var ADD =
     '<p class="ns-lesson">このモデルは Ask と同じナレッジベース（文書）から学習します。文章を追加すると KB に文書が増え、モデルを<b>再学習</b>します。</p>' +
-    '<textarea id="nlAddText" class="ns-input" rows="4" placeholder="学習させたい文章を貼り付け…（例：自社プラントの運転手順 / トラブル事例 / 仕様）"></textarea>' +
+    '<textarea id="nlAddText" class="ns-input" rows="4" placeholder="学習させたい文章を貼り付け…（例：技術文書 / 教科書の記述 / 仕様）"></textarea>' +
     '<div class="ns-actions">' +
       '<button id="nlAdd" class="ns-btn">学習データに追加して再学習</button>' +
-      '<button id="nlReset" class="ns-btn ns-btn--ghost">サンプル（廃棄物発電ほか）に戻す</button>' +
+      '<button id="nlReset" class="ns-btn ns-btn--ghost">サンプルに戻す</button>' +
     '</div>' +
     '<div id="nlAddStatus" class="ns-empty__hint"></div>' +
     '<div id="nlKb"></div>';
@@ -59,10 +86,10 @@
     '<div id="nlProg"></div>' +
     '<div id="nlStats"></div>' +
     '<p class="ns-lesson" style="margin-top:16px"><b>① このモデルで生成する</b></p>' +
-    '<div class="ns-qa-bar"><input id="nlSeed" class="ns-input" value="蒸気タービン"><button id="nlGen" class="ns-btn">生成</button></div>' +
+    '<div class="ns-qa-bar"><input id="nlSeed" class="ns-input" placeholder="生成の起点（コーパス/質問から自動）"><button id="nlGen" class="ns-btn">生成</button></div>' +
     '<div id="nlGenOut"></div>' +
     '<p class="ns-lesson" style="margin-top:16px"><b>② 次トークンの確率（softmax の実値）</b></p>' +
-    '<div class="ns-qa-bar"><input id="nlCtx" class="ns-input" value="廃熱"><button id="nlProbBtn" class="ns-btn ns-btn--ghost">予測</button></div>' +
+    '<div class="ns-qa-bar"><input id="nlCtx" class="ns-input" placeholder="文脈トークン（コーパス/質問から自動）"><button id="nlProbBtn" class="ns-btn ns-btn--ghost">予測</button></div>' +
     '<div id="nlProbOut"></div>' +
     '<p class="ns-lesson" style="margin-top:16px"><b>③ 埋め込みの実値（学習で得たベクトル）</b></p>' +
     '<div id="nlEmbOut"></div>';
@@ -126,7 +153,7 @@
     renderProg(); renderStats();
     var st = LAB.state;
     if (st.training) { autoFilled = false; return; }
-    if (st.model && !autoFilled) { autoFilled = true; renderGen(); renderProbs(); renderEmb(); renderMap(); }
+    if (st.model && !autoFilled) { autoFilled = true; fillSeedDefaults(); renderGen(); renderProbs(); renderEmb(); renderMap(); }
   }
 
   function renderMap() {
@@ -280,9 +307,9 @@
     var out = el('nlGenOut'); if (!out) return;
     var st = LAB.state;
     if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると生成できます。</p>'; return; }
-    var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || '蒸気タービン';
+    var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || defaultSeed();
     var seed = NLM.encode(st.model, seedStr).slice(0, st.model.C);
-    if (!seed.length) seed = NLM.encode(st.model, '蒸気').slice(0, st.model.C);
+    if (!seed.length) seed = NLM.encode(st.model, corpusToken()).slice(0, st.model.C);
     var g = NSCode.babyLLM.join(LAB.generate(seed, { temperature: 0.7, topK: 6, maxTokens: 48 }));
     out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(g) + '</div>';
   }
@@ -291,7 +318,7 @@
     var out = el('nlProbOut'); if (!out) return;
     var st = LAB.state;
     if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">学習が終わると予測できます。</p>'; return; }
-    var ctx = (el('nlCtx') && el('nlCtx').value.trim()) || '廃熱';
+    var ctx = (el('nlCtx') && el('nlCtx').value.trim()) || defaultCtx();
     var top = LAB.nextProbs(ctx, 8) || [];
     out.innerHTML = '<p class="ns-empty__hint">文脈「' + C.esc(ctx) + '」の次に来る確率が高いトークン（モデルの実出力）:</p>' +
       '<div class="ns-trace2"><div class="ns-trace2__row">' + top.map(function (t) {

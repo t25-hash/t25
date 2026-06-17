@@ -21,10 +21,10 @@
   function el(id) { return document.getElementById(id); }
   function tokCount(t) { return T.tokenize(t || '').length; }
 
-  /* dynamic: the LLM prompt reflects the latest Ask query */
+  /* dynamic: both the LLM prompt and the prompt-eval target follow the Ask query */
   function syncFromAsk() {
     var r = NSCode.lastRun && NSCode.lastRun.get();
-    if (r && r.query) { state.prompt = r.query; persist(); }
+    if (r && r.query) { state.prompt = r.query; state.promptEval = r.query; persist(); }
   }
 
   var CRITERIA = [
@@ -59,6 +59,7 @@
   function onMount() {
     syncFromAsk();
     if (el('pgPrompt')) el('pgPrompt').value = state.prompt;
+    if (el('evPrompt')) el('evPrompt').value = state.promptEval;
     el('pgModel').addEventListener('change', function () { state.model = el('pgModel').value; persist(); renderLLM(); });
     el('pgTemp').addEventListener('input', function () { state.temp = +el('pgTemp').value; el('pgTempV').textContent = state.temp; persist(); });
     el('pgSys').addEventListener('input', function () { state.system = el('pgSys').value; persist(); });
