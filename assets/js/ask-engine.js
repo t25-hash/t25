@@ -354,6 +354,8 @@
     // CJK chars (e.g.「， は荷重， は試験前」). ≥2 such gaps ⇒ interleaved garbage.
     if ((s.match(/[、，][ 　\t]/g) || []).length >= 2) return true;
     if ((s.match(/[一-鿿ぁ-ヿ][ 　\t][一-鿿ぁ-ヿ]/g) || []).length >= 2) return true;
+    // unbalanced parentheses ⇒ a parenthetical was split across columns (interleave)
+    if (((s.match(/[（(]/g) || []).length) !== ((s.match(/[）)]/g) || []).length)) return true;
     var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
     if (letters < s.length * 0.55) return true;
     return false;
@@ -365,13 +367,20 @@
     if (/^[0-9０-９]+[\.\．・]/.test(line)) return true;
     return false;
   }
-  // Rebuild whole sentences from a document. KB docs (PDF-extracted) hard-wrap
-  // lines MID-SENTENCE, so we accumulate lines into a buffer and only emit when a
-  // sentence ender appears (re-joining soft wraps); blank/heading lines reset it.
-  function buildSentences(text) {
+  // a display-equation / symbol line (extracted PDF math wedged between text
+  // lines). Skipping it lets the surrounding prose re-join into one sentence.
+  function isMathLine(l) {
+    var jp = (l.match(/[一-鿿ぁ-ヿ]/g) || []).length;
+    if (jp >= l.length * 0.35) return false;                       // enough Japanese → it's prose
+    return /[=＝＋×÷∫∑√σεγτθλμνπρω()（）0-9]/.test(l);            // otherwise looks like a formula
+  }
+  // accumulate body lines into a buffer and emit only when a sentence ender
+  // appears (re-joining soft wraps); blank/heading lines reset the buffer,
+  // equation lines are skipped (bridging the prose across them).
+  function emitSentences(lines) {
     var out = [], buf = '';
-    String(text || '').split('\n').forEach(function (raw) {
-      var line = cleanLine(raw);
+    lines.forEach(function (line) {
+      if (isMathLine(line)) return;                                 // skip formula line, keep buffer
       if (!line || isHeadingLine(line)) { buf = ''; return; }
       buf += line;
       var lastEnder = -1;
@@ -382,6 +391,26 @@
       } else if (buf.length > 180) { buf = ''; }
     });
     return out;
+  }
+  function cleanYield(sents) { var n = 0; for (var i = 0; i < sents.length; i++) if (sents[i].length >= 18 && !isJunkSent(sents[i])) n++; return n; }
+  // Rebuild whole sentences from a document. KB docs are extracted from TWO-COLUMN
+  // PDFs, where the columns are interleaved by alternating lines (line N = left,
+  // N+1 = right) — reading them in order produces garbled, spliced sentences. We
+  // therefore try both the original order AND a de-interleaved order (split body
+  // lines by parity = the two columns, read one then the other) and keep whichever
+  // yields more CLEAN sentences. Single-column docs keep their original order.
+  function buildSentences(text) {
+    var body = [];
+    String(text || '').split('\n').forEach(function (raw) {
+      if (/^\s*[#>]/.test(raw)) return;                 // drop markdown heading / breadcrumb
+      var line = cleanLine(raw); if (line) body.push(line);
+    });
+    var A = emitSentences(body);
+    if (body.length < 6) return A;
+    var odd = [], even = [];                             // the two interleaved columns
+    for (var i = 0; i < body.length; i++) (i % 2 ? even : odd).push(body[i]);
+    var B = emitSentences(odd.concat(even));
+    return (cleanYield(B) > cleanYield(A) * 1.2) ? B : A;
   }
   // ordered whole sentences from the FULL source documents behind the hits
   function hitDocGroups(hits, docs) {
