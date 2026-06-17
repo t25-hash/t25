@@ -140,6 +140,23 @@
   function setDocs(docs) { store.set('ask.docs', docs); }
   function resetDocs() { store.set('ask.docs', DEFAULT_DOCS); return DEFAULT_DOCS; }
 
+  /* subword merges learned from the ENTIRE knowledge base, so Ask tokenizes with
+   * the full-KB vocabulary even though each answer only trains on retrieved
+   * chunks. Prefer the Neural Lab base model's merges (already learned on the
+   * whole KB); otherwise learn once and cache by KB signature. */
+  var _mergeCache = { sig: '', merges: null };
+  function kbMerges() {
+    var docs = getDocs();
+    var sig = docs.map(function (d) { return d.name + ':' + (d.text || '').length; }).join('|');
+    if (_mergeCache.sig === sig && _mergeCache.merges) return _mergeCache.merges;
+    var base = NSCode.neuralLab && NSCode.neuralLab.state && NSCode.neuralLab.state.model;
+    var merges = (base && base.merges && base.merges.length)
+      ? base.merges
+      : NSCode.neuralLM.learnMerges(docs.map(function (d) { return d.text; }).join('\n'));
+    _mergeCache = { sig: sig, merges: merges };
+    return merges;
+  }
+
   /* clean PDF/extracted text before the net learns it: normalize unicode
    * (NFKC: full-width→ASCII, half-width kana→full), drop bare page-number
    * lines and obvious header/footer noise, collapse whitespace. Big quality
@@ -342,7 +359,10 @@
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
     var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
     var L = NSCode.neuralLM;
-    var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
+    // tokenize with subwords learned from the WHOLE KB (not just the retrieved
+    // slice) so word boundaries are stable even on a small context — reuse the
+    // Neural Lab base model's merges if trained, else learn once and cache.
+    var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400, merges: kbMerges() });
     // extractive answer from the retrieved passages — the reliable, grammatical
     // reply shown as the main answer (the neural generation is a learning demo).
     var compose = composeAnswer(question, res.hits, getDocs());

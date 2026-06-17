@@ -377,8 +377,47 @@
     return String(s || '').trim();
   }
 
+  /* project the learned token embeddings to 2D (PCA, top-2 principal components
+   * via power iteration) so the vocabulary can be drawn as a map — semantically
+   * related subwords end up near each other. Returns [{tok, freq, nx, ny}] with
+   * nx/ny in [0,1]. Pure JS, no library. */
+  function embedMap(m, opts) {
+    opts = opts || {};
+    var D = m.D, V = m.V, freq = {};
+    for (var i = 0; i < m.ids.length; i++) freq[m.ids[i]] = (freq[m.ids[i]] || 0) + 1;
+    var ids = []; for (var id = 1; id < V; id++) ids.push(id);
+    ids.sort(function (a, b) { return (freq[b] || 0) - (freq[a] || 0); });
+    ids = ids.slice(0, Math.min(opts.max || 60, V - 1));
+    var n = ids.length;
+    if (n < 2) return [];
+    var X = ids.map(function (tid) { var base = tid * D, v = new Float64Array(D); for (var d = 0; d < D; d++) v[d] = m.Emb[base + d]; return v; });
+    var mean = new Float64Array(D);
+    X.forEach(function (v) { for (var d = 0; d < D; d++) mean[d] += v[d]; });
+    for (var d0 = 0; d0 < D; d0++) mean[d0] /= n;
+    X.forEach(function (v) { for (var d = 0; d < D; d++) v[d] -= mean[d]; });
+    var Cov = []; for (var a = 0; a < D; a++) Cov.push(new Float64Array(D));
+    X.forEach(function (v) { for (var a = 0; a < D; a++) { var va = v[a]; for (var b = 0; b < D; b++) Cov[a][b] += va * v[b]; } });
+    for (var a1 = 0; a1 < D; a1++) for (var b1 = 0; b1 < D; b1++) Cov[a1][b1] /= n;
+    function mv(M, x) { var y = new Float64Array(D); for (var a = 0; a < D; a++) { var s = 0; for (var b = 0; b < D; b++) s += M[a][b] * x[b]; y[a] = s; } return y; }
+    function nrm(x) { var s = 0; for (var i = 0; i < x.length; i++) s += x[i] * x[i]; return Math.sqrt(s) || 1; }
+    function power(M) { var x = new Float64Array(D); for (var i = 0; i < D; i++) x[i] = Math.sin(i + 1); for (var it = 0; it < 80; it++) { var y = mv(M, x), q = nrm(y); for (var j = 0; j < D; j++) x[j] = y[j] / q; } return x; }
+    var v1 = power(Cov), Cv1 = mv(Cov, v1), lam = 0;
+    for (var i1 = 0; i1 < D; i1++) lam += v1[i1] * Cv1[i1];
+    var Cov2 = []; for (var a2 = 0; a2 < D; a2++) { Cov2.push(new Float64Array(D)); for (var b2 = 0; b2 < D; b2++) Cov2[a2][b2] = Cov[a2][b2] - lam * v1[a2] * v1[b2]; }
+    var v2 = power(Cov2);
+    var pts = ids.map(function (tid, k) {
+      var v = X[k], x = 0, y = 0; for (var d = 0; d < D; d++) { x += v[d] * v1[d]; y += v[d] * v2[d]; }
+      return { tok: m.vocab.itos[tid], freq: freq[tid] || 0, x: x, y: y };
+    });
+    var xs = pts.map(function (p) { return p.x; }), ys = pts.map(function (p) { return p.y; });
+    var mnx = Math.min.apply(null, xs), mxx = Math.max.apply(null, xs), mny = Math.min.apply(null, ys), mxy = Math.max.apply(null, ys);
+    pts.forEach(function (p) { p.nx = (p.x - mnx) / ((mxx - mnx) || 1); p.ny = (p.y - mny) / ((mxy - mny) || 1); });
+    return pts;
+  }
+
   NSCode.neuralLM = {
-    tokenize: tok, encode: encodeWith, buildVocab: buildVocab, create: create,
+    tokenize: tok, encode: encodeWith, buildVocab: buildVocab, create: create, embedMap: embedMap,
+    learnMerges: function (text, opts) { opts = opts || {}; return learnMerges(tok(text), opts.numMerges || 300, opts.minMerge || 3); },
     forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
     seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer
   };
