@@ -75,6 +75,8 @@
         C.Panel({ title: '学習データを追加して再学習', hint: 'Ask と共通のナレッジベースに文書を足してモデルを学習させる', body: ADD }) +
         C.Panel({ title: 'ZIP（.md 一括）から階層ごと学習', hint: 'フォルダ構成を保ったまま Markdown をまとめて取り込む', body: ZIP }) +
         C.Panel({ title: '学習設定（ハイパーパラメータ）', body: hyperBody() }) +
+        C.Panel({ title: '学習マップ（サブワード埋め込みの2D投影）', hint: 'KB から学んだトークンを意味の近さで配置（PCA）。近いほど使われ方が似ている',
+          body: '<div id="nlMap"></div><div id="nlSubs"></div>' }) +
         C.Panel({ title: 'Ask のベースニューラル（実物）', hint: 'いま動いているモデルの中身をそのまま表示', body: LIVE });
     },
     onMount: function () {
@@ -124,7 +126,31 @@
     renderProg(); renderStats();
     var st = LAB.state;
     if (st.training) { autoFilled = false; return; }
-    if (st.model && !autoFilled) { autoFilled = true; renderGen(); renderProbs(); renderEmb(); }
+    if (st.model && !autoFilled) { autoFilled = true; renderGen(); renderProbs(); renderEmb(); renderMap(); }
+  }
+
+  function renderMap() {
+    var box = el('nlMap'); if (!box) return;
+    var m = LAB.state.model; if (!m) { box.innerHTML = ''; return; }
+    var pts = NSCode.neuralLM.embedMap(m, { max: 64 });
+    if (!pts.length) { box.innerHTML = '<p class="ns-empty__hint">トークンが少なく投影できません。</p>'; return; }
+    var maxF = pts.reduce(function (a, p) { return Math.max(a, p.freq); }, 1);
+    var labels = {}; pts.slice().sort(function (a, b) { return b.freq - a.freq; }).slice(0, 36).forEach(function (p) { labels[p.tok] = 1; });
+    var svg = pts.map(function (p) {
+      var cx = (3 + p.nx * 94).toFixed(1), cy = (3 + (1 - p.ny) * 94).toFixed(1);
+      var r = (0.7 + 1.8 * Math.log(1 + p.freq) / Math.log(1 + maxF)).toFixed(2);
+      var dot = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="var(--accent)" opacity="0.55"/>';
+      var lab = labels[p.tok] ? '<text x="' + (+cx + +r + 0.4).toFixed(1) + '" y="' + cy + '" font-size="2.1" fill="var(--text)" dominant-baseline="middle">' + C.esc(p.tok === '\n' ? '⏎' : p.tok) + '</text>' : '';
+      return dot + lab;
+    }).join('');
+    box.innerHTML = '<svg viewBox="0 0 100 100" style="width:100%;height:auto;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)">' + svg + '</svg>' +
+      '<p class="ns-empty__hint">点＝学習したトークン（サブワード）。位置は埋め込みベクトルの主成分2軸への投影で、近いほど使われ方が似ています。大きい点ほど高頻度。</p>';
+    var subs = el('nlSubs');
+    if (subs) {
+      var sw = m.vocab.itos.filter(function (t) { return t.length >= 2 && /[぀-ヿ一-鿿]/.test(t); }).slice(0, 40);
+      subs.innerHTML = '<p class="ns-empty__hint" style="margin-top:10px">学習したサブワード（' + ((m.merges && m.merges.length) || 0) + ' 回マージ・頻度順）:</p>' +
+        sw.map(function (t) { return '<span class="ns-tag">' + C.esc(t) + '</span>'; }).join(' ');
+    }
   }
 
   function setAddStatus(m) { var s = el('nlAddStatus'); if (s) s.textContent = m || ''; }

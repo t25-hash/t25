@@ -70,6 +70,13 @@
       var note = view && view.module && NSCode.pageNotes ? NSCode.pageNotes[view.module] : null;
       var hdr = note ? mount.querySelector('.ns-page-header') : null;
       if (hdr) { var ab = document.createElement('div'); ab.className = 'ns-about'; ab.innerHTML = note; hdr.appendChild(ab); }
+      // inject the "Ask 連動ビュー" card so every Lab reflects the latest Ask run
+      var linked = (NSCode.lastRun && view && view.module) ? NSCode.lastRun.card(view.module) : '';
+      if (linked) {
+        var holder = document.createElement('div'); holder.innerHTML = linked;
+        var lnode = holder.firstChild, headerEl = mount.querySelector('.ns-page-header');
+        if (lnode) { if (headerEl && headerEl.parentNode) headerEl.parentNode.insertBefore(lnode, headerEl.nextSibling); else mount.insertBefore(lnode, mount.firstChild); }
+      }
       if (view && view.onMount) view.onMount(ctx);
       mount.scrollTop = 0;
       window.dispatchEvent(new CustomEvent('nscode:navigated', { detail: match }));
