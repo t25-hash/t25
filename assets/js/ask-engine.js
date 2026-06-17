@@ -193,6 +193,27 @@
   var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え/g;
   function coreQuery(q) { return String(q == null ? '' : q).replace(Q_GENERIC, ''); }
 
+  /* generic standalone terms that, ALONE, don't pin a topic. Because matching is
+   * lexical (no word-sense disambiguation), a lone 「基礎」「供給」「アルゴリズム」
+   * lets a different-sense doc hijack the answer (殻理論の基礎 → ポンプの基礎(土台)).
+   * So they are NOT treated as the question's specific key term. */
+  var GENERIC_TERM = {};
+  ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
+   'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
+   'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 アルゴリズム')
+    .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
+
+  /* the question's SPECIFIC terms: kanji/katakana runs (hiragana particles split
+   * them) minus generic words. Kanji and katakana runs are split separately so a
+   * compound like 運動生成アルゴリズム yields 運動生成 + アルゴリズム — the generic
+   * カタカナ語 (アルゴリズム) is then dropped, leaving the real topic (運動生成). */
+  function keyTerms(q) {
+    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
+    var seen = {}, out = [];
+    runs.forEach(function (r) { if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); } });
+    return out;
+  }
+
   /* chunk every doc, tagging each chunk with its source document name */
   function buildChunks(docs) {
     var all = [];
@@ -306,6 +327,8 @@
   // refs and enumeration markers, then collapse spaces.
   function sanitizeSent(s) {
     s = String(s || '');
+    s = s.replace(/^[A-Za-z][^。．！？]*?[（(]\s*(?:19|20)\d{2}\s*[)）][^。．！？]*?[.．](?=\s*[一-鿿ぁ-ヿ])/, ''); // 先頭の文献「Casci,C.,(1985)…Plenum.」を除去
+    s = s.replace(/[（(]\s*(?:19|20)\d{2}\s*[)）]\s*,?\s*\d*\.?/g, '');   // 文中の文献年「(1991) ,217.」を除去
     s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
     s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
     s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
@@ -377,13 +400,18 @@
     if (!NSCode.memory) return '';
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });
+    var keys = keyTerms(question);
+    function hasKey(s) { for (var i = 0; i < keys.length; i++) if (s.indexOf(keys[i]) >= 0) return true; return false; }
     var seen = {}, cands = [];
     hitDocGroups(hits, docs).forEach(function (g) {
       g.arr.forEach(function (s) {
         if (seen[s] || isJunkSent(s) || s.length < 18 || s.length > 160) return;
         seen[s] = 1;
         var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
-        var rel = (gs.length ? m / Math.sqrt(gs.length) : 0) + 0.25 * emb.cosine(qv, emb.embed(s, 64));
+        // keep only on-topic sentences: a SPECIFIC term when the question has one,
+        // else any shared content bigram — so off-topic neighbours don't leak in.
+        if (!(keys.length ? hasKey(s) : m >= 1)) return;
+        var rel = (gs.length ? m / Math.sqrt(gs.length) : 0) + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.5 : 0);
         cands.push({ s: s, rel: rel });
       });
     });
@@ -403,6 +431,13 @@
     target = target || 100;
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });   // content words only
+    var keys = keyTerms(question);
+    function hasKey(s) { for (var i = 0; i < keys.length; i++) if (s.indexOf(keys[i]) >= 0) return true; return false; }
+    function sharesQuery(s) {   // appended sentence must stay on the question's topic
+      if (keys.length) return hasKey(s);              // require a SPECIFIC term (avoids 伴う/変化 drift)
+      var g = gram(s); for (var j = 0; j < g.length; j++) if (qg[g[j]]) return true;
+      return false;
+    }
     var groups = hitDocGroups(hits, docs);
     var seen = {}, cands = [];
     groups.forEach(function (g) {
@@ -416,7 +451,9 @@
     function rel(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64));
+      // strongly prefer sentences that actually contain a SPECIFIC question term —
+      // a sentence merely sharing 変化/伴う must not outrank one about 相変化伝熱/促進.
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0);
     }
     cands.forEach(function (c) { c.rel = rel(c.s); });
     cands.sort(function (a, b) { return b.rel - a.rel; });
@@ -435,7 +472,7 @@
     var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
     used[top.s] = 1;
     function tryAdd(s) {
-      if (!s || used[s] || isJunkSent(s)) return;
+      if (!s || used[s] || isJunkSent(s) || !sharesQuery(s)) return;     // stay on-topic (no drift)
       if (len + s.length > target + 20) return;                          // cap ~120字 (P4)
       picked.push(s); used[s] = 1; len += s.length;
     }
@@ -460,12 +497,26 @@
    * match (e.g. unrelated queries used to surface the OHSMS catch-all doc). Accept
    * only if retrieval was reasonably strong OR the answer shares a content term
    * with the question (generic template/stop words removed first). */
-  function weakRelevance(question, answer, topCos) {
+  function weakRelevance(question, answer, source, topCos) {
     if (!answer) return true;
+    var keys = keyTerms(question);
+    if (keys.length) {
+      // a confident answer must contain one of the question's SPECIFIC terms (in
+      // the answer text or its source title) — not just a generic bigram. This is
+      // the word-sense gate that stops 殻理論→ポンプの基礎 / 相変化伝熱→シミュレーション.
+      var hay = String(answer) + '  ' + String(source || ''), kg = [];
+      keys.forEach(function (k) {
+        kg.push(k);
+        var b = k.match(/[一-鿿ァ-ヶー]/g) || [];
+        for (var j = 0; j < b.length - 1; j++) kg.push(b[j] + b[j + 1]);
+      });
+      for (var i = 0; i < kg.length; i++) if (kg[i].length >= 2 && hay.indexOf(kg[i]) >= 0) return false;
+      return (topCos == null) || topCos < 0.5;   // no specific term anywhere → trust only very strong retrieval
+    }
+    // all-generic question (no specific term): fall back to bigram/cos
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });
     var m = 0; gram(answer).forEach(function (x) { if (qg[x]) m++; });
-    if (m >= 1) return false;            // answer shares a content term with the question → trust it
-    return topCos < 0.33;                // no shared term: trust only when retrieval is strong (avoids the 仕組み/特徴 catch-all)
+    return !(m >= 1 || (topCos != null && topCos >= 0.33));
   }
 
   /* ask a question over the docs, the Claude Code way (RAG → compose → show how
@@ -552,7 +603,7 @@
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
         var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
-        var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
+        var weak = weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '' };
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
@@ -617,7 +668,7 @@
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
             var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
-            var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
+            var weak = weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '' };
             var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
             if (NSCode.lastRun) NSCode.lastRun.set({
