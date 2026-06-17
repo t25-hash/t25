@@ -176,6 +176,28 @@
     return arr.slice(0, k || 8).map(function (x) { return { tok: m.vocab.itos[x[0]], prob: x[1] }; });
   }
 
+  function hasKeys(o) { for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) return true; return false; }
+
+  /* observed next-token transitions from the model's own training tokens
+   * (m.ids). bi: prevId → {nextId:1}; tri: "p2,p1" → {nextId:1}. Used to mask
+   * generation to corpus-real continuations (longest context wins, back-off). */
+  function transitions(m) {
+    var ids = m.ids, bi = {}, tri = {};
+    for (var i = 1; i < ids.length; i++) {
+      var a = ids[i - 1], b = ids[i];
+      (bi[a] || (bi[a] = {}))[b] = 1;
+      if (i >= 2) { var key = ids[i - 2] + ',' + a; (tri[key] || (tri[key] = {}))[b] = 1; }
+    }
+    return { bi: bi, tri: tri };
+  }
+  function allowFromTransitions(tr) {
+    return function (ids) {
+      var p1 = ids[ids.length - 1], p2 = ids[ids.length - 2];
+      var t = (p2 != null) ? tr.tri[p2 + ',' + p1] : null;
+      return (t && hasKeys(t)) ? t : (tr.bi[p1] || null);
+    };
+  }
+
   /* autoregressive generation from seed tokens (strings) */
   function generate(m, seedToks, opts) {
     opts = opts || {};
@@ -196,7 +218,13 @@
       var ctx = ids.slice(ids.length - C);
       var prevId = ids[ids.length - 1];
       var f = forward(m, ctx), p = f.p;
+      // restrict the next token to continuations that actually occur in the
+      // corpus after this context (back-off). Tokens are single CJK chars, so
+      // this is what keeps the net from gluing characters into non-words.
+      var allow = opts.allow ? opts.allow(ids) : null;
+      if (allow && !hasKeys(allow)) allow = null;   // no observed continuation → don't mask
       for (var v = 0; v < p.length; v++) {
+        if (allow && !allow[v]) { p[v] = 0; continue; }           // off-corpus transition
         if (counts[v]) p[v] /= Math.pow(rep, counts[v]);          // repetition penalty
         if (avoidIds && avoidIds[v] != null) p[v] *= avoidIds[v]; // down-weight separators etc.
         if (blockBigram && seenBg[prevId + ',' + v]) p[v] *= 0.001; // block repeated bigram
@@ -248,11 +276,12 @@
     // character-separated (the corpus is full of e.g. 「軸振動・軸受温度・…」),
     // and use a stronger repetition penalty to avoid phrase loops.
     var avoid = { '・': 0.02, '、': 0.45, '，': 0.05, '…': 0.05, '·': 0.02 };
+    var allow = allowFromTransitions(transitions(m));   // corpus-real continuations only
     var K = opts.candidates || 12, best = null, bestScore = -1e9;
     for (var i = 0; i < K; i++) {
       var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
       var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 52,
-        repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true });
+        repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true, allow: allow });
       var sc = seqLogProb(m, g);
       if (sc > bestScore) { bestScore = sc; best = g; }
     }
