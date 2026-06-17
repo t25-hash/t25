@@ -126,6 +126,18 @@
       }
       var srcs = {}; a.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
       var tags = Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ');
+      if (a.weak) {           // relevance floor: don't present a confident off-topic answer
+        out.innerHTML =
+          '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
+            '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p></div>' +
+          '<p class="ns-empty__hint">参考までに、検索で近かった候補:</p>' +
+          a.hits.map(function (h, i) {
+            return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
+              '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
+              '<p class="ns-hit__text">' + highlight(h.chunk.text.slice(0, 200), q) + (h.chunk.text.length > 200 ? '…' : '') + '</p></div>';
+          }).join('');
+        return;
+      }
       var composed = (a.compose && a.compose.length)
         ? a.compose.map(function (s) { return highlight(s, q); }).join('<br>') : '';
       out.innerHTML =

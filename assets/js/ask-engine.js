@@ -303,14 +303,35 @@
     function clean(line) {
       return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
     }
-    // reject headings / captions / table rows / enumeration fragments — keep only
-    // things that read as real prose sentences (so the answer stays grammatical).
+    // strip PDF-extraction noise from a sentence (P2/P5): leading bullets/dots,
+    // page header/footer tokens (「β9－140 β9編 法 工 学」), inline figure/table/
+    // equation refs and enumeration markers, then collapse spaces. Returns '' when
+    // nothing readable remains.
+    function sanitize(s) {
+      s = String(s || '');
+      s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
+      s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
+      s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
+      s = s.replace(/[（(]\s*[0-9０-９]{1,2}\s*[）)]/g, '');          // (1)(2) インライン列挙/段組み混線
+      s = s.replace(/β\s*\d+\s*[－-]\s*\d+|β\s*\d+\s*編|[一-鿿]\d+\s*編/g, ''); // ページヘッダ/フッタ
+      s = s.replace(/^[\s.．。・･,，、:：;；)\]】」』>＞〕）]+/, '');     // 行頭ドット/記号
+      s = s.replace(/[ \t　]{2,}/g, ' ').replace(/\s+([、。，．）)」』])/g, '$1').trim();
+      return s;
+    }
+    // reject headings / captions / enumerations / fragments / garbled math so only
+    // real, readable prose sentences survive (keeps the answer grammatical).
     function isJunk(s) {
       if (!ENDER.test(s)) return true;                                   // not a sentence
+      if (s.replace(/[\s、，]/g, '').length < 14) return true;            // too short to be informative
+      if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞]/.test(s)) return true; // fragment start (P3)
       if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true; // caption
       if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true; // enumerated/bulleted
-      var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿa-zA-Z]/g) || []).length;
-      if (letters < s.length * 0.5) return true;                         // mostly digits/middots (section no.)
+      if ((s.match(/：/g) || []).length >= 2) return true;               // 変数定義リスト（記号脱落）
+      if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;                          // 数式
+      if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;     // 段組み混線の (1)…(2)… マーカー
+      if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;        // ページヘッダ/フッタ残り
+      var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
+      if (letters < s.length * 0.55) return true;                        // 記号・数字が多すぎる（崩れ）
       return false;
     }
     // Rebuild whole sentences from a document. KB docs (PDF-extracted) hard-wrap
@@ -335,8 +356,10 @@
         var lastEnder = -1;
         for (var i = 0; i < buf.length; i++) if ('。．！？!?'.indexOf(buf.charAt(i)) >= 0) lastEnder = i;
         if (lastEnder >= 0) {
-          NSCode.research.splitSentences(buf.slice(0, lastEnder + 1)).forEach(function (s) { s = s.trim(); if (s) out.push(s); });
+          NSCode.research.splitSentences(buf.slice(0, lastEnder + 1)).forEach(function (s) { s = sanitize(s); if (s) out.push(s); });
           buf = buf.slice(lastEnder + 1);                                 // keep the dangling tail
+        } else if (buf.length > 180) {
+          buf = '';                                                       // runaway with no ender = TOC/heading dump → drop
         }
       });
       return out;
@@ -351,7 +374,7 @@
     var seen = {}, cands = [];
     groups.forEach(function (g) {
       g.arr.forEach(function (s, idx) {
-        if (s.length < 18 || s.length > 200 || seen[s] || isJunk(s)) return;
+        if (s.length < 18 || s.length > 140 || seen[s] || isJunk(s)) return;
         seen[s] = 1; cands.push({ s: s, g: g, idx: idx });
       });
     });
@@ -373,29 +396,44 @@
     var mn = Math.min.apply(null, ncs), mx = Math.max.apply(null, ncs);
     shortlist.forEach(function (c) {
       c.ncn = (mx > mn) ? (c.nc - mn) / (mx - mn) : 0.5;
-      c.final = c.rel + 0.4 * c.ncn;
+      c.final = c.rel + 0.4 * c.ncn - 0.0015 * Math.max(0, c.s.length - 120);  // gently prefer ≤~120字 (P4)
     });
     shortlist.sort(function (a, b) { return b.final - a.final; });
     var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
     used[top.s] = 1;
     function tryAdd(s) {
-      if (!s || s.length < 8 || used[s] || isJunk(s)) return;
-      if (len + s.length > target + 45) return;
+      if (!s || used[s] || isJunk(s)) return;
+      if (len + s.length > target + 20) return;                          // cap ~120字 (P4)
       picked.push(s); used[s] = 1; len += s.length;
     }
+    // grow toward ~target only when the lead sentence is short; keep whole
+    // sentences (never cut mid-clause) so the result stays grammatical.
     // (a) continue with the FOLLOWING sentences of the same passage (most coherent)
     var arr = top.g.arr;
-    for (var i = top.idx + 1; i < arr.length && len < target - 15; i++) tryAdd(arr[i]);
+    for (var i = top.idx + 1; i < arr.length && len < target - 25; i++) tryAdd(arr[i]);
     // (b) still short → add the next best relevant clean sentences (same topic)
-    for (var k = 1; k < shortlist.length && len < target - 20; k++) tryAdd(shortlist[k].s);
+    for (var k = 1; k < shortlist.length && len < target - 25; k++) tryAdd(shortlist[k].s);
     var out = picked.join('');
-    // a single over-long sentence: trim at the last ender within range (grammatical)
-    if (out.length > target + 45) {
-      var head = out.slice(0, target + 45), pos = -1;
+    // safety net only: an extreme single sentence → trim at the last ender in range
+    if (out.length > target + 60) {
+      var head = out.slice(0, target + 60), pos = -1;
       ['。', '．', '！', '？', '!', '?'].forEach(function (e) { var p = head.lastIndexOf(e); if (p > pos) pos = p; });
-      out = (pos >= 30) ? head.slice(0, pos + 1) : head.slice(0, target) + '。';
+      if (pos >= 40) out = head.slice(0, pos + 1);
     }
-    return { text: out.trim(), source: top.g.src };
+    return { text: out.trim(), source: top.g.src, rel: top.rel };
+  }
+
+  /* P1 relevance floor — a confident off-topic answer is worse than admitting no
+   * match (e.g. unrelated queries used to surface the OHSMS catch-all doc). Accept
+   * only if retrieval was reasonably strong OR the answer shares a content term
+   * with the question (generic template/stop words removed first). */
+  function weakRelevance(question, answer, topCos) {
+    if (!answer) return true;
+    var core = String(question).replace(/について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義/g, '');
+    var qg = {}; gram(core).forEach(function (x) { qg[x] = 1; });
+    var m = 0; gram(answer).forEach(function (x) { if (qg[x]) m++; });
+    if (m >= 1) return false;            // answer shares a content term with the question → trust it
+    return topCos < 0.33;                // no shared term: trust only when retrieval is strong (avoids the 仕組み/特徴 catch-all)
   }
 
   /* ask a question over the docs, the Claude Code way (RAG → compose → show how
@@ -482,14 +520,16 @@
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
         var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
+        var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
+        if (weak) concise = { text: '', source: '' };
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
+          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, compose: compose, hits: res.hits, loss: m.loss };
+        return { text: concise.text, source: concise.source, weak: weak, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
       });
   }
 
@@ -544,13 +584,15 @@
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
             var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
+            var weak = weakRelevance(question, concise.text, res.hits[0] ? res.hits[0].score : 0);
+            if (weak) concise = { text: '', source: '' };
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
+              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, compose: compose, hits: res.hits, loss: m.loss };
+            return { text: concise.text, source: concise.source, weak: weak, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
           });
       });
     });
