@@ -179,56 +179,94 @@
   }
 
   /* COMPOSE a natural-language answer from the passages behind the top hits.
-   * Ranks the sentences of those source documents by lexical overlap + semantic
-   * similarity to the question, then returns the best few, deduped. The result
-   * is real sentences from the docs, so it is always grammatical Japanese —
-   * the reliable answer a tiny neural LM cannot form on its own. */
+   * Ranks the real sentences/list-items of those source documents by lexical +
+   * semantic match to the question. If the best match is part of an enumerated
+   * list ((1)(2)(3) / ①② / ・ …), the whole list block is returned in document
+   * order so the answer keeps its structure; otherwise the best few sentences
+   * are returned. Always real text from the docs (the baby LM can't synthesize). */
   function composeAnswer(query, hits, docs, max) {
-    var emb = NSCode.embeddings, qv = emb.embed(query, 64);
+    var emb = NSCode.embeddings, qv = emb.embed(query, 64), lim = max || 3;
     var hitSources = {};
     hits.forEach(function (h) { hitSources[h.chunk.source] = 1; });
-    // Build the sentence pool line-by-line: split on newlines FIRST so a heading
-    // or list item (often without 。) becomes its own unit instead of gluing
-    // onto the next sentence. Strip Markdown markers but KEEP the heading text —
-    // in heading-dense docs (handbook TOCs) the heading IS the relevant content,
-    // so deleting headings would leave nothing to answer with.
-    var poolSents = [];
+    var LIST = /^\s*(?:[（(]\s*[0-9０-９一二三四五六七八九十]+\s*[)）]|[①-⑳㉑-㉟]|[0-9０-９]+\s*[.\．、)]|[・･\-*])\s*\S/;
+    function clean(line) {
+      return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
+    }
+    // ordered lines per source (to re-assemble enumerations) + flat rankable units
+    var perSource = {}, units = [];
     docs.filter(function (d) { return hitSources[d.name]; }).forEach(function (d) {
-      String(d.text || '').split('\n').forEach(function (line) {
-        line = line.replace(/^[ \t]*#{1,6}[ \t]+/, '')   // heading marker
-                   .replace(/^[ \t]*>[ \t]?/, '')          // blockquote marker
-                   .replace(/[*_`]+/g, '').trim();
+      var lines = [];
+      String(d.text || '').split('\n').forEach(function (rawLine) {
+        var isList = LIST.test(rawLine), line = clean(rawLine), li = lines.length;
+        lines.push({ text: line, isList: isList });
         if (!line) return;
-        NSCode.research.splitSentences(line).forEach(function (s) {
-          s = s.trim(); if (s.length > 6) poolSents.push(s);
-        });
+        if (isList) {
+          if (line.length > 3) units.push({ s: line, src: d.name, li: li, isList: true });
+        } else {
+          NSCode.research.splitSentences(line).forEach(function (s) {
+            s = s.trim(); if (s.length > 6) units.push({ s: s, src: d.name, li: li, isList: false });
+          });
+        }
       });
+      perSource[d.name] = lines;
     });
     var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
-    function rank(sents) {
-      return sents.map(function (s) {
-        var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
-        var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-        return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
-      }).sort(function (a, b) { return b.score - a.score; });
+    function score(s) {
+      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64));
     }
-    var hasEnder = function (s) { return /[。．！？!?]/.test(s); };
-    var rankedProse = rank(poolSents.filter(hasEnder));        // real sentences first
-    var rankedHead  = rank(poolSents.filter(function (s) { return !hasEnder(s); }));
-    var answer = [], lim = max || 3;
-    function pushUnique(cand) {
-      if (!answer.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; })) answer.push(cand);
-    }
-    function take(ranked, needScore, limN) {
-      for (var i = 0; i < ranked.length && answer.length < limN; i++) {
-        if (needScore && ranked[i].score <= 0) break;
-        pushUnique(ranked[i].s);
+    units.forEach(function (u) { u.score = score(u.s); });
+    units.sort(function (a, b) { return b.score - a.score; });
+
+    // (A) structured answer: when the most relevant line is (or introduces) an
+    // enumerated list, return the whole list block — lead-in line, the items in
+    // document order, and a short closing line — so the answer keeps its shape.
+    var top = units[0];
+    if (top && top.score > 0) {
+      var lines = perSource[top.src];
+      // find a list line at the top match, or up to 2 prose lines below it
+      // (heading → intro → list), so a matching heading still finds its list.
+      var listAt = -1, seen = 0;
+      for (var c = top.li; c < lines.length && c <= top.li + 6; c++) {
+        if (!lines[c].text) continue;
+        if (lines[c].isList) { listAt = c; break; }
+        if (++seen > 2) break;
+      }
+      if (listAt >= 0) {
+        var i0 = listAt, i1 = listAt;
+        while (i0 - 1 >= 0 && lines[i0 - 1].isList) i0--;
+        while (i1 + 1 < lines.length && lines[i1 + 1].isList) i1++;
+        if (i1 - i0 + 1 >= 2) {                                                // a real enumeration
+          var block = [], pp = i0 - 1;
+          while (pp >= 0 && !lines[pp].text) pp--;                            // nearest line above = lead-in
+          if (pp >= 0 && !lines[pp].isList && lines[pp].text.length <= 90 && score(lines[pp].text) > 0) block.push(lines[pp].text);
+          for (var k = i0; k <= i1 && block.length < 12; k++) if (lines[k].text) block.push(lines[k].text);
+          var t = i1 + 1; while (t < lines.length && !lines[t].text) t++;     // short closing line ("である" 等)
+          if (t < lines.length && !lines[t].isList && lines[t].text.length <= 16) block.push(lines[t].text);
+          if (block.length >= 3) return block;
+        }
       }
     }
-    take(rankedProse, true, lim);                              // prose that shares query terms
-    if (!answer.length) take(rankedHead, true, lim);           // else headings that match (TOC docs)
-    if (!answer.length) take(rankedProse, false, Math.min(2, lim)); // else most similar prose
-    if (!answer.length) take(rankedHead, false, Math.min(2, lim));  // last resort: any heading
+
+    // (B) prose answer: prefer real sentences, then list/headings, then most similar.
+    var hasEnder = function (s) { return /[。．！？!?]/.test(s); };
+    var prose = units.filter(function (u) { return !u.isList && hasEnder(u.s); });
+    var other = units.filter(function (u) { return u.isList || !hasEnder(u.s); });
+    var answer = [];
+    function pushUnique(cand) {
+      if (!answer.some(function (q2) { return q2.indexOf(cand) >= 0 || cand.indexOf(q2) >= 0; })) answer.push(cand);
+    }
+    function take(arr, needScore, limN) {
+      for (var i = 0; i < arr.length && answer.length < limN; i++) {
+        if (needScore && arr[i].score <= 0) break;
+        pushUnique(arr[i].s);
+      }
+    }
+    take(prose, true, lim);
+    if (!answer.length) take(other, true, lim);
+    if (!answer.length) take(prose, false, Math.min(2, lim));
+    if (!answer.length) take(other, false, Math.min(2, lim));
     return answer;
   }
 
