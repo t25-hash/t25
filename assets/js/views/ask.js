@@ -125,7 +125,12 @@
           (a.text
             ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>'
             : '<p class="ns-empty__hint">生成できませんでした。</p>') +
-          '<div class="ns-qa-answer__src">起点: <span class="ns-tag">' + C.esc(a.seed) + '</span></div></div>' +
+          '<div class="ns-qa-answer__src">起点候補: ' +
+            ((a.seeds && a.seeds.length ? a.seeds : [a.seed]).map(function (s) {
+              return '<span class="ns-tag' + (s === a.seed ? ' ns-tag--on' : '') + '">' + C.esc(s) + '</span>';
+            }).join(' ')) +
+            (a.seeds && a.seeds.length > 1 ? '（採用: ' + C.esc(a.seed) + '）' : '') +
+          '</div></div>' +
         '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +

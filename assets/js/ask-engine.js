@@ -310,8 +310,8 @@
     var compose = composeAnswer(question, res.hits, getDocs());
     return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
       .then(function () {
-        var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 52 });
-        return { text: a.text, seed: a.seed, compose: compose, hits: res.hits, loss: m.loss };
+        var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 64 });
+        return { text: a.text, seed: a.seed, seeds: a.seeds, compose: compose, hits: res.hits, loss: m.loss };
       });
   }
 
