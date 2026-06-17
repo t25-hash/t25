@@ -410,7 +410,9 @@
       .then(function (t) { kbDocCache[idx] = t; return t; });
   }
 
-  /* hybrid answer over the prebuilt KB -> Promise<{text,seed,hits}> */
+  /* hybrid answer over the prebuilt KB -> Promise<{text,compose,seed,seeds,hits}>.
+   * Mirrors hybridAnswer (compose + neural generation + publish lastRun) so every
+   * Lab can visualize the same KB query. */
   function hybridAnswerKB(question, opts) {
     opts = opts || {};
     if (!question) return Promise.resolve(null);
@@ -425,10 +427,17 @@
         var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
         var L = NSCode.neuralLM;
         var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
+        var compose = composeAnswer(question, res.hits, docs);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 52 });
-            return { text: a.text, seed: a.seed, hits: res.hits, loss: m.loss };
+            var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 64 });
+            if (NSCode.lastRun) NSCode.lastRun.set({
+              query: question,
+              qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
+              hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
+              answer: compose, generated: a.text, seed: a.seed, seeds: a.seeds, ts: Date.now()
+            });
+            return { text: a.text, seed: a.seed, seeds: a.seeds, compose: compose, hits: res.hits, loss: m.loss };
           });
       });
     });

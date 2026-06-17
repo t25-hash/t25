@@ -7,13 +7,19 @@
   'use strict';
   var C = NSCode.C, E = NSCode.agentSim;
 
-  var DEFAULT_GOAL = 'ポンプ P-101 の軸振動アラームの原因を調査し、対応案をまとめる';
+  var DEFAULT_GOAL = '歯車減速機の設計手順を調べて要点をまとめる';
 
   var state = NSCode.api.labState('#/agent') || {};
   state = Object.assign({ goal: DEFAULT_GOAL, autoplay: false }, state);
 
   function persist() { NSCode.api.labState('#/agent', state); }
   function el(id) { return document.getElementById(id); }
+
+  /* dynamic: the agent loop visualizes answering the latest Ask question */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.query) { state.goal = r.query; persist(); }
+  }
 
   var SIM_HINT = 'ルールベースの決定論的シミュレーション（LLM/通信なし）';
 
@@ -66,6 +72,8 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    if (el('goal')) el('goal').value = state.goal;
     el('goal').addEventListener('input', function () {
       state.goal = el('goal').value; persist();
       renderLoop(); renderPlan(); renderReflection();

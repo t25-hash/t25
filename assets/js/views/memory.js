@@ -11,41 +11,48 @@
   var C = NSCode.C, M = NSCode.memory;
 
   var SEED_SEMANTIC = [
-    { text: 'ポンプ P-101 は冷却水を循環させる主要設備で、軸振動を常時監視しています。' },
-    { text: '軸振動の主な原因はベアリング摩耗・アライメント不良・キャビテーションです。' },
-    { text: 'キャビテーションは吸込側の圧力不足で発生し、流量低下や騒音を伴います。' },
-    { text: 'P&ID（配管計装図）は配管と計装を示す図面で、運転・保全の基礎資料です。' },
-    { text: 'DCS（分散制御システム）は温度・圧力・流量・液位を収集し、運転員が監視・操作します。' },
-    { text: 'HAZOP は設備のハザードと運転性を体系的に評価する安全手法です。' }
+    { text: '歯車は回転と動力を伝達する機械要素で、かみ合う歯のピッチ円が接して回転を伝える。' },
+    { text: 'インボリュート歯車は、中心距離が多少ずれても角速度比が一定に保たれる利点がある。' },
+    { text: '転がり軸受は内輪・外輪・転動体・保持器から成り、摩擦が小さく高速回転に向く。' },
+    { text: 'すべり軸受は油膜で荷重を支え、衝撃や高荷重に強い。' },
+    { text: 'はりの曲げでは曲げ応力が中立軸からの距離に比例し、縁部で最大になる。' },
+    { text: '許容応力は安全率で割って定め、疲労・座屈・クリープなどの破壊形態も考慮する。' }
   ];
 
   var DEFAULT_SHORT = [
-    { role: 'user', text: 'ポンプ P-101 で軸振動アラームが出ました。どう対応すればいいですか？' },
-    { role: 'assistant', text: 'まず予備機 P-102 へ切り替え、運転を継続しながら P-101 を停止して点検します。ベアリングの異音や温度上昇があれば潤滑状態を確認してください。' },
-    { role: 'user', text: '過去にも同じトラブルはありましたか？' },
-    { role: 'assistant', text: '保全履歴では、軸受交換で振動が収まった事例が複数あります。振動値が基準を超えたら 15 分以内に当直長へ報告し、保全管理システムに記録してください。' }
+    { role: 'user', text: '歯車の種類にはどんなものがありますか？' },
+    { role: 'assistant', text: '平歯車・はすば歯車・かさ歯車・ウォームギヤなどがあります。平行軸には平歯車やはすば歯車、交差軸にはかさ歯車を使います。' },
+    { role: 'user', text: '強度設計で気をつける点は？' },
+    { role: 'assistant', text: '歯元の曲げ応力と歯面の接触応力（面圧）を確認します。材料は S45C などに熱処理を施して強度を確保します。' }
   ];
 
   var DEFAULT_SUMMARY_TEXT =
-    'ポンプ P-101 は冷却水を循環させる主要設備です。軸振動アラームの主な原因はベアリング摩耗・アライメント不良・キャビテーションです。' +
-    '振動が大きい場合は予備機 P-102 へ切り替え、上流バルブを確認してから P-101 を停止し点検します。ベアリングの異音や温度上昇があれば潤滑状態を点検し、必要なら軸受を交換します。' +
-    'キャビテーションは吸込側の圧力不足で発生し、流量低下や騒音を伴うため、吸込配管やストレーナの差圧を確認します。' +
-    '振動値が基準を超えたら 15 分以内に当直長へ報告し、保全管理システムへ記録します。P-101 の停止は熱交換器 E-201 の温度上昇につながるため、切替時は出口温度を監視します。';
+    '歯車は動力を伝達する機械要素で、かみ合う歯で回転を伝える。インボリュート歯車は中心距離の誤差に強い。' +
+    '軸受は軸を支える要素で、転がり軸受は摩擦が小さく高速向き、すべり軸受は油膜で高荷重・衝撃に強い。' +
+    'はりの曲げでは曲げ応力が縁部で最大になり、断面係数が大きいほど曲げに強い。' +
+    '設計では許容応力を安全率で割って定め、疲労・座屈・クリープなどの破壊形態も考慮して寸法を決める。';
 
   /* ---------- shared persisted state ---------- */
   var state = NSCode.api.labState('#/memory') || {};
   state = Object.assign({
     short: DEFAULT_SHORT.slice(),
-    long: ['担当プラントは第2系列、主要設備はポンプ P-101 と熱交換器 E-201。', '振動アラームの報告先は当直長（15 分以内）。'],
+    long: ['主対象は歯車減速機と軸受。', '強度確認は歯元の曲げ応力と歯面の接触応力。'],
     semantic: SEED_SEMANTIC.slice(),
     episodic: [],
     compress: { text: '', nSentences: 3, fromShort: true },
     summary: { text: DEFAULT_SUMMARY_TEXT, nSentences: 3 },
-    recall: { query: 'P-101 の過去の振動トラブルと対応', k: 4 }
+    recall: { query: '歯車の強度設計について', k: 4 }
   }, state);
 
   function persist() { NSCode.api.labState('#/memory', state); }
   function el(id) { return document.getElementById(id); }
+
+  /* dynamic: the recall query follows the latest Ask question (the stored
+   * sample memories stay — they are the lab's memory bank being searched). */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.query) { state.recall.query = r.query; persist(); }
+  }
   function range(id, min, max, step, val) {
     return '<input id="' + id + '" class="ns-range" type="range" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" value="' + val + '">';
   }
@@ -109,6 +116,8 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    if (el('rqQuery')) el('rqQuery').value = state.recall.query;
     /* a) Viewer wiring */
     el('addTurn').addEventListener('click', function () {
       var text = el('turnText').value.trim();

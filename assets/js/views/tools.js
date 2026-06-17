@@ -9,7 +9,7 @@
 
   var CAT_LABEL = { read: '読み取り', write: '書き込み', exec: '実行' };
 
-  var DEFAULT_GOAL = '保全記録から P-101 の過去の不具合を検索して一覧化する';
+  var DEFAULT_GOAL = '教科書から歯車に関する記述を検索して一覧化する';
 
   var state = NSCode.api.labState('#/tools') || {};
   state = Object.assign({
@@ -21,6 +21,12 @@
 
   function persist() { NSCode.api.labState('#/tools', state); }
   function el(id) { return document.getElementById(id); }
+
+  /* dynamic: the tool-selection goal reflects the latest Ask query */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.query) { state.goal = r.query; persist(); }
+  }
   function catBadge(cat) {
     return '<span class="ns-toolcat ns-toolcat--' + cat + '">' + C.esc(CAT_LABEL[cat] || cat) + '</span>';
   }
@@ -70,6 +76,8 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    if (el('goal')) el('goal').value = state.goal;
     // Registry
     var grid = el('toolGrid');
     grid.addEventListener('click', function (e) {
