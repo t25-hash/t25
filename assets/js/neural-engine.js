@@ -258,38 +258,68 @@
   /* seed the answer from the most specific term in the question that the net
    * actually learned (longest in-vocab kanji/katakana/latin run). */
   function keySeed(m, question) {
-    var runs = (question.match(/[一-鿿ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9]+/g) || []);
-    runs.sort(function (a, b) { return b.length - a.length; });
-    for (var i = 0; i < runs.length; i++) {
-      var t = tok(runs[i]);
-      if (t.filter(function (x) { return m.vocab.stoi[x] != null; }).length) return t.slice(0, m.C);
-    }
-    var qt = tok(question).filter(function (t) { return m.vocab.stoi[t] != null && !/[、。，．！？!?…・\n\s]/.test(t); });
-    return qt.length ? qt.slice(0, m.C) : null;
+    return keySeeds(m, question, 1)[0] || null;
   }
 
-  /* ANSWER a question from the net's weights (no document search): seed from a
-   * question keyword, sample several continuations, keep the one the net is most
-   * confident in. This is neural recall — the text comes from learned weights. */
+  /* candidate seeds: EVERY in-vocab keyword run in the question (longest first),
+   * each as up to C starting tokens. Trying several starting points — instead of
+   * only the single longest word — gives the baby net more, more varied 起点
+   * words and a better shot at a fluent continuation. */
+  function keySeeds(m, question, maxSeeds) {
+    var seeds = [], seen = {}, ids = m.ids, itos = m.vocab.itos;
+    function anchored(firstId) {   // real C-token corpus window from the keyword's first occurrence
+      for (var i = 0; i + m.C <= ids.length; i++) {
+        if (ids[i] === firstId) { var w = []; for (var j = 0; j < m.C; j++) w.push(itos[ids[i + j]]); return w; }
+      }
+      return null;
+    }
+    function add(toks) {
+      if (!toks) return;
+      var inv = toks.filter(function (x) { return m.vocab.stoi[x] != null; });
+      if (!inv.length) return;
+      var s = inv.slice(0, m.C), key = s.join('');
+      if (!seen[key]) { seen[key] = 1; seeds.push(s); }
+    }
+    var runs = (question.match(/[一-鿿ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9]+/g) || []);
+    runs.sort(function (a, b) { return b.length - a.length; });
+    runs.forEach(function (r) {
+      var kt = tok(r).filter(function (x) { return m.vocab.stoi[x] != null; });
+      if (kt.length) add(anchored(m.vocab.stoi[kt[0]]) || kt);   // prefer a real corpus window
+    });
+    if (!seeds.length) {                                  // fallback: any content token
+      var qt = tok(question).filter(function (t) { return m.vocab.stoi[t] != null && !/[、。，．！？!?…・\n\s]/.test(t); });
+      add(qt);
+    }
+    return seeds.slice(0, maxSeeds || 4);
+  }
+
+  /* ANSWER a question from the net's weights (no document search): seed from
+   * several question keywords, sample continuations from each, and keep the one
+   * the net is most confident in. This is neural recall — the text comes from
+   * learned weights. Returns the winning seed plus all seeds it considered. */
   function answer(m, question, opts) {
     opts = opts || {};
-    var seed = keySeed(m, question);
-    if (!seed) return { text: '', seed: '' };
+    var seeds = keySeeds(m, question, opts.seeds || 4);
+    if (!seeds.length) return { text: '', seed: '', seeds: [] };
     // down-weight separator/list tokens so the answer doesn't come out looking
     // character-separated (the corpus is full of e.g. 「軸振動・軸受温度・…」),
     // and use a stronger repetition penalty to avoid phrase loops.
     var avoid = { '・': 0.02, '、': 0.45, '，': 0.05, '…': 0.05, '·': 0.02 };
     var allow = allowFromTransitions(transitions(m));   // corpus-real continuations only
-    var K = opts.candidates || 12, best = null, bestScore = -1e9;
-    for (var i = 0; i < K; i++) {
-      var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
-      var g = generate(m, seed, { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 72,
-        minProduced: opts.minProduced || 22, repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true, allow: allow });
-      var sc = seqLogProb(m, g);
-      if (sc > bestScore) { bestScore = sc; best = g; }
+    var perSeed = Math.max(3, Math.round((opts.candidates || 14) / seeds.length));
+    var best = null, bestScore = -1e9, bestSeed = seeds[0];
+    for (var si = 0; si < seeds.length; si++) {
+      for (var i = 0; i < perSeed; i++) {
+        var temp = (opts.temperature || 0.45) * (0.8 + 0.4 * (i % 5) / 4);   // vary around the set temp
+        var g = generate(m, seeds[si], { temperature: temp, topK: opts.topK || 6, maxTokens: opts.maxTokens || 72,
+          minProduced: opts.minProduced || 22, repetitionPenalty: 1.9, avoid: avoid, noRepeatBigram: true, allow: allow });
+        var sc = seqLogProb(m, g);
+        if (sc > bestScore) { bestScore = sc; best = g; bestSeed = seeds[si]; }
+      }
     }
     var join = NSCode.babyLLM.join;
-    return { text: trimToSentence(join(best)), seed: join(seed), score: bestScore };
+    return { text: trimToSentence(join(best)), seed: join(bestSeed),
+      seeds: seeds.map(function (s) { return join(s); }), score: bestScore };
   }
 
   /* cut a generated string at its last sentence ender so the answer doesn't end
@@ -303,7 +333,7 @@
   NSCode.neuralLM = {
     tokenize: tok, buildVocab: buildVocab, create: create,
     forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
-    seqLogProb: seqLogProb, keySeed: keySeed, answer: answer
+    seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer
   };
 
   /* ---- shared singleton: Ask's "base neural" model ----

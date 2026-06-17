@@ -346,6 +346,7 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
   display: inline-block; background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 6px; padding: 0 6px; font-size: 11px; color: var(--text-dim); margin-right: 6px;
 }
+.ns-tag--on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 
 .ns-hal { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .ns-hal__row {
