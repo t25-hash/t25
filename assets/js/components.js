@@ -76,9 +76,10 @@
     },
 
     Controls: function (rows) {
-      // rows: [{label, control}]  control is raw HTML (select/slider placeholder)
+      // rows: [{label, control}] — label AND control are author-controlled raw HTML
+      // (labels embed a live-value <b id> span, e.g. 'Temperature: <b id="..">0.7</b>').
       return '<div class="ns-controls">' + (rows || []).map(function (r) {
-        return '<label class="ns-control"><span>' + esc(r.label) + '</span>' + (r.control || '') + '</label>';
+        return '<label class="ns-control"><span>' + (r.label || '') + '</span>' + (r.control || '') + '</label>';
       }).join('') + '</div>';
     },
 
