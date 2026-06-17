@@ -178,6 +178,40 @@
     return all;
   }
 
+  /* COMPOSE a natural-language answer from the passages behind the top hits.
+   * Ranks the WHOLE sentences of those source documents (not the overlapping
+   * chunk windows, which can start mid-word) by lexical overlap + semantic
+   * similarity to the question, then returns the best few, deduped. The result
+   * is real sentences from the docs, so it is always grammatical Japanese —
+   * the reliable answer a tiny neural LM cannot form on its own. */
+  function composeAnswer(query, hits, docs, max) {
+    var emb = NSCode.embeddings, qv = emb.embed(query, 64);
+    var hitSources = {};
+    hits.forEach(function (h) { hitSources[h.chunk.source] = 1; });
+    // drop Markdown heading lines (titles / breadcrumbs) before splitting into
+    // sentences — otherwise a heading with no 。 gets glued onto the next
+    // sentence and the answer comes out littered with "# 1・2・13 …" prefixes.
+    var poolText = docs.filter(function (d) { return hitSources[d.name]; })
+                       .map(function (d) { return d.text; }).join('\n\n')
+                       .replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, '');
+    var poolSents = NSCode.research.splitSentences(poolText)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 6; });
+    var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
+    var ranked = poolSents.map(function (s) {
+      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+      return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
+    }).sort(function (a, b) { return b.score - a.score; });
+    var answer = [], lim = max || 3;
+    for (var ai = 0; ai < ranked.length && answer.length < lim; ai++) {
+      if (ranked[ai].score <= 0) break;
+      var cand = ranked[ai].s;
+      if (!answer.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; })) answer.push(cand);
+    }
+    return answer;
+  }
+
   /* ask a question over the docs, the Claude Code way (RAG → compose → show how
    * generation works):
    *   1. retrieve relevant chunks (TF-IDF cosine)
@@ -197,29 +231,8 @@
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var L = NSCode.babyLLM;
 
-    // (2) compose a natural-language answer. Rank the WHOLE sentences of the
-    // source documents behind the top hits (not the overlapping chunk windows,
-    // which can start mid-word) by lexical overlap + semantic similarity, then
-    // take the best few, deduped. The result is always grammatical Japanese.
-    var hitSources = {};
-    res.hits.forEach(function (h) { hitSources[h.chunk.source] = 1; });
-    var poolText = docs.filter(function (d) { return hitSources[d.name]; })
-                       .map(function (d) { return d.text; }).join('\n\n');
-    var poolSents = NSCode.research.splitSentences(poolText)
-      .map(function (s) { return s.trim(); })
-      .filter(function (s) { return s.length > 6; });
-    var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
-    var ranked = poolSents.map(function (s) {
-      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
-      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return { s: s, score: lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) };
-    }).sort(function (a, b) { return b.score - a.score; });
-    var answer = [];
-    for (var ai = 0; ai < ranked.length && answer.length < 3; ai++) {
-      if (ranked[ai].score <= 0) break;
-      var cand = ranked[ai].s;
-      if (!answer.some(function (p) { return p.indexOf(cand) >= 0 || cand.indexOf(p) >= 0; })) answer.push(cand);
-    }
+    // (2) compose a natural-language answer from the passages behind the hits.
+    var answer = composeAnswer(query, res.hits, docs);
 
     // training text: whole corpus + retrieved context (context weighted x3 so the
     // generated answer is grounded in what was retrieved for THIS question).
@@ -272,10 +285,13 @@
     var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
     var L = NSCode.neuralLM;
     var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
+    // extractive answer from the retrieved passages — the reliable, grammatical
+    // reply shown as the main answer (the neural generation is a learning demo).
+    var compose = composeAnswer(question, res.hits, getDocs());
     return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
       .then(function () {
         var a = L.answer(m, question, { temperature: opts.temperature == null ? 0.45 : opts.temperature, candidates: opts.candidates || 14, maxTokens: 52 });
-        return { text: a.text, seed: a.seed, hits: res.hits, loss: m.loss };
+        return { text: a.text, seed: a.seed, compose: compose, hits: res.hits, loss: m.loss };
       });
   }
 

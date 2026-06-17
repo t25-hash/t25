@@ -41,7 +41,7 @@
             C.Controls([
               { label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }
             ]) }) +
-        C.Panel({ title: '3. 回答（検索＋ニューラル生成）', hint: '極小ニューラル（赤ちゃん級）の生成のため不完全なことがあります。根拠は下に表示',
+        C.Panel({ title: '3. 回答', hint: '検索した根拠から答えを構成（実文ベースで安定）。あわせて赤ちゃんニューラルの生成もデモ表示します。根拠は最下部',
           body: '<div id="askAns"></div>' }) +
         C.Panel({ title: 'しくみ', body:
           '<p class="ns-empty__hint">本物の LLM（Claude）と同じ二段構え：<b>検索</b>で関連箇所を取り出し、<b>重み</b>（ニューラルネット）が文脈を学習して回答を生成します。重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' }) ;
@@ -105,16 +105,27 @@
       }
     }).then(function (a) {
       if (token !== askToken) return;        // a newer question superseded this one
-      if (!a || !a.text) {
+      if (!a || !a.hits || !a.hits.length) {
         out.innerHTML = '<p class="ns-empty__hint">関連する知識が見つかりませんでした。「知識に追加」で資料を学習させてください。</p>';
         return;
       }
       var srcs = {}; a.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
+      var tags = Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ');
+      var composed = (a.compose && a.compose.length)
+        ? a.compose.map(function (s) { return highlight(s, q); }).join('<br>') : '';
       out.innerHTML =
-        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（検索＋ニューラル生成）</div>' +
-          '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>' +
-          '<div class="ns-qa-answer__src">起点: <span class="ns-tag">' + C.esc(a.seed) + '</span>' +
-            ' ／ 参照: ' + Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ') + '</div></div>' +
+        // main answer: composed from the retrieved passages (real sentences)
+        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（検索した根拠から構成）</div>' +
+          (composed
+            ? '<p class="ns-qa-answer__lead">' + composed + '</p>'
+            : '<p class="ns-empty__hint">関連する文を十分に抽出できませんでした。下のニューラル生成と根拠をご覧ください。</p>') +
+          '<div class="ns-qa-answer__src">参照: ' + tags + '</div></div>' +
+        // secondary: the baby neural network's own generation (learning demo)
+        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 ニューラル生成（赤ちゃんモデルのデモ）</div>' +
+          (a.text
+            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>'
+            : '<p class="ns-empty__hint">生成できませんでした。</p>') +
+          '<div class="ns-qa-answer__src">起点: <span class="ns-tag">' + C.esc(a.seed) + '</span></div></div>' +
         '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +

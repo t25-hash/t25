@@ -314,6 +314,10 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 .ns-qa-answer__src { margin-top: 8px; font-size: 12px; color: var(--text-dim); }
 .ns-qa-answer ul { margin: 6px 0 0; padding-left: 18px; }
 .ns-qa-answer li { margin-bottom: 6px; }
+/* secondary "baby neural" generation block — visually subdued vs the main answer */
+.ns-qa-answer--neural { background: var(--surface-2); border-style: dashed; }
+.ns-qa-answer--neural .ns-qa-answer__label { color: var(--text-dim); }
+.ns-qa-answer--neural .ns-qa-answer__lead { font-size: 14px; color: var(--text-dim); }
 .ns-search-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .ns-search-hit { font-size: 13.5px; line-height: 1.6; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
 
