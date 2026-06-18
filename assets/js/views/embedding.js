@@ -18,10 +18,13 @@
   }, NSCode.api.labState('#/embedding') || {});
 
   function persist() { NSCode.api.labState('#/embedding', state); }
+  // reflect the latest Ask question (Token & Embedding inputs) once per run
+  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { tokenText: 'query', embText: 'query' })) persist(); }
   function el(id) { return document.getElementById(id); }
 
   /* ---------- One page render ---------- */
   function render() {
+    syncAsk();
     return C.PageHeader({
       title: 'Embedding Lab',
       purpose: 'Token分解 → ベクトル化 → 類似度 → クラスタ可視化（signed hashing trick・語彙ベース）',

@@ -10,6 +10,11 @@
 
   function set(run) { current = run; try { if (NSCode.store) NSCode.store.set(KEY, run); } catch (e) {} }
   function get() { return current; }
+  function query() { return current && current.query ? current.query : ''; }
+  function context(n) {
+    if (!current || !current.hits) return '';
+    return current.hits.slice(0, n || current.hits.length).map(function (h) { return h.text; }).join('\n\n');
+  }
 
   function esc(s) { return NSCode.C ? NSCode.C.esc(s) : String(s == null ? '' : s); }
   function tags(run) {
@@ -88,5 +93,19 @@
     return NSCode.C.Panel({ title: '🔗 Ask 連動ビュー', hint: '同じ質問の実データをこの Lab の観点で表示（Ask が更新元）', body: body });
   }
 
-  NSCode.lastRun = { set: set, get: get, card: card };
+  /* apply the latest Ask run to a Lab's state ONCE per run (tracked by ts on the
+   * state object), so the Lab reflects the question without clobbering later edits.
+   * fields: map of stateKey -> 'query' | 'context'. Returns true if it changed. */
+  function applyTo(state, fields) {
+    if (!current || !current.ts || state._askTs === current.ts) return false;
+    Object.keys(fields).forEach(function (k) {
+      var src = fields[k];
+      var val = src === 'context' ? context() : query();
+      if (val) state[k] = val;
+    });
+    state._askTs = current.ts;
+    return true;
+  }
+
+  NSCode.lastRun = { set: set, get: get, query: query, context: context, card: card, applyTo: applyTo };
 })(window.NSCode);

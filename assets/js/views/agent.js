@@ -13,6 +13,7 @@
   state = Object.assign({ goal: DEFAULT_GOAL, autoplay: false }, state);
 
   function persist() { NSCode.api.labState('#/agent', state); }
+  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { goal: 'query' })) persist(); }
   function el(id) { return document.getElementById(id); }
 
   var SIM_HINT = 'ルールベースの決定論的シミュレーション（LLM/通信なし）';
@@ -33,6 +34,7 @@
 
   /* ===================== single-page render ===================== */
   function render() {
+    syncAsk();
     return C.PageHeader({
         title: 'Agent Lab',
         purpose: 'ReAct エージェントの Loop / Planner / Reflection / Retry を1ページで可視化',

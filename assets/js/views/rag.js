@@ -33,6 +33,9 @@
     answer: DEFAULT_ANSWER
   }, state);
 
+  // reflect the latest Ask question: use it as the query and the retrieved
+  // passages as the corpus (once per Ask run, so manual edits aren't clobbered).
+  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { query: 'query', corpus: 'context' })) persist(); }
   function persist() { NSCode.api.labState('#/rag', state); }
   function getChunks() { return E.chunk(state.corpus, state.chunkParams); }
   function getRetrieval() {
@@ -55,6 +58,7 @@
 
   /* ---------- Single page render ---------- */
   function render() {
+    syncAsk();
     var cp = state.chunkParams, rp = state.retrieveParams;
     return C.PageHeader({
       title: 'RAG Lab',

@@ -18,6 +18,7 @@
   }, NSCode.api.labState('#/playground') || {});
 
   function persist() { NSCode.api.labState('#/playground', state); }
+  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { prompt: 'query' })) persist(); }
   function el(id) { return document.getElementById(id); }
   function tokCount(t) { return T.tokenize(t || '').length; }
 
@@ -31,6 +32,7 @@
   ];
 
   function render() {
+    syncAsk();
     var opts = MODELS.map(function (m) { return '<option' + (m === state.model ? ' selected' : '') + '>' + m + '</option>'; }).join('');
     return C.PageHeader({ title: 'Playground', purpose: 'LLM 実験（応答はシミュレーション）とプロンプト評価を1ページで' }) +
       C.Panel({ title: 'LLM — 設定', hint: 'トークン数は実カウント / 応答はオフライン擬似生成', body: C.Controls([

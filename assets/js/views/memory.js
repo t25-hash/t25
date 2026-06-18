@@ -43,6 +43,11 @@
     summary: { text: DEFAULT_SUMMARY_TEXT, nSentences: 3 },
     recall: { query: 'P-101 の過去の振動トラブルと対応', k: 4 }
   }, state);
+  // reflect the latest Ask question as the recall query (once per Ask run)
+  function syncAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.ts && state._askTs !== r.ts && r.query) { state.recall.query = r.query; state._askTs = r.ts; persist(); }
+  }
 
   function persist() { NSCode.api.labState('#/memory', state); }
   function el(id) { return document.getElementById(id); }
@@ -55,6 +60,7 @@
 
   /* ===================== single-page render ===================== */
   function render() {
+    syncAsk();
     var c = state.compress;
     var cmpInitial = c.fromShort ? shortText() : (c.text || shortText());
     var sm = state.summary;
