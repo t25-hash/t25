@@ -319,6 +319,12 @@
   /* ---- shared clean-sentence extraction (used by the concise answer AND the
    * memory summary) ---- */
   var ENDER = /[。．！？!?]/;
+  // font-encoding garbage from PDF extraction: Private-Use-Area glyphs and the
+  // Hangul/Yijing code points that unmapped subset-font math/subscripts collide
+  // into. The corpus is Japanese, so any of these means a corrupted (formula)
+  // sentence — reject it so tofu (□) never reaches an answer. Data is also
+  // cleaned at rest (scripts/clean-kb-garbage.py); this is defense in depth.
+  var GARBAGE = /[-가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿䷀-䷿]/;
   function cleanLine(line) {
     return line.replace(/^[ \t]*#{1,6}[ \t]+/, '').replace(/^[ \t]*>[ \t]?/, '').replace(/[*_`]+/g, '').trim();
   }
@@ -341,6 +347,7 @@
   // reject headings / captions / enumerations / fragments / garbled math so only
   // real, readable prose sentences survive.
   function isJunkSent(s) {
+    if (GARBAGE.test(s)) return true;             // unmapped-font mojibake (PUA/Hangul/…)
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
     if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
