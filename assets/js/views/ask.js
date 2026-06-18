@@ -63,6 +63,24 @@
     }
   });
 
+  // Grammar Compiler Layer block: per-sentence SML extraction + normalized text
+  function grammarBlock(a, q) {
+    if (!a.normalized) return '';
+    var KEYS = ['subject', 'time', 'place', 'object', 'destination', 'companion', 'action', 'adjective', 'actionSurface'];
+    var rows = (a.sml || []).slice(0, 3).map(function (p) {
+      var sml = p.sml || {};
+      var slots = KEYS.filter(function (k) { return sml[k]; }).map(function (k) { return k + '=' + sml[k]; }).join(' ／ ');
+      var meta = [sml.tense, sml.politeness, sml.negative ? '否定' : ''].filter(Boolean).join(' ');
+      return '<div class="ns-hit"><div class="ns-hit__head"><span>SML' + (p.applied ? '（正規化）' : '（原文保持）') + '</span>' +
+        '<span class="ns-hit__score">' + C.esc(meta) + '</span></div>' +
+        '<p class="ns-hit__text">' + C.esc(slots || '—') + '</p></div>';
+    }).join('');
+    return '<div class="ns-qa-answer"><div class="ns-qa-answer__label">🔧 文法コンパイラ（生成 → SML化 → 正規化）</div>' +
+      '<p class="ns-qa-answer__lead">' + highlight(a.normalized, q) + '</p>' +
+      '<p class="ns-empty__hint">生成文を文ごとに SML（意味スロット）へ分解し、意味を保持したまま日本語文法へ再コンパイルします。複雑な文は破壊を避けるため原文のまま通します。<a href="#/grammar">文法コンパイラ</a>で手動でも試せます。</p>' +
+      rows + '</div>';
+  }
+
   function setStatus(msg) { var s = el('docStatus'); if (s) s.textContent = msg || ''; }
   function kbSize() { return A.getDocs().reduce(function (s, d) { return s + (d.text || '').length; }, 0); }
 
@@ -131,6 +149,7 @@
             }).join(' ')) +
             (a.seeds && a.seeds.length > 1 ? '（採用: ' + C.esc(a.seed) + '）' : '') +
           '</div></div>' +
+        grammarBlock(a, q) +
         '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +

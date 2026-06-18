@@ -71,6 +71,17 @@
       return '<p class="ns-empty__hint">「' + esc(run.query) + '」を複数エージェントで解くなら: Retriever が検索 → Writer が ' +
         ((run.hits || []).length) + ' 件の文脈から回答を構成、という分担になります。</p>' + answerHtml(run);
     },
+    grammar: function (run) {
+      var sents = run.sml || [];
+      var head = '<p class="ns-empty__hint">Ask の生成を SML 化 → 正規化した結果:</p>' +
+        '<p class="ns-qa-answer__lead">' + esc(run.normalized || run.generated || '') + '</p>';
+      if (!sents.length) return head;
+      var KEYS = ['subject', 'time', 'place', 'object', 'destination', 'action', 'adjective', 'actionSurface'];
+      return head + sents.slice(0, 3).map(function (p) {
+        var sml = p.sml || {}, slots = KEYS.filter(function (k) { return sml[k]; }).map(function (k) { return k + '=' + sml[k]; }).join(' ／ ');
+        return '<div class="ns-hit"><div class="ns-hit__head"><span>SML' + (p.applied ? '（正規化）' : '（原文保持）') + '</span></div><p class="ns-hit__text">' + esc(slots || '—') + '</p></div>';
+      }).join('');
+    },
     evaluation: function (run) {
       var sc = (run.hits || []).map(function (h) { return h.score || 0; });
       var top = sc.length ? Math.max.apply(null, sc) : 0;

@@ -149,7 +149,9 @@
 
     // 述語（動詞 or 形容詞/名詞）
     var pred = '', action = g('action') || g('verb') || g('predicate') || g('adjective');
-    if (action) {
+    var surface = sml.actionSurface || sml.actionsurface;
+    if (surface) { pred = surface; if (g('subject') || g('object')) changes.push('語順を自然化'); }
+    else if (action) {
       var isAdj = !!g('adjective') || (/[いし]$/.test(action) && !/る$|う$|く$|ぐ$|す$|つ$|ぬ$|ぶ$|む$/.test(action) && !g('verb'));
       if (g('adjective') || (isAdj && !g('verb') && !g('action'))) pred = conjAdj(action, { tense: tense, polite: polite, negative: negative });
       else { pred = conjVerb(action, { tense: tense, polite: polite, negative: negative }); if (vclass(action) === 'godan' && action.slice(-1) === 'る' && !GODAN_RU[action] && !ICHIDAN[action]) guessed = true; }
@@ -172,5 +174,105 @@
     };
   }
 
-  NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass };
+  /* ---- 逆変換: 自由テキスト → SML → 正規化（Ask 生成の最終変換層） ---- */
+  // 表層の述語 → 辞書形＋時制・丁寧・否定（ベストエフォート）
+  function stemToDict(st) {
+    if (!st) return null;
+    if (st === 'し') return 'する';
+    if (st === '来' || st === 'き') return '来る';
+    if (/.し$/.test(st)) return st.slice(0, -1) + 'する';     // 勉強し → 勉強する
+    var inv = { 'い':'う','き':'く','ぎ':'ぐ','し':'す','ち':'つ','に':'ぬ','び':'ぶ','み':'む','り':'る' };
+    var last = st.slice(-1);
+    return inv[last] ? st.slice(0, -1) + inv[last] : st + 'る';  // godan / ichidan
+  }
+  function dictFromSurface(p) {
+    var r;
+    if (/ませんでした$/.test(p)) { r = stemToDict(p.slice(0, -7)); return r && { dict: r, tense: 'past', polite: true, negative: true }; }
+    if (/ました$/.test(p)) { r = stemToDict(p.slice(0, -3)); return r && { dict: r, tense: 'past', polite: true }; }
+    if (/ません$/.test(p)) { r = stemToDict(p.slice(0, -4)); return r && { dict: r, tense: 'present', polite: true, negative: true }; }
+    if (/ます$/.test(p)) { r = stemToDict(p.slice(0, -2)); return r && { dict: r, tense: 'present', polite: true }; }
+    if (/くありませんでした$/.test(p)) return { dict: p.replace(/くありませんでした$/, 'い'), tense: 'past', polite: true, negative: true, isAdj: true };
+    if (/くありません$/.test(p)) return { dict: p.replace(/くありません$/, 'い'), tense: 'present', polite: true, negative: true, isAdj: true };
+    if (/くなかった$/.test(p)) return { dict: p.replace(/くなかった$/, 'い'), tense: 'past', negative: true, isAdj: true };
+    if (/くない$/.test(p)) return { dict: p.replace(/くない$/, 'い'), tense: 'present', negative: true, isAdj: true };
+    if (/かったです$/.test(p)) return { dict: p.replace(/かったです$/, 'い'), tense: 'past', polite: true, isAdj: true };
+    if (/かった$/.test(p)) return { dict: p.replace(/かった$/, 'い'), tense: 'past', isAdj: true };
+    if (/でした$/.test(p)) return { dict: p.replace(/でした$/, ''), tense: 'past', polite: true, isAdj: true };
+    if (/です$/.test(p)) return { dict: p.replace(/です$/, ''), tense: 'present', polite: true, isAdj: true };
+    if (/んだ$/.test(p)) return { dict: p.slice(0, -2) + 'む', tense: 'past' };
+    if (/いた$/.test(p)) return { dict: p.slice(0, -2) + 'く', tense: 'past' };
+    if (/いだ$/.test(p)) return { dict: p.slice(0, -2) + 'ぐ', tense: 'past' };
+    if (/した$/.test(p) && p.length > 2) return { dict: p.slice(0, -2) + 'す', tense: 'past' };
+    if (/った$/.test(p)) return { dict: p.slice(0, -2) + 'る', tense: 'past' };   // 曖昧→る
+    if (/る$/.test(p)) return { dict: p, tense: 'present' };
+    return null;
+  }
+  // 1文 → SML（助詞でセグメント分割し役割付与）
+  function toSML(sentence) {
+    var raw = String(sentence || '').replace(/[\s　]/g, '').trim();
+    if (!raw) return null;
+    var s = raw.replace(/[。．！？]+$/, '');
+    var P = /[をはがでにへと]/g, last = -1, mm;
+    while ((mm = P.exec(s))) last = mm.index;
+    var head = last >= 0 ? s.slice(0, last + 1) : '';
+    var predSurface = last >= 0 ? s.slice(last + 1) : s;
+    var rev = dictFromSurface(predSurface);
+    var sml = { _original: raw };
+    if (rev) {
+      sml.tense = rev.tense || 'present'; sml.politeness = rev.polite ? 'polite' : 'plain'; sml.negative = !!rev.negative;
+      if (rev.isAdj) sml.adjective = rev.dict; else sml.action = rev.dict;
+    } else { sml.actionSurface = predSurface; sml.politeness = /ます|です/.test(predSurface) ? 'polite' : 'plain'; }
+    var groups = [], cur = '';
+    for (var i = 0; i < head.length; i++) {
+      var ch = head[i];
+      if ('をはがでにへと'.indexOf(ch) >= 0) { if (cur) { groups.push({ t: cur, p: ch }); cur = ''; } }
+      else cur += ch;
+    }
+    groups.forEach(function (g) {
+      if (g.p === 'を') sml.object = sml.object || g.t;
+      else if (g.p === 'は' || g.p === 'が') sml.subject = sml.subject || g.t;
+      else if (g.p === 'で') sml.place = sml.place || g.t;
+      else if (g.p === 'に' || g.p === 'へ') sml.destination = sml.destination || g.t;
+      else if (g.p === 'と') sml.companion = sml.companion || g.t;
+    });
+    return sml;
+  }
+  function ensureP(s) { return s && !/[。．！？]$/.test(s) ? s + '。' : s; }
+  // 内容語（漢字・カタカナ・英数）のラン。助詞や活用語尾(ひらがな)は除外。
+  function contentRuns(s) { return String(s || '').match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || []; }
+  function preservesContent(orig, made) {
+    var rb = contentRuns(made).join('|');
+    return contentRuns(orig).every(function (t) { return rb.indexOf(t) >= 0; });
+  }
+  // 再コンパイル対象にしてよい簡潔な1文か（複数節・長文・辞書形不明は対象外＝原文保持）
+  function canRecompile(s, sml) {
+    if (/[、，,]/.test(s)) return false;
+    if (contentRuns(s).join('').length > 28) return false;
+    if (sml.actionSurface || (!sml.action && !sml.adjective)) return false;
+    return true;
+  }
+  /* 自由テキスト → 文ごとに SML 化 → compile で正規化。意味保持を厳守し、安全に
+   * 再構成できる簡潔な文だけを正規化、複雑な文は原文のまま通す（破壊しない）。 */
+  function normalize(text, opts) {
+    opts = opts || {};
+    var sents = String(text || '').split(/(?<=[。．！？])/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!sents.length && text) sents = [String(text).trim()];
+    var per = [], out = [];
+    sents.forEach(function (s) {
+      var sml = toSML(s), normalized = ensureP(s), changes = [], applied = false;
+      if (sml) {
+        if (opts.politeness) sml.politeness = opts.politeness;
+        if (canRecompile(s, sml)) {
+          var r = compile(sml);
+          if (r.sentence && preservesContent(s, r.sentence)) { normalized = r.sentence; changes = r.changes; applied = true; }
+        }
+      }
+      per.push({ original: s, sml: sml, normalized: normalized, changes: changes, applied: applied });
+      out.push(normalized);
+    });
+    return { text: out.join(''), sentences: per };
+  }
+
+  NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
+    toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface };
 })(window.NSCode);
