@@ -497,6 +497,42 @@
     return (NSCode.memory.compress(turns, n || 3).summary || '').trim();
   }
 
+  /* LIST-intent answer: for 種類/分類/一覧 questions, enumerate the relevant items
+   * instead of returning one sentence. Items are the question's domain terms that
+   * appear with an English gloss in the sources (e.g. 平歯車（spur gear）) — the
+   * first column of a taxonomy table. Boundary-anchored + short-prefix matching
+   * keeps real type names and rejects flattened-table phrase garbage.
+   * Returns { text, source } or null. */
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function listEnumerate(question, docs) {
+    if (!/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)?/.test(question)) return null;
+    var keys = keyTerms(question); if (!keys.length) return null;
+    var key = keys.slice().sort(function (a, b) { return b.length - a.length; })[0];   // most specific noun
+    var sufs = [key]; if (/歯車$/.test(key) || key === '歯車') sufs.push('ギヤ');
+    var re = new RegExp('(?:^|[\\s、。，．（）()・/「」])([一-鿿ぁ-ヿァ-ヶー]{1,7}?)(' + sufs.map(escRe).join('|') + ')\\s*（\\s*[A-Za-z]', 'gm');
+    var gear = sufs.indexOf('ギヤ') >= 0;
+    var reX = gear ? /(?:^|[\s、。，．（）()・/「」])(ラックとピニオン|ラック|ピニオン)\s*（\s*[A-Za-z]/gm : null;
+    var seen = {}, items = [], srcCount = {}, m;
+    (docs || []).forEach(function (d) {
+      var t = d.text || '', c = 0; re.lastIndex = 0;
+      while ((m = re.exec(t))) { var w = m[1] + m[2]; c++; if (w !== key && !seen[w]) { seen[w] = 1; items.push(w); } }
+      if (reX) { reX.lastIndex = 0; while ((m = reX.exec(t))) { var w2 = m[1]; c++; if (!seen[w2]) { seen[w2] = 1; items.push(w2); } } }
+      srcCount[d.name] = c;
+    });
+    // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
+    var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
+    var out2 = [], s2 = {};
+    items.forEach(function (w) {
+      if (/^[をがのにでともやよ]/.test(w) && w.length >= 5 && sufTail.test(w.slice(1))) w = w.slice(1);
+      if (!s2[w]) { s2[w] = 1; out2.push(w); }
+    });
+    items = out2;
+    if (items.length < 4) return null;
+    if (items.length > 14) items = items.slice(0, 14);
+    var src = '', best = -1; for (var k in srcCount) if (srcCount[k] > best) { best = srcCount[k]; src = k; }
+    return { text: key + 'の主な種類：' + items.join('・') + '。', source: src };
+  }
+
   /* CONCISE grounded answer (~target chars) — the baby model's natural reply.
    * From the retrieved passages we take real sentences as candidates, rank them
    * by question relevance (lexical + semantic), then RE-RANK the shortlist by the
@@ -679,7 +715,9 @@
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
         var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
-        var weak = weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+        var lst = listEnumerate(question, getDocs());          // 種類/分類 → 列挙で回答
+        if (lst) concise = { text: lst.text, source: lst.source };
+        var weak = !lst && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '' };
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
@@ -744,7 +782,9 @@
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
             var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
-            var weak = weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+            var lst = listEnumerate(question, docs);            // 種類/分類 → 列挙で回答
+            if (lst) concise = { text: lst.text, source: lst.source };
+            var weak = !lst && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '' };
             var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
             if (NSCode.lastRun) NSCode.lastRun.set({
