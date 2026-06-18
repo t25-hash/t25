@@ -15,9 +15,9 @@
     '<p class="ns-empty__hint">助詞: 場所=で / 方向=へ・に / 対象=を / 所有=の / 共同=と / 手段=で / 比較=より　｜　語順: 主語 → 時間 → 場所 → 目的語 → 述語</p>';
 
   NSCode.registerView({
-    route: '#/grammar', module: 'grammar', title: '文法コンパイラ',
+    route: '#/grammar', module: 'grammar', title: 'Grammar-agent',
     render: function () {
-      return C.PageHeader({ title: '📝 文法コンパイラ', purpose: 'SML（意味スロット）を、意味を変えずに自然で正しい日本語へ変換する（端末内・API不要）' }) +
+      return C.PageHeader({ title: '📝 Grammar-agent', purpose: 'SML（意味スロット）を、意味を変えずに自然で正しい日本語へ変換する日本語文法修正エージェント（端末内・API不要）' }) +
         C.Panel({ title: 'このエージェントについて', body: ABOUT }) +
         C.Panel({ title: '入力（SML）', hint: '"key: value" 行、またはラベル列。slot 例: subject / time / place / object / action / adjective / tense(past|present) / politeness(plain|polite) / negative',
           body:
