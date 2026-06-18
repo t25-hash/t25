@@ -838,14 +838,20 @@
         var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '', intent: concise.intent };
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
+        // Grammar Compiler Layer: turn the answer into SML per sentence, then
+        // re-compile to natural Japanese (meaning-preserving; complex sentences
+        // pass through unchanged).
+        var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent, ts: Date.now()
+          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
+        return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
       });
   }
 
@@ -904,13 +910,17 @@
             var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
             var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
+            // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
+            var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent, ts: Date.now()
+              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
+            return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
           });
       });
     });

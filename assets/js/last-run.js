@@ -10,6 +10,11 @@
 
   function set(run) { current = run; try { if (NSCode.store) NSCode.store.set(KEY, run); } catch (e) {} }
   function get() { return current; }
+  function query() { return current && current.query ? current.query : ''; }
+  function context(n) {
+    if (!current || !current.hits) return '';
+    return current.hits.slice(0, n || current.hits.length).map(function (h) { return h.text; }).join('\n\n');
+  }
 
   function esc(s) { return NSCode.C ? NSCode.C.esc(s) : String(s == null ? '' : s); }
   function tags(run) {
@@ -74,6 +79,17 @@
       return '<p class="ns-empty__hint">「' + esc(run.query) + '」を複数エージェントで解くなら: Retriever が検索 → Writer が ' +
         ((run.hits || []).length) + ' 件の文脈から回答を構成、という分担になります。</p>' + answerHtml(run);
     },
+    grammar: function (run) {
+      var sents = run.sml || [];
+      var head = '<p class="ns-empty__hint">Ask の生成を SML 化 → 正規化した結果:</p>' +
+        '<p class="ns-qa-answer__lead">' + esc(run.normalized || run.generated || '') + '</p>';
+      if (!sents.length) return head;
+      var KEYS = ['subject', 'time', 'place', 'object', 'destination', 'action', 'adjective', 'actionSurface'];
+      return head + sents.slice(0, 3).map(function (p) {
+        var sml = p.sml || {}, slots = KEYS.filter(function (k) { return sml[k]; }).map(function (k) { return k + '=' + sml[k]; }).join(' ／ ');
+        return '<div class="ns-hit"><div class="ns-hit__head"><span>SML' + (p.applied ? '（正規化）' : '（原文保持）') + '</span></div><p class="ns-hit__text">' + esc(slots || '—') + '</p></div>';
+      }).join('');
+    },
     evaluation: function (run) {
       var sc = (run.hits || []).map(function (h) { return h.score || 0; });
       var top = sc.length ? Math.max.apply(null, sc) : 0;
@@ -96,5 +112,19 @@
     return NSCode.C.Panel({ title: '🔗 Ask 連動ビュー', hint: '同じ質問の実データをこの Lab の観点で表示（Ask が更新元）', body: body });
   }
 
-  NSCode.lastRun = { set: set, get: get, card: card };
+  /* apply the latest Ask run to a Lab's state ONCE per run (tracked by ts on the
+   * state object), so the Lab reflects the question without clobbering later edits.
+   * fields: map of stateKey -> 'query' | 'context'. Returns true if it changed. */
+  function applyTo(state, fields) {
+    if (!current || !current.ts || state._askTs === current.ts) return false;
+    Object.keys(fields).forEach(function (k) {
+      var src = fields[k];
+      var val = src === 'context' ? context() : query();
+      if (val) state[k] = val;
+    });
+    state._askTs = current.ts;
+    return true;
+  }
+
+  NSCode.lastRun = { set: set, get: get, query: query, context: context, card: card, applyTo: applyTo };
 })(window.NSCode);

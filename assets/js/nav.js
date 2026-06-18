@@ -14,6 +14,7 @@
     { group: 'Ask の処理順',  label: 'Playground',           route: '#/playground' },
     { group: 'Ask の処理順',  label: 'Memory Lab',           route: '#/memory' },
     { group: 'Ask の処理順',  label: 'Agent Lab',            route: '#/agent' },
+    { group: 'Ask の処理順',  label: '文法コンパイラ',        route: '#/grammar' },
 
     { group: 'エージェント応用', label: 'Multi-Agent Lab',     route: '#/multi-agent' },
     { group: 'エージェント応用', label: 'Tool Calling Lab',    route: '#/tools' },
