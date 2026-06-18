@@ -69,7 +69,8 @@
         '<pre class="ns-code">{"method":"tools/call",\n "params":{"name":"kb.search",\n  "arguments":{"query":"' + esc(run.query) + '"}}}\n→ ' + ((run.hits || []).length) + ' results</pre>' + hitList(run, 3);
     },
     memory: function (run) {
-      return '<p class="ns-empty__hint">「' + esc(run.query) + '」で<b>想起</b>された文脈（検索＝意味メモリの recall）:</p>' + hitList(run, 4);
+      return (run.memo ? '<p class="ns-empty__hint">🧠 メモリ内の要約: ' + esc(run.memo) + '</p>' : '') +
+        '<p class="ns-empty__hint">「' + esc(run.query) + '」で<b>想起</b>された文脈（検索＝意味メモリの recall）:</p>' + hitList(run, 4);
     },
     agent: function (run) {
       return '<p class="ns-empty__hint">Ask の流れを1ステップのエージェントループとして:</p>' +

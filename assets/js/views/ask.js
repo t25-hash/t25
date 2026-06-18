@@ -1,17 +1,26 @@
-/* Ask (the baby) — HYBRID: search + weights (the Claude-style pipeline).
+/* Ask (the baby) — HYBRID chat: search + weights (the Claude-style pipeline).
  * For each question: SEARCH the knowledge base for the relevant chunks, then a
  * small neural net LEARNS just those chunks and GENERATES the answer from its
  * weights. Only retrieved chunks are learned, so it scales to large PDFs.
- * The retrieved passages are shown as references (like citations). */
+ *
+ * UI: a phone-style chat. The conversation builds up as bubbles and the input is
+ * pinned at the bottom. Ask stays focused on 質問→赤ちゃんの回答; the memory summary
+ * and the grammar (SML) normalization are published to lastRun and inspected in
+ * their own Labs (#/memory, #/grammar). The search 根拠 stay here, folded under
+ * each answer, to keep the retrieval transparent. */
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
   function el(id) { return document.getElementById(id); }
 
-  var state = Object.assign({ source: 'kb', query: '歯車の設計について教えて', temperature: 0.45 },
+  var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
+  var MAX_HISTORY = 20;
+
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, history: [] },
     NSCode.api.labState('#/ask') || {});
+  if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
-  var askToken = 0;   // guards against overlapping async answers
+  var askToken = 0;   // unique id per in-flight answer (each writes its own bubble)
 
   function highlight(text, query) {
     var ws = (query.toLowerCase().match(/[a-z0-9]{2,}/g) || []).concat(query.match(/[぀-ヿ一-鿿ｦ-ﾟ]{2,}/g) || []);
@@ -41,59 +50,124 @@
     el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
   }
 
+  /* ---- chat bubbles -------------------------------------------------------- */
+  // history entry: { q, a }  where a = { text, source, weak, hits:[{source,score,text,more}] }
+  // or, on failure, { q, error }.
+
+  function slimAnswer(a) {
+    return {
+      text: a.text, source: a.source, weak: !!a.weak,
+      hits: (a.hits || []).map(function (h) {
+        var t = h.chunk.text || '';
+        return { source: h.chunk.source, score: h.score, text: t.slice(0, 200), more: t.length > 200 };
+      })
+    };
+  }
+
+  function citeDetails(q, hits, label) {
+    if (!hits || !hits.length) return '';
+    var items = hits.map(function (h, i) {
+      return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.source) + '</span>' +
+        '<span class="ns-hit__score">cos ' + (h.score != null ? h.score.toFixed(3) : '—') + '</span></div>' +
+        '<p class="ns-hit__text">' + highlight(h.text, q) + (h.more ? '…' : '') + '</p></div>';
+    }).join('');
+    return '<details class="ns-chat__cite"><summary>' + (label || '根拠を表示') + '（' + hits.length + '件）</summary>' + items + '</details>';
+  }
+
+  function botBody(entry) {
+    var q = entry.q, a = entry.a;
+    if (entry.error) return '<p class="ns-empty__hint">エラー: ' + C.esc(entry.error) + '</p>';
+    if (!a || !a.hits || !a.hits.length) {
+      return '<p class="ns-empty__hint">関連する知識が見つかりませんでした。上の「知識ベース」で資料を学習させてください。</p>';
+    }
+    if (a.weak) {
+      return '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p>' +
+        citeDetails(q, a.hits, '検索で近かった候補');
+    }
+    var html = (a.text
+      ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
+      : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
+    if (a.source) html += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>';
+    html += citeDetails(q, a.hits);
+    html += '<p class="ns-empty__hint ns-chat__links">🧠 要約は <a href="#/memory">Memory Lab</a>／🔧 文法は <a href="#/grammar">Grammar-agent</a> で確認できます。</p>';
+    return html;
+  }
+
+  function userBubble(q) {
+    return '<div class="ns-msg ns-msg--user"><div class="ns-msg__body">' + C.esc(q) + '</div></div>';
+  }
+  function botBubble(entry, id) {
+    return '<div class="ns-msg ns-msg--bot"' + (id ? ' id="' + id + '"' : '') + '>' +
+      '<div class="ns-msg__avatar">🍼</div>' +
+      '<div class="ns-msg__body">' + botBody(entry) + '</div></div>';
+  }
+  function pendingBubble(id) {
+    return '<div class="ns-msg ns-msg--bot" id="' + id + '">' +
+      '<div class="ns-msg__avatar">🍼</div>' +
+      '<div class="ns-msg__body">' +
+        '<p class="ns-empty__hint ns-msg__thinking">考え中… 関連箇所を検索し、ニューラルが学習しています（0%）</p>' +
+        '<div class="ns-progress"><div class="ns-progress__fill" style="width:0%"></div></div>' +
+      '</div></div>';
+  }
+
+  function welcomeHtml() {
+    var chips = CHIPS.map(function (c) { return '<button class="ns-chat__chip" data-q="' + C.esc(c) + '">' + C.esc(c) + '</button>'; }).join('');
+    return '<div class="ns-chat__welcome"><div class="ns-msg__avatar">🍼</div>' +
+      '<p>こんにちは。機械工学の知識ベースについて質問してください。関連箇所を検索し、赤ちゃんニューラルがその文脈を学習して答えます。</p>' +
+      '<div class="ns-chat__chips">' + chips + '</div></div>';
+  }
+
+  function logHtml() {
+    if (!state.history.length) return welcomeHtml();
+    return state.history.map(function (e) { return userBubble(e.q) + botBubble(e); }).join('');
+  }
+
+  function scrollBottom() {
+    window.requestAnimationFrame(function () { window.scrollTo(0, document.body.scrollHeight); });
+  }
+
   NSCode.registerView({
     route: '#/ask', module: 'ask', title: 'Ask (Hybrid)',
     render: function () {
+      var srcSel =
+        '<select id="srcSel" class="ns-input">' +
+          '<option value="kb"' + (state.source === 'kb' ? ' selected' : '') + '>機械工学 KB（5,809文書）</option>' +
+          '<option value="mine"' + (state.source === 'mine' ? ' selected' : '') + '>自分の知識（貼付/PDF）</option></select>';
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '関連箇所を検索 → その文脈をニューラルが学習して回答（検索＋重み＝Claude型・API不要）' }) +
-        C.Panel({ title: '1. 知識ベース', hint: '検索対象を選択',
-          body:
-            C.Controls([{ label: '対象', control:
-              '<select id="srcSel" class="ns-input">' +
-                '<option value="kb"' + (state.source === 'kb' ? ' selected' : '') + '>機械工学 KB（5,809文書）</option>' +
-                '<option value="mine"' + (state.source === 'mine' ? ' selected' : '') + '>自分の知識（貼付/PDF）</option></select>' }]) +
-            '<div id="srcArea">' + (state.source === 'kb' ? kbBody() : mineBody()) + '</div>' }) +
-        C.Panel({ title: '2. 質問する', hint: '質問→関連チャンクを検索→その文脈でニューラルが学習→重みから生成',
-          body:
-            '<div class="ns-qa-bar"><input id="askQ" class="ns-input" value="' + C.esc(state.query) + '">' +
-            '<button id="askBtn" class="ns-btn">回答</button>' +
-            '<button id="askRegen" class="ns-btn ns-btn--ghost">別の回答</button></div>' +
-            C.Controls([
-              { label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }
-            ]) }) +
-        C.Panel({ title: '3. 回答', hint: '検索した根拠から答えを構成（実文ベースで安定）。あわせて赤ちゃんニューラルの生成もデモ表示します。根拠は最下部',
-          body: '<div id="askAns"></div>' }) +
-        C.Panel({ title: 'しくみ', body:
-          '<p class="ns-empty__hint">本物の LLM（Claude）と同じ二段構え：<b>検索</b>で関連箇所を取り出し、<b>重み</b>（ニューラルネット）が文脈を学習して回答を生成します。重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' }) ;
+        '<details class="ns-chat__kb">' +
+          '<summary>📚 知識ベース・設定</summary>' +
+          C.Controls([{ label: '対象', control: srcSel }]) +
+          '<div id="srcArea">' + (state.source === 'kb' ? kbBody() : mineBody()) + '</div>' +
+          C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
+          '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
+        '</details>' +
+        '<div class="ns-chat">' +
+          '<div id="chatLog" class="ns-chat__log">' + logHtml() + '</div>' +
+          '<div class="ns-chat__composer">' +
+            '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
+            '<button id="askBtn" class="ns-btn">送信</button>' +
+            '<button id="askRegen" class="ns-btn ns-btn--ghost" title="直近の質問を再実行">別の回答</button>' +
+          '</div>' +
+        '</div>';
     },
     onMount: function () {
       el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
       if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
-      el('askBtn').addEventListener('click', runAsk);
-      el('askRegen').addEventListener('click', runAsk);
+      el('askBtn').addEventListener('click', function () { runAsk(); });
+      el('askRegen').addEventListener('click', function () {
+        var last = state.history.length ? state.history[state.history.length - 1].q : '';
+        runAsk(last || null);
+      });
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
-      runAsk();
+      el('chatLog').addEventListener('click', function (e) {
+        var chip = e.target.closest && e.target.closest('.ns-chat__chip');
+        if (chip) runAsk(chip.getAttribute('data-q'));
+      });
+      scrollBottom();
     }
   });
-
-  // Grammar Compiler Layer block: per-sentence SML extraction + normalized text
-  function grammarBlock(a, q) {
-    if (!a.normalized) return '';
-    var KEYS = ['subject', 'time', 'place', 'object', 'destination', 'companion', 'action', 'adjective', 'actionSurface'];
-    var rows = (a.sml || []).slice(0, 3).map(function (p) {
-      var sml = p.sml || {};
-      var slots = KEYS.filter(function (k) { return sml[k]; }).map(function (k) { return k + '=' + sml[k]; }).join(' ／ ');
-      var meta = [sml.tense, sml.politeness, sml.negative ? '否定' : ''].filter(Boolean).join(' ');
-      return '<div class="ns-hit"><div class="ns-hit__head"><span>SML' + (p.applied ? '（正規化）' : '（原文保持）') + '</span>' +
-        '<span class="ns-hit__score">' + C.esc(meta) + '</span></div>' +
-        '<p class="ns-hit__text">' + C.esc(slots || '—') + '</p></div>';
-    }).join('');
-    return '<div class="ns-qa-answer"><div class="ns-qa-answer__label">🔧 文法コンパイラ（生成 → SML化 → 正規化）</div>' +
-      '<p class="ns-qa-answer__lead">' + highlight(a.normalized, q) + '</p>' +
-      '<p class="ns-empty__hint">生成文を文ごとに SML（意味スロット）へ分解し、意味を保持したまま日本語文法へ再コンパイルします。複雑な文は破壊を避けるため原文のまま通します。<a href="#/grammar">文法コンパイラ</a>で手動でも試せます。</p>' +
-      rows + '</div>';
-  }
 
   function setStatus(msg) { var s = el('docStatus'); if (s) s.textContent = msg || ''; }
   function kbSize() { return A.getDocs().reduce(function (s, d) { return s + (d.text || '').length; }, 0); }
@@ -120,65 +194,52 @@
     }).catch(function (e) { setStatus('読み込みエラー: ' + e.message); });
   }
 
-  function runAsk() {
-    var out = el('askAns'); if (!out) return;
-    var q = (el('askQ') ? el('askQ').value : state.query).trim();
-    if (!q) { out.innerHTML = C.EmptyState({ icon: '🍼', message: '質問を入力してください。' }); return; }
-    var token = ++askToken;
-    out.innerHTML = '<p class="ns-empty__hint" id="askThinking">考え中… 関連箇所を検索し、ニューラルが学習しています（0%）</p>' +
-      '<div class="ns-progress"><div id="askBar" class="ns-progress__fill" style="width:0%"></div></div>';
+  function commit(entry) {
+    state.history.push(entry);
+    if (state.history.length > MAX_HISTORY) state.history = state.history.slice(-MAX_HISTORY);
+    persist();
+  }
+
+  // runAsk(qOverride): qOverride present (chip / 別の回答) keeps the input; otherwise
+  // the composer's value is used and cleared. Each call writes to its own bubble, so
+  // overlapping answers don't clobber one another.
+  function runAsk(qOverride) {
+    var input = el('askQ'), log = el('chatLog');
+    if (!log) return;
+    var fromInput = (qOverride == null);
+    var q = (fromInput ? (input ? input.value : state.query) : qOverride).trim();
+    if (!q) return;
+    if (fromInput && input) { input.value = ''; state.query = ''; persist(); }
+
+    var welcome = log.querySelector('.ns-chat__welcome');
+    if (welcome) log.innerHTML = '';
+    var token = ++askToken, botId = 'askBot' + token;
+    log.insertAdjacentHTML('beforeend', userBubble(q));
+    log.insertAdjacentHTML('beforeend', pendingBubble(botId));
+    scrollBottom();
+
     var run = state.source === 'kb' ? A.hybridAnswerKB : A.hybridAnswer;
     run(q, {
       temperature: state.temperature,
       onProgress: function (s) {
-        if (token !== askToken) return;
-        var pct = Math.round(100 * s.step / s.total), b = el('askBar'), th = el('askThinking');
-        if (b) b.style.width = pct + '%';
+        var node = el(botId); if (!node) return;
+        var pct = Math.round(100 * s.step / s.total);
+        var bar = node.querySelector('.ns-progress__fill'), th = node.querySelector('.ns-msg__thinking');
+        if (bar) bar.style.width = pct + '%';
         if (th) th.textContent = '考え中… 関連箇所を検索し、ニューラルが学習しています（' + pct + '%）';
       }
     }).then(function (a) {
-      if (token !== askToken) return;        // a newer question superseded this one
-      if (!a || !a.hits || !a.hits.length) {
-        out.innerHTML = '<p class="ns-empty__hint">関連する知識が見つかりませんでした。「知識に追加」で資料を学習させてください。</p>';
-        return;
-      }
-      if (a.weak) {           // relevance floor: don't present a confident off-topic answer
-        out.innerHTML =
-          '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
-            '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p></div>' +
-          '<p class="ns-empty__hint">参考までに、検索で近かった候補:</p>' +
-          a.hits.map(function (h, i) {
-            return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
-              '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
-              '<p class="ns-hit__text">' + highlight(h.chunk.text.slice(0, 200), q) + (h.chunk.text.length > 200 ? '…' : '') + '</p></div>';
-          }).join('');
-        return;
-      }
-      out.innerHTML =
-        // the baby model's answer: one concise, grounded ~100-char sentence,
-        // selected from the retrieved passages and re-ranked by the trained net.
-        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答</div>' +
-          (a.text
-            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
-            : '<p class="ns-empty__hint">回答を構成できませんでした。</p>') +
-          (a.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>' : '') +
-        '</div>' +
-        // memory summary: the retrieved context held in memory, compressed
-        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">🧠 メモリ内の要約</div>' +
-          (a.memo
-            ? '<p class="ns-qa-answer__lead">' + highlight(a.memo, q) + '</p>'
-            : '<p class="ns-empty__hint">要約できる十分な文脈がありません。</p>') +
-        '</div>' +
-        grammarBlock(a, q) +
-        '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習し、メモリに要約）:</p>' +
-        a.hits.map(function (h, i) {
-          return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
-            '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
-            '<p class="ns-hit__text">' + highlight(h.chunk.text.slice(0, 200), q) + (h.chunk.text.length > 200 ? '…' : '') + '</p></div>';
-        }).join('');
+      var entry = { q: q, a: slimAnswer(a || {}) };
+      commit(entry);
+      var node = el(botId);
+      if (node) { node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>'; }
+      scrollBottom();
     }).catch(function (e) {
-      if (token !== askToken) return;
-      out.innerHTML = '<p class="ns-empty__hint">エラー: ' + (e && e.message ? e.message : e) + '</p>';
+      var entry = { q: q, error: (e && e.message) ? e.message : String(e) };
+      commit(entry);
+      var node = el(botId);
+      if (node) { node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>'; }
+      scrollBottom();
     });
   }
 })(window.NSCode);
