@@ -8,7 +8,7 @@
   var C = NSCode.C, A = NSCode.askEngine, R = NSCode.research;
   function el(id) { return document.getElementById(id); }
 
-  var state = Object.assign({ query: 'タービンとボイラを備える廃棄物発電施設の仕組みは？', temperature: 0.45 },
+  var state = Object.assign({ source: 'kb', query: '歯車の設計について教えて', temperature: 0.45 },
     NSCode.api.labState('#/ask') || {});
   function persist() { NSCode.api.labState('#/ask', state); }
   var askToken = 0;   // guards against overlapping async answers
@@ -20,19 +20,38 @@
     return html;
   }
 
+  function kbBody() {
+    return '<div class="ns-empty__hint">📚 機械工学の教科書 <b>5,809 文書</b>（α機械工学概説 / β設計工学 / γ産業機械）。事前に作った索引で関連文書だけを取り出し、その文脈をニューラルが学習して回答します（初回のみ索引を読み込み・gzip約4MB）。</div>';
+  }
+  function mineBody() {
+    return '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：技術文書 / 仕様書 / 教科書の記述）"></textarea>' +
+      '<div class="ns-actions">' +
+        '<button id="addDoc" class="ns-btn">知識に追加</button>' +
+        '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
+        '<button id="resetDocs" class="ns-btn ns-btn--ghost">既定の知識に戻す</button>' +
+      '</div><div id="docStatus" class="ns-empty__hint"></div>';
+  }
+  function wireMine() {
+    el('addDoc').addEventListener('click', function () {
+      var t = A.cleanText(el('docText').value); if (!t) return;
+      var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
+      el('docText').value = ''; setStatus('知識に追加しました（合計 ' + kbSize().toLocaleString() + ' 字）。質問できます。');
+    });
+    el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。'); });
+    el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
+  }
+
   NSCode.registerView({
     route: '#/ask', module: 'ask', title: 'Ask (Hybrid)',
     render: function () {
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '関連箇所を検索 → その文脈をニューラルが学習して回答（検索＋重み＝Claude型・API不要）' }) +
-        C.Panel({ title: '1. 知識を学習させる（任意）', hint: 'PDF/テキストはクレンジングして知識ベースに追加。質問ごとに関連部分だけ学習するので、大きい資料でも動きます（PDF抽出ページも利用可）',
+        C.Panel({ title: '1. 知識ベース', hint: '検索対象を選択',
           body:
-            '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：運転手順書 / トラブル報告書 / 仕様書）"></textarea>' +
-            '<div class="ns-actions">' +
-              '<button id="addDoc" class="ns-btn">知識に追加</button>' +
-              '<label class="ns-btn ns-btn--ghost" style="cursor:pointer">ファイル追加<input id="docFile" type="file" accept=".txt,.md,.pdf,text/plain,application/pdf" multiple hidden></label>' +
-              '<button id="resetDocs" class="ns-btn ns-btn--ghost">既定の知識に戻す</button>' +
-            '</div>' +
-            '<div id="docStatus" class="ns-empty__hint"></div>' }) +
+            C.Controls([{ label: '対象', control:
+              '<select id="srcSel" class="ns-input">' +
+                '<option value="kb"' + (state.source === 'kb' ? ' selected' : '') + '>機械工学 KB（5,809文書）</option>' +
+                '<option value="mine"' + (state.source === 'mine' ? ' selected' : '') + '>自分の知識（貼付/PDF）</option></select>' }]) +
+            '<div id="srcArea">' + (state.source === 'kb' ? kbBody() : mineBody()) + '</div>' }) +
         C.Panel({ title: '2. 質問する', hint: '質問→関連チャンクを検索→その文脈でニューラルが学習→重みから生成',
           body:
             '<div class="ns-qa-bar"><input id="askQ" class="ns-input" value="' + C.esc(state.query) + '">' +
@@ -47,13 +66,8 @@
           '<p class="ns-empty__hint">本物の LLM（Claude）と同じ二段構え：<b>検索</b>で関連箇所を取り出し、<b>重み</b>（ニューラルネット）が文脈を学習して回答を生成します。重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' }) ;
     },
     onMount: function () {
-      el('addDoc').addEventListener('click', function () {
-        var t = A.cleanText(el('docText').value); if (!t) return;
-        var docs = A.getDocs(); docs.push({ name: 'mem' + (docs.length + 1), text: t }); A.setDocs(docs);
-        el('docText').value = ''; setStatus('知識に追加しました（合計 ' + kbSize().toLocaleString() + ' 字）。質問できます。');
-      });
-      el('resetDocs').addEventListener('click', function () { A.resetDocs(); setStatus('既定の知識に戻しました。'); });
-      el('docFile').addEventListener('change', function () { handleFiles(this.files); this.value = ''; });
+      el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
+      if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       el('askBtn').addEventListener('click', runAsk);
@@ -113,7 +127,8 @@
     var token = ++askToken;
     out.innerHTML = '<p class="ns-empty__hint" id="askThinking">考え中… 関連箇所を検索し、ニューラルが学習しています（0%）</p>' +
       '<div class="ns-progress"><div id="askBar" class="ns-progress__fill" style="width:0%"></div></div>';
-    A.hybridAnswer(q, {
+    var run = state.source === 'kb' ? A.hybridAnswerKB : A.hybridAnswer;
+    run(q, {
       temperature: state.temperature,
       onProgress: function (s) {
         if (token !== askToken) return;
@@ -127,30 +142,35 @@
         out.innerHTML = '<p class="ns-empty__hint">関連する知識が見つかりませんでした。「知識に追加」で資料を学習させてください。</p>';
         return;
       }
-      var srcs = {}; a.hits.forEach(function (h) { srcs[h.chunk.source] = 1; });
-      var tags = Object.keys(srcs).map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ');
-      var composed = (a.compose && a.compose.length)
-        ? a.compose.map(function (s) { return highlight(s, q); }).join('<br>') : '';
+      if (a.weak) {           // relevance floor: don't present a confident off-topic answer
+        out.innerHTML =
+          '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答</div>' +
+            '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p></div>' +
+          '<p class="ns-empty__hint">参考までに、検索で近かった候補:</p>' +
+          a.hits.map(function (h, i) {
+            return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
+              '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +
+              '<p class="ns-hit__text">' + highlight(h.chunk.text.slice(0, 200), q) + (h.chunk.text.length > 200 ? '…' : '') + '</p></div>';
+          }).join('');
+        return;
+      }
       out.innerHTML =
-        // main answer: composed from the retrieved passages (real sentences)
-        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">回答（検索した根拠から構成）</div>' +
-          (composed
-            ? '<p class="ns-qa-answer__lead">' + composed + '</p>'
-            : '<p class="ns-empty__hint">関連する文を十分に抽出できませんでした。下のニューラル生成と根拠をご覧ください。</p>') +
-          '<div class="ns-qa-answer__src">参照: ' + tags + '</div></div>' +
-        // secondary: the baby neural network's own generation (learning demo)
-        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 ニューラル生成（赤ちゃんモデルのデモ）</div>' +
+        // the baby model's answer: one concise, grounded ~100-char sentence,
+        // selected from the retrieved passages and re-ranked by the trained net.
+        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答</div>' +
           (a.text
-            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>'
-            : '<p class="ns-empty__hint">生成できませんでした。</p>') +
-          '<div class="ns-qa-answer__src">起点候補: ' +
-            ((a.seeds && a.seeds.length ? a.seeds : [a.seed]).map(function (s) {
-              return '<span class="ns-tag' + (s === a.seed ? ' ns-tag--on' : '') + '">' + C.esc(s) + '</span>';
-            }).join(' ')) +
-            (a.seeds && a.seeds.length > 1 ? '（採用: ' + C.esc(a.seed) + '）' : '') +
-          '</div></div>' +
+            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
+            : '<p class="ns-empty__hint">回答を構成できませんでした。</p>') +
+          (a.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>' : '') +
+        '</div>' +
+        // memory summary: the retrieved context held in memory, compressed
+        '<div class="ns-qa-answer"><div class="ns-qa-answer__label">🧠 メモリ内の要約</div>' +
+          (a.memo
+            ? '<p class="ns-qa-answer__lead">' + highlight(a.memo, q) + '</p>'
+            : '<p class="ns-empty__hint">要約できる十分な文脈がありません。</p>') +
+        '</div>' +
         grammarBlock(a, q) +
-        '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習）:</p>' +
+        '<p class="ns-empty__hint">検索で取り出した根拠（この文脈をニューラルが学習し、メモリに要約）:</p>' +
         a.hits.map(function (h, i) {
           return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.chunk.source) + '</span>' +
             '<span class="ns-hit__score">cos ' + h.score.toFixed(3) + '</span></div>' +

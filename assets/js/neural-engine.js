@@ -21,7 +21,7 @@
    * The base tokens are single CJK chars (+ latin runs). On their own the net
    * predicts character-by-character and tends to produce non-words. Here we LEARN
    * the most frequent adjacent pairs and merge them into subword units (e.g.
-   * 機械, 発電, 蒸気タービン) so the net models meaningful chunks → far more fluent,
+   * 機械, 歯車, 軸受) so the net models meaningful chunks → far more fluent,
    * synthesis-like output. Fully local, no download. */
   function learnMerges(chars, numMerges, minFreq) {
     var seq = chars.slice(), merges = [];

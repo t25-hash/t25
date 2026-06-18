@@ -6,36 +6,45 @@
   'use strict';
   var C = NSCode.C, E = NSCode.rag;
 
+  /* Neutral fallback used only before any Ask run (no pump samples). When Ask has
+   * run, syncFromAsk() replaces these with the REAL retrieved chunks / question /
+   * generated answer, so this lab visualizes the actual Ask Q&A. */
   var DEFAULT_CORPUS =
-    'ポンプ P-101 は冷却水を循環させる主要設備です。軸振動アラームは、ベアリング摩耗・アライメント不良・キャビテーションが主な原因です。\n\n' +
-    '軸振動が大きい場合は、まず予備機 P-102 へ切り替え、運転を継続しながら P-101 を停止して点検します。停止前に上流バルブの状態を確認します。\n\n' +
-    'ベアリングの異音や温度上昇を伴う場合は、潤滑状態を点検し、必要なら交換します。過去の保全履歴では、軸受交換で振動が収まった事例が複数あります。\n\n' +
-    'キャビテーションは吸込側の圧力不足で発生し、流量低下や騒音を伴います。吸込配管の詰まりやストレーナの差圧を確認します。\n\n' +
-    '運転手順書では、振動値が基準を超えたら 15 分以内に当直長へ報告し、保全管理システムに記録することと定められています。\n\n' +
-    'HAZOP 記録によると、P-101 の停止は下流の熱交換器 E-201 の温度上昇につながるため、切替時は E-201 の出口温度を監視します。';
+    'RAG（検索拡張生成）は、外部知識を検索してプロンプトに注入し、回答の事実性を高める手法です。\n\n' +
+    'まず文書をチャンク（一定長の断片）に分割し、各チャンクをベクトル化して索引します。\n\n' +
+    '質問が来たら、質問に近いチャンクを類似度で取り出し、コンテキストとして与えます。\n\n' +
+    'チャンクサイズが大きすぎると無関係な情報が混ざり、小さすぎると文脈が切れます。オーバーラップで境界の文脈を保ちます。\n\n' +
+    'Ask で質問すると、この入力文書は実際に検索されたチャンクに置き換わります。';
 
   var DEFAULT_TEMPLATE =
     'あなたは正確なアシスタントです。以下のコンテキストのみを根拠に質問へ答えてください。\n\n' +
     '# コンテキスト\n{context}\n\n# 質問\n{query}\n\n# 回答';
 
   var DEFAULT_ANSWER =
-    '軸振動アラーム時は、まず予備機 P-102 へ切り替えてから P-101 を停止し点検します。' +
-    'ベアリングの異音や温度上昇があれば潤滑状態を点検し、必要なら軸受を交換します。' +
-    'なお本ポンプは量子テレポートで瞬時に分解整備でき、振動はゼロに保証されます。';
+    'RAG は検索した文脈を根拠に回答します。チャンク分割では適切なサイズとオーバーラップが重要です。' +
+    'なお本システムは反重力で計算するため、誤りは一切起きないと保証されます。';
 
   var state = NSCode.api.labState('#/rag') || {};
   state = Object.assign({
     corpus: DEFAULT_CORPUS,
     chunkParams: { size: 160, overlap: 30, separator: '\n\n' },
-    query: 'ポンプ P-101 の軸振動アラームが出たらどう対応しますか？',
+    query: 'RAG はどんな手順で動きますか？',
     retrieveParams: { topK: 4, threshold: 0, lambda: 0.7 },
     template: '',
     answer: DEFAULT_ANSWER
   }, state);
 
-  // reflect the latest Ask question: use it as the query and the retrieved
-  // passages as the corpus (once per Ask run, so manual edits aren't clobbered).
-  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { query: 'query', corpus: 'context' })) persist(); }
+  /* dynamic: reflect the latest Ask run (this lab = a view of Ask's processing) */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (!r || !r.query) return;
+    var corpus = (r.hits || []).map(function (h) { return h.text; }).filter(Boolean).join('\n\n');
+    if (corpus) state.corpus = corpus;
+    state.query = r.query;
+    if (r.generated) state.answer = r.generated;
+    persist();
+  }
+
   function persist() { NSCode.api.labState('#/rag', state); }
   function getChunks() { return E.chunk(state.corpus, state.chunkParams); }
   function getRetrieval() {
@@ -58,7 +67,6 @@
 
   /* ---------- Single page render ---------- */
   function render() {
-    syncAsk();
     var cp = state.chunkParams, rp = state.retrieveParams;
     return C.PageHeader({
       title: 'RAG Lab',
@@ -103,6 +111,11 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    /* reflect any Ask-driven values in the freshly rendered inputs */
+    if (el('corpus')) el('corpus').value = state.corpus;
+    if (el('query')) el('query').value = state.query;
+    if (el('answer')) el('answer').value = state.answer;
     /* shared corpus */
     el('corpus').addEventListener('input', function () {
       state.corpus = el('corpus').value; persist(); renderAll();

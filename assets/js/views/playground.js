@@ -13,14 +13,19 @@
   var state = Object.assign({
     model: 'claude-opus-4-8', temp: 0.7,
     system: 'あなたは簡潔で正確な日本語アシスタントです。',
-    prompt: 'ポンプ P-101 の軸振動アラームが出たときの初動対応を3つ挙げてください。',
-    promptEval: '設備について教えて。'
+    prompt: '歯車の主な種類とそれぞれの特徴を3つ挙げてください。',
+    promptEval: '機械要素について教えて。'
   }, NSCode.api.labState('#/playground') || {});
 
   function persist() { NSCode.api.labState('#/playground', state); }
-  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { prompt: 'query' })) persist(); }
   function el(id) { return document.getElementById(id); }
   function tokCount(t) { return T.tokenize(t || '').length; }
+
+  /* dynamic: both the LLM prompt and the prompt-eval target follow the Ask query */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (r && r.query) { state.prompt = r.query; state.promptEval = r.query; persist(); }
+  }
 
   var CRITERIA = [
     { id: 'role', label: '役割/ペルソナ指定', test: function (p) { return /(あなたは|として|専門家|アシスタント|role|you are)/i.test(p); }, fix: 'あなたは{分野}の専門家です。' },
@@ -32,7 +37,6 @@
   ];
 
   function render() {
-    syncAsk();
     var opts = MODELS.map(function (m) { return '<option' + (m === state.model ? ' selected' : '') + '>' + m + '</option>'; }).join('');
     return C.PageHeader({ title: 'Playground', purpose: 'LLM 実験（応答はシミュレーション）とプロンプト評価を1ページで' }) +
       C.Panel({ title: 'LLM — 設定', hint: 'トークン数は実カウント / 応答はオフライン擬似生成', body: C.Controls([
@@ -53,6 +57,9 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    if (el('pgPrompt')) el('pgPrompt').value = state.prompt;
+    if (el('evPrompt')) el('evPrompt').value = state.promptEval;
     el('pgModel').addEventListener('change', function () { state.model = el('pgModel').value; persist(); renderLLM(); });
     el('pgTemp').addEventListener('input', function () { state.temp = +el('pgTemp').value; el('pgTempV').textContent = state.temp; persist(); });
     el('pgSys').addEventListener('input', function () { state.system = el('pgSys').value; persist(); });

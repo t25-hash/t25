@@ -8,23 +8,35 @@
   var DIM = 64;
 
   var state = Object.assign({
-    tokenText: 'ポンプ P-101 の軸振動が大きい。',
-    embText: 'ポンプ 軸振動 ベアリング 異音',
-    simA: 'ポンプ 軸振動 ベアリング 異音',
-    simB: 'ベアリング 異音 ポンプ 軸振動',
-    clusterText: ['ポンプ 軸振動 ベアリング 異音', 'ポンプ キャビテーション 流量 低下', '回転機械 振動 軸受 異音',
-      'バルブ 漏れ 配管 シール', 'フランジ 漏洩 ガスケット 増締', '配管 腐食 減肉 漏れ',
-      '温度 センサ 計装 指示', '圧力 伝送器 計装 校正', '流量計 信号 計装 異常'].join('\n')
+    tokenText: '歯車は動力を伝達する機械要素です。',
+    embText: '歯車 かみ合い 動力 伝達',
+    simA: '歯車 かみ合い 動力 伝達',
+    simB: '動力 伝達 歯車 かみ合い',
+    clusterText: ['歯車 かみ合い 動力 伝達', 'インボリュート 歯形 圧力角 歯車', '平歯車 はすば歯車 減速',
+      '転がり軸受 内輪 外輪 転動体', 'すべり軸受 油膜 潤滑 荷重', '軸受 摩擦 回転 支持',
+      'はり 曲げ 応力 たわみ', '断面係数 中立軸 曲げ応力', '片持ちはり せん断 荷重 変形'].join('\n')
   }, NSCode.api.labState('#/embedding') || {});
 
   function persist() { NSCode.api.labState('#/embedding', state); }
-  // reflect the latest Ask question (Token & Embedding inputs) once per run
-  function syncAsk() { if (NSCode.lastRun && NSCode.lastRun.applyTo(state, { tokenText: 'query', embText: 'query' })) persist(); }
   function el(id) { return document.getElementById(id); }
+
+  /* dynamic: all viewers reflect the latest Ask run.
+   * Token/Embedding ← the question; Similarity ← question vs answer;
+   * Cluster ← the retrieved chunks (so the scatter shows THIS run's passages). */
+  function syncFromAsk() {
+    var r = NSCode.lastRun && NSCode.lastRun.get();
+    if (!r || !r.query) return;
+    state.tokenText = r.query;
+    state.embText = r.query;
+    state.simA = r.query;
+    state.simB = r.generated || (r.answer && r.answer[0]) || ((r.hits && r.hits[0] && r.hits[0].text) || '').slice(0, 50) || r.query;
+    var lines = (r.hits || []).map(function (h) { return (h.text || '').replace(/\s+/g, ' ').trim().slice(0, 48); }).filter(Boolean);
+    if (lines.length >= 2) state.clusterText = lines.join('\n');
+    persist();
+  }
 
   /* ---------- One page render ---------- */
   function render() {
-    syncAsk();
     return C.PageHeader({
       title: 'Embedding Lab',
       purpose: 'Token分解 → ベクトル化 → 類似度 → クラスタ可視化（signed hashing trick・語彙ベース）',
@@ -69,6 +81,12 @@
   }
 
   function onMount() {
+    syncFromAsk();
+    if (el('tkText')) el('tkText').value = state.tokenText;
+    if (el('emText')) el('emText').value = state.embText;
+    if (el('simA')) el('simA').value = state.simA;
+    if (el('simB')) el('simB').value = state.simB;
+    if (el('clText')) el('clText').value = state.clusterText;
     el('tkText').addEventListener('input', function () { state.tokenText = el('tkText').value; persist(); renderTokens(); });
     el('emText').addEventListener('input', function () { state.embText = el('emText').value; persist(); renderEmbedding(); });
     ['simA', 'simB'].forEach(function (id) { el(id).addEventListener('input', function () { state[id] = el(id).value; persist(); renderSim(); }); });
