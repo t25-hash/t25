@@ -29,7 +29,7 @@
     // mirror the current Ask output model: baby answer (generated) + memory summary,
     // and the honest 該当なし state when relevance was too weak.
     if (run.generated) {
-      var h = '<p class="ns-qa-answer__lead">' + esc(run.generated) + '</p>';
+      var h = '<p class="ns-qa-answer__lead">' + esc(run.generated).replace(/\n/g, '<br>') + '</p>';
       if (run.source) h += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + esc(run.source) + '</span></div>';
       if (run.memo) h += '<p class="ns-empty__hint">🧠 メモリ内の要約: ' + esc(run.memo) + '</p>';
       return h;

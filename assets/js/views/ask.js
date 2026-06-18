@@ -139,9 +139,9 @@
       out.innerHTML =
         // the baby model's answer: one concise, grounded ~100-char sentence,
         // selected from the retrieved passages and re-ranked by the trained net.
-        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答（約100字・根拠から要約）</div>' +
+        '<div class="ns-qa-answer ns-qa-answer--neural"><div class="ns-qa-answer__label">🍼 赤ちゃんの回答</div>' +
           (a.text
-            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q) + '</p>'
+            ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
             : '<p class="ns-empty__hint">回答を構成できませんでした。</p>') +
           (a.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>' : '') +
         '</div>' +

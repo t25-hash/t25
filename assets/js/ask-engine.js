@@ -356,6 +356,9 @@
     if ((s.match(/[一-鿿ぁ-ヿ][ 　\t][一-鿿ぁ-ヿ]/g) || []).length >= 2) return true;
     // unbalanced parentheses ⇒ a parenthetical was split across columns (interleave)
     if (((s.match(/[（(]/g) || []).length) !== ((s.match(/[）)]/g) || []).length)) return true;
+    // ≥3 English-glossed parentheticals in one sentence ⇒ column-merge of several
+    // defined terms (e.g. 「…（歯車対，gear pair）…（tooth profile）…（gear）…」)
+    if ((s.match(/[（(][^）)]{0,40}?[A-Za-z][^）)]{0,40}?[）)]/g) || []).length >= 3) return true;
     var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
     if (letters < s.length * 0.55) return true;
     return false;
@@ -605,6 +608,122 @@
     return { text: out.trim(), source: top.g.src, rel: top.rel };
   }
 
+  /* ---- question-intent classification → routed answers (Claude-like) --------
+   * Classify the intent (definition / list / how-to / why / comparison / features)
+   * and answer in that shape, extractively from the retrieved passages. Each
+   * builder returns {text,source} or null; the router falls back to composeConcise
+   * (so unclassified or low-evidence questions behave exactly as before). */
+  function classifyIntent(q) {
+    q = String(q || '');
+    if (/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)/.test(q)) return 'list';
+    if (/手順|やり方|どうやって|どのように|流れ|ステップ|進め方|作り方|設計手順|方法/.test(q)) return 'howto';
+    if (/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/.test(q)) return 'compare';
+    if (/なぜ|理由|原因|どうして|要因/.test(q)) return 'why';
+    if (/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/.test(q)) return 'features';
+    if (/とは|何ですか|定義|意味|どういう/.test(q)) return 'definition';
+    return 'default';
+  }
+  /* shared clean-sentence pool with question relevance (reused by the builders).
+   * Unlike composeConcise (top-4 hit chunks only), intent builders scan ALL
+   * retrieved docs containing a key term, so a definition/feature sentence in a
+   * relevant doc that didn't win the chunk rerank is still found. */
+  function sentPool(question, hits, docs) {
+    var emb = NSCode.embeddings, qv = emb.embed(question, 64);
+    var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });
+    var keys = keyTerms(question);
+    function hasKey(s) { for (var i = 0; i < keys.length; i++) if (s.indexOf(keys[i]) >= 0) return true; return false; }
+    function rel(s) {
+      var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
+      var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0);
+    }
+    var groups = keys.length
+      ? (docs || []).filter(function (d) { return hasKey(d.text || ''); }).map(function (d) { return { src: d.name, arr: buildSentences(d.text) }; })
+      : hitDocGroups(hits, docs);
+    if (!groups.length) groups = hitDocGroups(hits, docs);
+    var seen = {}, cands = [];
+    groups.forEach(function (g) {
+      g.arr.forEach(function (s, idx) {
+        if (s.length < 14 || s.length > 160 || seen[s] || isJunkSent(s)) return;
+        seen[s] = 1; cands.push({ s: s, src: g.src, g: g, idx: idx });
+      });
+    });
+    cands.forEach(function (c) { c.rel = rel(c.s); });
+    return { cands: cands, keys: keys, hasKey: hasKey };
+  }
+  // best sentence carrying an intent cue (+ optional follow-on); null if none good
+  function topByCue(question, hits, docs, cueRe, bonus, need, requireCue) {
+    var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
+    p.cands.forEach(function (c) { c.sc = c.rel + (cueRe.test(c.s) ? bonus : 0); });
+    p.cands.sort(function (a, b) { return b.sc - a.sc; });
+    var top = p.cands[0];
+    if (!top || top.sc < need || (p.keys.length && !p.hasKey(top.s))) return null;
+    if (requireCue && !cueRe.test(top.s)) return null;
+    var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
+    if (nx && !isJunkSent(nx) && text.length < 75 && (text.length + nx.length) <= 155 && (p.hasKey(nx) || cueRe.test(nx))) text += nx;
+    return { text: text, source: top.src };
+  }
+  function answerDefinition(question, hits, docs) {
+    var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
+    var key = p.keys[0] || '', CUE = /(である|をいう|と呼ばれ|と称|を指す|のことである|を意味|といい|と定義|とは)/;
+    p.cands.forEach(function (c) {
+      var ki = key ? c.s.indexOf(key) : -1;
+      c.sc = c.rel + (CUE.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.5 : 0);
+    });
+    p.cands.sort(function (a, b) { return b.sc - a.sc; });
+    var top = p.cands[0];
+    if (!top || !CUE.test(top.s) || (p.keys.length && !p.hasKey(top.s))) return null;
+    return { text: top.s, source: top.src };
+  }
+  function answerWhy(question, hits, docs) {
+    return topByCue(question, hits, docs, /(ため|から|ので|理由|原因|による|起因|生じ|防ぐ|により|ことで)/, 0.6, 0.4, true);
+  }
+  function answerFeatures(question, hits, docs) {
+    return topByCue(question, hits, docs, /(特徴|利点|長所|短所|メリット|デメリット|優れ|劣る|性質|向く|適する|やすい|できる)/, 0.5, 0.35, false);
+  }
+  function answerCompare(question, hits, docs) {
+    var p = sentPool(question, hits, docs); var subs = p.keys.slice(0, 2);
+    if (subs.length < 2 || !p.cands.length) return null;
+    var CUE = /(一方|に対して|に対し|と比べ|に比べ|より|異な|違い|の差|どちら|に比較)/;
+    p.cands.forEach(function (c) {
+      var mention = 0; subs.forEach(function (k) { if (c.s.indexOf(k) >= 0) mention++; });
+      c.sc = c.rel + (CUE.test(c.s) ? 0.6 : 0) + mention * 0.4;
+    });
+    p.cands.sort(function (a, b) { return b.sc - a.sc; });
+    var top = p.cands[0];
+    if (!top || !CUE.test(top.s)) return null;
+    var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
+    if (nx && !isJunkSent(nx) && text.length < 80 && (text.length + nx.length) <= 160) text += nx;
+    return { text: text, source: top.src };
+  }
+  var STEP_MARK = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
+  function answerHowto(question, hits, docs) {
+    var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
+    p.cands.sort(function (a, b) { return b.rel - a.rel; });
+    var src = p.cands[0].g, SEQ = /(まず|はじめに|最初に|次に|その後|続いて|それから|最後に|してから|を行い|を行う|に分けて|手順)/;
+    var steps = [];
+    src.arr.forEach(function (s) { if (!isJunkSent(s) && SEQ.test(s) && s.length <= 120) steps.push(s); });
+    if (steps.length < 2) {                                   // fallback: enumerated block (numbered list)
+      var blk = composeAnswer(question, hits, docs, 6);
+      if (blk && blk.length >= 3) steps = blk.filter(function (s) { return s.length <= 120; });
+    }
+    if (steps.length < 2) return null;
+    if (steps.length > 8) steps = steps.slice(0, 8);
+    return { text: steps.map(function (s, i) { return (STEP_MARK[i] || (i + 1) + '.') + ' ' + s; }).join('\n'), source: src.src };
+  }
+  /* router: pick a builder by intent, else fall back to composeConcise */
+  function composeByIntent(question, hits, docs, model, target) {
+    var intent = classifyIntent(question), r = null;
+    if (intent === 'list') r = listEnumerate(question, docs);
+    else if (intent === 'howto') r = answerHowto(question, hits, docs);
+    else if (intent === 'compare') r = answerCompare(question, hits, docs);
+    else if (intent === 'why') r = answerWhy(question, hits, docs);
+    else if (intent === 'features') r = answerFeatures(question, hits, docs);
+    else if (intent === 'definition') r = answerDefinition(question, hits, docs);
+    if (r && r.text) { r.intent = intent; return r; }
+    var c = composeConcise(question, hits, docs, model, target); c.intent = 'default'; return c;
+  }
+
   /* P1 relevance floor — a confident off-topic answer is worse than admitting no
    * match (e.g. unrelated queries used to surface the OHSMS catch-all doc). Accept
    * only if retrieval was reasonably strong OR the answer shares a content term
@@ -714,18 +833,17 @@
       .then(function () {
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
-        var concise = composeConcise(question, res.hits, getDocs(), m, opts.target || 100);
-        var lst = listEnumerate(question, getDocs());          // 種類/分類 → 列挙で回答
-        if (lst) concise = { text: lst.text, source: lst.source };
-        var weak = !lst && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
-        if (weak) concise = { text: '', source: '' };
+        var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100);
+        var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
+        var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+        if (weak) concise = { text: '', source: '', intent: concise.intent };
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, ts: Date.now()
+          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent, ts: Date.now()
         });
         return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
       });
@@ -781,17 +899,16 @@
         var compose = composeAnswer(question, res.hits, docs);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var concise = composeConcise(question, res.hits, docs, m, opts.target || 100);
-            var lst = listEnumerate(question, docs);            // 種類/分類 → 列挙で回答
-            if (lst) concise = { text: lst.text, source: lst.source };
-            var weak = !lst && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
-            if (weak) concise = { text: '', source: '' };
+            var concise = composeByIntent(question, res.hits, docs, m, opts.target || 100);
+            var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
+            var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+            if (weak) concise = { text: '', source: '', intent: concise.intent };
             var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, ts: Date.now()
+              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent, ts: Date.now()
             });
             return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss };
           });
