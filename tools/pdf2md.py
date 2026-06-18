@@ -95,6 +95,25 @@ SEC3_RE = re.compile(r'^([0-9]+・[0-9]+・[0-9]+)\s*(.*)')
 SEC2_RE = re.compile(r'^([0-9]+・[0-9]+)\s*(.*)')
 CHAP_RE = re.compile(r'^第\s*([0-9０-９]+)\s*章\s*(.*)')
 
+# NFKC folds the source PDFs' full-width Japanese punctuation 「．」(U+FF0E) /
+# 「，」(U+FF0C) into ASCII '.' / ',', which the Ask engine does NOT treat as
+# sentence boundaries (ENDER = /[。．！？!?]/) — so answers break. Re-map ASCII
+# '.'/',' back to 「。」/「、」, but only in Japanese context so western citations
+# and decimals (c.365, Reuleaux,F., 0.5) are preserved. Keep in sync with
+# scripts/normalize-kb-punct.py.
+_CJK = '぀-ヿ一-鿿ｦ-ﾟ'
+_CLOSE = '）)」』】〕｝'
+_OPEN = '（(「『【〔｛'
+_RE_PERIOD = re.compile(r'(?<=[' + _CJK + _CLOSE + r'])\.')
+_RE_COMMA_PRE = re.compile(r'(?<=[' + _CJK + _CLOSE + r']),')
+_RE_COMMA_POST = re.compile(r',(?=[' + _CJK + _OPEN + r'])')
+
+def normalize_punct(text):
+    text = _RE_PERIOD.sub('。', text)
+    text = _RE_COMMA_PRE.sub('、', text)
+    text = _RE_COMMA_POST.sub('、', text)
+    return text
+
 def normalize_text(text):
     try:
         text = unicodedata.normalize('NFKC', text)
@@ -232,7 +251,9 @@ def join_paragraphs(body_lines):
     """Join wrapped lines into continuous text."""
     if not body_lines:
         return ''
-    return ''.join(body_lines)
+    # restore Japanese sentence punctuation on the joined body so that even
+    # cross-line boundaries (a line ending in ',' before a CJK line) are fixed.
+    return normalize_punct(''.join(body_lines))
 
 # ---- PDF ordering ----
 def get_pdf_order():
