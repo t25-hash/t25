@@ -321,6 +321,58 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 .ns-search-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .ns-search-hit { font-size: 13.5px; line-height: 1.6; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
 
+/* ---- Ask: chat UI ---- */
+.ns-chat { display: flex; flex-direction: column; min-height: calc(100vh - var(--topbar-h) - 170px); }
+.ns-chat__kb {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 14px; padding: 8px 14px;
+}
+.ns-chat__kb > summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--text); list-style: none; }
+.ns-chat__kb > summary::-webkit-details-marker { display: none; }
+.ns-chat__kb > summary::before { content: '▸ '; color: var(--text-dim); }
+.ns-chat__kb[open] > summary { margin-bottom: 10px; }
+.ns-chat__kb[open] > summary::before { content: '▾ '; }
+
+.ns-chat__log { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; padding: 4px 0 16px; }
+.ns-msg { display: flex; gap: 10px; max-width: 100%; }
+.ns-msg--user { justify-content: flex-end; }
+.ns-msg__avatar {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 18px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.ns-msg__body {
+  max-width: 80%; padding: 12px 16px; border: 1px solid var(--border);
+  border-radius: var(--radius); line-height: 1.8; font-size: 15px;
+}
+.ns-msg__body > *:first-child { margin-top: 0; }
+.ns-msg__body > *:last-child { margin-bottom: 0; }
+.ns-msg__body .ns-qa-answer__lead { margin: 0; }
+.ns-msg--user .ns-msg__body { background: var(--accent-weak); border-bottom-right-radius: 4px; }
+.ns-msg--bot .ns-msg__body { background: var(--surface-2); border-bottom-left-radius: 4px; }
+.ns-msg__thinking { margin: 0 0 8px; }
+
+.ns-chat__cite { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.ns-chat__cite > summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+.ns-chat__cite[open] > summary { margin-bottom: 10px; }
+.ns-chat__cite .ns-hit:last-child { margin-bottom: 0; }
+.ns-chat__links { margin: 10px 0 0; font-size: 12px; }
+
+.ns-chat__welcome { text-align: center; margin: auto 0; padding: 24px; color: var(--text-dim); }
+.ns-chat__welcome .ns-msg__avatar { margin: 0 auto 12px; width: 44px; height: 44px; font-size: 24px; }
+.ns-chat__chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.ns-chat__chip {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 8px 14px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer;
+}
+.ns-chat__chip:hover { border-color: var(--accent); color: var(--accent); }
+
+.ns-chat__composer {
+  position: sticky; bottom: 0; z-index: 5; display: flex; gap: 8px;
+  padding: 12px 0; background: var(--bg); border-top: 1px solid var(--border);
+}
+.ns-chat__composer .ns-input { flex: 1; }
+
 /* ---- RAG Lab ---- */
 .ns-chunks { display: flex; flex-direction: column; gap: 6px; }
 .ns-chunk {
@@ -413,4 +465,6 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
 @media (max-width: 560px) {
   .ns-grid { grid-template-columns: 1fr; }
   .ns-brand__tag { display: none; }
+  .ns-chat { min-height: calc(100vh - var(--topbar-h) - 130px); }
+  .ns-msg__body { max-width: 88%; font-size: 14px; }
 }
