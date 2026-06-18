@@ -200,18 +200,66 @@
   var GENERIC_TERM = {};
   ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
-   'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 アルゴリズム')
+   'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
 
   /* the question's SPECIFIC terms: kanji/katakana runs (hiragana particles split
    * them) minus generic words. Kanji and katakana runs are split separately so a
    * compound like 運動生成アルゴリズム yields 運動生成 + アルゴリズム — the generic
    * カタカナ語 (アルゴリズム) is then dropped, leaving the real topic (運動生成). */
+  /* common hiragana function-word runs that are NOT a topic even though they are
+   * 2+ chars (particles / auxiliaries / pronouns / fillers). Without this list a
+   * hiragana content noun (ねじ・ばね・かさ) can't be told apart from boilerplate,
+   * so we keep hiragana runs only when they aren't one of these. */
+  var HIRA_STOP = {};
+  ('について における による として という ような ように おける こと もの ため とき ところ ' +
+   'これ それ あれ どれ この その どの どんな なに なん ください おしえ おしえて です ます ' +
+   'ですか でしょ でしょう である から ので のに まで より など ばかり だけ しか こそ さえ ' +
+   'する した して しない なる なっ ある あっ いる いっ れる られ せる させ ない なく')
+    .split(' ').forEach(function (t) { HIRA_STOP[t] = 1; });
+
   function keyTerms(q) {
-    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
+    // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
+    // recognised as the topic). Generic words and hiragana function-words are dropped.
+    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
     var seen = {}, out = [];
-    runs.forEach(function (r) { if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); } });
+    runs.forEach(function (r) {
+      var hira = /^[ぁ-ゖ]+$/.test(r);
+      if (r.length >= 2 && !GENERIC_TERM[r] && !(hira && HIRA_STOP[r]) && !(hira && r.length > 5) && !seen[r]) { seen[r] = 1; out.push(r); }
+    });
     return out;
+  }
+
+  /* TOPIC PROMINENCE: a sentence that genuinely addresses a question about <key>
+   * has <key> as its TOPIC/SUBJECT (熱伝達率は… / 熱伝達率とは…), not as a genitive
+   * modifier (熱伝達率の測定… → the real topic is 測定) or an incidental late mention.
+   * Returns a small additive score that keeps answers on the ASKED term across ALL
+   * intents. Multiple occurrences take the max (one topic mention is enough). */
+  function topicScore(s, keys) {
+    if (!keys || !keys.length) return 0;
+    s = String(s || '');
+    var best = -1e9, found = false;
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], from = 0, pos;
+      while ((pos = s.indexOf(k, from)) >= 0) {
+        from = pos + k.length; found = true;
+        var after = s.substr(pos + k.length, 2), a0 = after.charAt(0);
+        var early = pos <= 8, sc;
+        if (after.indexOf('とは') === 0 || a0 === 'は' || a0 === 'が' || a0 === '：' || a0 === ':') sc = early ? 0.8 : 0.4;
+        else if (a0 === 'の') sc = -0.15;                 // 連体修飾: topic is the following noun (mild demotion)
+        else sc = early ? 0.2 : 0.05;                     // incidental mention
+        if (sc > best) best = sc;
+      }
+    }
+    return found ? best : 0;
+  }
+
+  /* per-term boost map for rag.retrieve: weight the question's SPECIFIC terms up so
+   * on-topic chunks win the cosine ranking (mirrors searchKB's doc-level boost). */
+  function keyBoost(query) {
+    var b = {};
+    keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { b[t] = 2.2; }); });
+    return b;
   }
 
   /* chunk every doc, tagging each chunk with its source document name */
@@ -257,10 +305,11 @@
       perSource[d.name] = lines;
     });
     var qg = {}; gram(query).forEach(function (x) { qg[x] = 1; });
+    var keys = keyTerms(query);
     function score(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64));
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, keys);
     }
     units.forEach(function (u) { u.score = score(u.s); });
     units.sort(function (a, b) { return b.score - a.score; });
@@ -497,7 +546,7 @@
         // keep only on-topic sentences: a SPECIFIC term when the question has one,
         // else any shared content bigram — so off-topic neighbours don't leak in.
         if (!(keys.length ? hasKey(s) : m >= 1)) return;
-        var rel = (gs.length ? m / Math.sqrt(gs.length) : 0) + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.5 : 0);
+        var rel = (gs.length ? m / Math.sqrt(gs.length) : 0) + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.5 : 0) + topicScore(s, keys);
         cands.push({ s: s, rel: rel });
       });
     });
@@ -575,7 +624,7 @@
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
       // strongly prefer sentences that actually contain a SPECIFIC question term —
       // a sentence merely sharing 変化/伴う must not outrank one about 相変化伝熱/促進.
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys);
     }
     cands.forEach(function (c) { c.rel = rel(c.s); });
     cands.sort(function (a, b) { return b.rel - a.rel; });
@@ -616,19 +665,41 @@
   }
 
   /* ---- question-intent classification → routed answers (Claude-like) --------
-   * Classify the intent (definition / list / how-to / why / comparison / features)
-   * and answer in that shape, extractively from the retrieved passages. Each
+   * Classify the intent (definition / list / how-to / why / comparison / features
+   * / purpose) and answer in that shape, extractively from the retrieved passages. Each
    * builder returns {text,source} or null; the router falls back to composeConcise
    * (so unclassified or low-evidence questions behave exactly as before). */
+  /* SCORE-BASED intent classification: count cue hits per intent and take the
+   * strongest, instead of first-match-wins (which let over-broad 'howto' cues like
+   * 「方法」「どのように」 hijack definition/why questions). Ties break by specificity
+   * (list > compare > purpose > why > features > howto > definition), and an explicit
+   * 「とは/定義」 wins for definition. Unknown-topic questions (no key term) fall back
+   * to 'default' so they don't reach a shape-specific builder. */
   function classifyIntent(q) {
     q = String(q || '');
-    if (/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)/.test(q)) return 'list';
-    if (/手順|やり方|どうやって|どのように|流れ|ステップ|進め方|作り方|設計手順|方法/.test(q)) return 'howto';
-    if (/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/.test(q)) return 'compare';
-    if (/なぜ|理由|原因|どうして|要因/.test(q)) return 'why';
-    if (/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/.test(q)) return 'features';
-    if (/とは|何ですか|定義|意味|どういう/.test(q)) return 'definition';
-    return 'default';
+    var n = function (re) { return (q.match(re) || []).length; };
+    var sc = {
+      list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)/g),
+      compare: n(/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
+      // purpose: 「Xの目的/役割/用途は？」 — a very common form that 何ですか would
+      // otherwise mis-route to definition. Asks for what something is FOR.
+      purpose: n(/目的|役割|用途|機能|働き|ねらい|何のため/g),
+      why: n(/なぜ|理由|原因|どうして|要因/g),
+      features: n(/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/g),
+      // howto: strong step cues count fully; bare 方法/どのように only weakly (0.4)
+      // so they don't outrank a real definition/why question that mentions them.
+      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g),
+      // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
+      definition: n(/とは|定義|どういうもの|意味/g) + 0.5 * n(/何ですか|何か/g)
+    };
+    // an explicit definitional marker is decisive (「熱伝達率とは」), but NOT bare 何ですか.
+    if (/(とは|定義|どういうもの)/.test(q) && sc.list === 0 && sc.purpose === 0) return 'definition';
+    var order = ['list', 'compare', 'purpose', 'why', 'features', 'howto', 'definition'];
+    var best = 'default', bestSc = 0;
+    order.forEach(function (k) { if (sc[k] > bestSc + 1e-9) { bestSc = sc[k]; best = k; } });
+    if (bestSc <= 0) return 'default';
+    if (best !== 'list' && !keyTerms(q).length) return 'default';   // no topic → generic concise answer
+    return best;
   }
   /* shared clean-sentence pool with question relevance (reused by the builders).
    * Unlike composeConcise (top-4 hit chunks only), intent builders scan ALL
@@ -642,7 +713,7 @@
     function rel(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys);
     }
     var groups = keys.length
       ? (docs || []).filter(function (d) { return hasKey(d.text || ''); }).map(function (d) { return { src: d.name, arr: buildSentences(d.text) }; })
@@ -672,14 +743,21 @@
   }
   function answerDefinition(question, hits, docs) {
     var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
-    var key = p.keys[0] || '', CUE = /(である|をいう|と呼ばれ|と称|を指す|のことである|を意味|といい|と定義|とは)/;
+    var key = p.keys[0] || '';
+    // a GENUINE definition has a real definitional predicate — bare コピュラ「である」
+    // alone is excluded (it ends nearly every declarative sentence: 「必要である」).
+    // 「である/だ」 count only when introduced by 「…とは」 earlier in the sentence.
+    var STRICT = /(とは[^。]*?(である|だ。|だと|をいう|のこと)|をいう|のことである|を指す|を意味|と呼ばれ|と称さ|と定義|といい)/;
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      c.sc = c.rel + (CUE.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.5 : 0);
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.8 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
-    if (!top || !CUE.test(top.s) || (p.keys.length && !p.hasKey(top.s))) return null;
+    if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
+    // accept only a real definition OR a sentence with the key in topic position;
+    // otherwise defer to composeConcise (which still prefers the most on-topic line).
+    if (!STRICT.test(top.s) && topicScore(top.s, p.keys) < 0.4) return null;
     return { text: top.s, source: top.src };
   }
   function answerWhy(question, hits, docs) {
@@ -687,6 +765,11 @@
   }
   function answerFeatures(question, hits, docs) {
     return topByCue(question, hits, docs, /(特徴|利点|長所|短所|メリット|デメリット|優れ|劣る|性質|向く|適する|やすい|できる)/, 0.5, 0.35, false);
+  }
+  function answerPurpose(question, hits, docs) {
+    // 「Xの目的/役割/用途は？」 → a sentence stating what it is FOR. Strong cue bonus so
+    // the purpose line wins even when X sits in 「Xの目的」 (genitive) position.
+    return topByCue(question, hits, docs, /(目的|ため|ねらい|役割|用途|機能|を防ぐ|防止|向上|低減|果たす|を担)/, 0.8, 0.4, false);
   }
   function answerCompare(question, hits, docs) {
     var p = sentPool(question, hits, docs); var subs = p.keys.slice(0, 2);
@@ -724,6 +807,7 @@
     if (intent === 'list') r = listEnumerate(question, docs);
     else if (intent === 'howto') r = answerHowto(question, hits, docs);
     else if (intent === 'compare') r = answerCompare(question, hits, docs);
+    else if (intent === 'purpose') r = answerPurpose(question, hits, docs);
     else if (intent === 'why') r = answerWhy(question, hits, docs);
     else if (intent === 'features') r = answerFeatures(question, hits, docs);
     else if (intent === 'definition') r = answerDefinition(question, hits, docs);
@@ -772,7 +856,7 @@
     var docs = opts.docs || getDocs();
     var chunks = buildChunks(docs);
     if (!chunks.length || !query) return null;
-    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0 });
+    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(query) });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var L = NSCode.babyLLM;
 
@@ -789,7 +873,9 @@
     // seed: the opening tokens of the most query-relevant sentence (keeps it on-topic).
     // a slightly longer seed (4 tokens) anchors the answer to a real sentence start.
     var sents = NSCode.research.splitSentences(contextText);
-    sents.sort(function (a, b) { return emb.cosine(qv, emb.embed(b, 64)) - emb.cosine(qv, emb.embed(a, 64)); });
+    var qkeys = keyTerms(query);
+    function seedRank(s) { return emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, qkeys); }
+    sents.sort(function (a, b) { return seedRank(b) - seedRank(a); });   // on-topic start, not just similar
     var seedSent = sents[0] || query;
     var seedToks = L.tokenize(seedSent).slice(0, 4);
     if (!seedToks.length) seedToks = L.tokenize(query).slice(0, 4);
@@ -825,9 +911,12 @@
     opts = opts || {};
     var chunks = buildChunks(getDocs());
     if (!chunks.length || !question) return Promise.resolve(null);
-    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0 });
+    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
-    var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
+    var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
+    // weight on-topic chunks (those containing a question key term) so the tiny net's
+    // recall — used to rerank the answer — is grounded in the asked term, not neighbours.
+    var context = _ctx.concat(_ctx.filter(function (t) { for (var i = 0; i < _qk.length; i++) if (t.indexOf(_qk[i]) >= 0) return true; return false; })).join('\n');
     var L = NSCode.neuralLM;
     // tokenize with subwords learned from the WHOLE KB (not just the retrieved
     // slice) so word boundaries are stable even on a small context — reuse the
@@ -857,7 +946,7 @@
           answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+        return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
       });
   }
@@ -876,11 +965,18 @@
     return kbPromise;
   }
   function searchKB(index, query, k) {
-    var qt = gram(query), seen = {}, score = {};   // gram() == the index builder's term extraction
-    qt.forEach(function (t) {
-      if (seen[t]) return; seen[t] = 1;
+    // WEIGHTED doc selection: the question's SPECIFIC terms (熱伝達率/ねじ) must
+    // dominate, so their bigrams are boosted while boilerplate bigrams (とは/について,
+    // dropped by coreQuery) stay weak. Otherwise a doc dense in incidental words
+    // (測定/必要/役割) outranks the doc actually about the asked term.
+    var w = {};
+    gram(query).forEach(function (t) { if (w[t] == null) w[t] = 0.25; });             // any term: weak signal
+    gram(coreQuery(query)).forEach(function (t) { if ((w[t] || 0) < 1) w[t] = 1; });  // content word: full
+    keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { w[t] = 2.5; }); }); // key term: strong
+    var score = {};
+    Object.keys(w).forEach(function (t) {
       var p = index.post[t]; if (!p) return;
-      p.forEach(function (e) { score[e[0]] = (score[e[0]] || 0) + e[1]; });
+      p.forEach(function (e) { score[e[0]] = (score[e[0]] || 0) + e[1] * w[t]; });
     });
     return Object.keys(score).map(function (i) { return { idx: +i, score: score[i], title: index.meta[+i] }; })
       .sort(function (a, b) { return b.score - a.score; }).slice(0, k);
@@ -904,9 +1000,12 @@
       return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
         var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
         var chunks = buildChunks(docs);
-        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0 });
+        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
         if (!res.hits.length) return { text: '', seed: '', hits: [] };
-        var context = res.hits.map(function (h) { return h.chunk.text; }).join('\n');
+        var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
+        // weight on-topic chunks so the net's recall (used to rerank the answer) is
+        // grounded in the asked term, not incidental neighbours.
+        var context = _ctx.concat(_ctx.filter(function (t) { for (var i = 0; i < _qk.length; i++) if (t.indexOf(_qk[i]) >= 0) return true; return false; })).join('\n');
         var L = NSCode.neuralLM;
         var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
         var compose = composeAnswer(question, res.hits, docs);
@@ -926,7 +1025,7 @@
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
           });
       });

@@ -93,6 +93,10 @@
     var topK = opts.topK || 5, threshold = opts.threshold || 0;
     var idx = buildIndex(chunks);
     var qv = vectorize(query, idx.idf);
+    // optional per-term boost (term -> multiplier): callers weight the query's
+    // SPECIFIC words up so chunks about the asked topic outrank chunks that merely
+    // share boilerplate. Backward compatible — no boost means identical behaviour.
+    if (opts.boost) for (var bt in qv) if (opts.boost[bt]) qv[bt] *= opts.boost[bt];
     var scored = chunks.map(function (c, i) {
       return { chunk: c, vec: idx.vecs[i], score: cosine(qv, idx.vecs[i]) };
     });

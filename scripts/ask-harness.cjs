@@ -49,6 +49,7 @@ for (const f of FILES) {
 const NSCode = global.NSCode;
 
 const QUESTIONS = process.argv.slice(2).length ? process.argv.slice(2) : [
+  // baseline mix (regression: must keep answering)
   '歯車とは何ですか',
   '軸受の種類を教えてください',
   '機械とは何か',
@@ -58,7 +59,12 @@ const QUESTIONS = process.argv.slice(2).length ? process.argv.slice(2) : [
   '潤滑の目的は何ですか',
   '応力集中とは',
   'ばねの特徴を教えて',
-  '熱処理の方法にはどんなものがありますか'
+  '熱処理の方法にはどんなものがありますか',
+  // intent-drift regressions (non-list intents that used to wander off-topic)
+  '熱伝達率とは',
+  '熱伝達率はなぜ重要か',
+  '熱伝達率の特徴',
+  'すべり軸受と転がり軸受の違い'
 ];
 
 (async () => {
@@ -71,7 +77,7 @@ const QUESTIONS = process.argv.slice(2).length ? process.argv.slice(2) : [
       const good = text.length >= 12 && !r.weak;
       if (good) ok++;
       console.log(`\n[${i + 1}] Q: ${q}`);
-      console.log(`    intent=${r ? '' : 'null'} weak=${r ? r.weak : '-'} source=${r ? r.source : '-'}`);
+      console.log(`    intent=${r ? r.intent : 'null'} weak=${r ? r.weak : '-'} source=${r ? r.source : '-'}`);
       console.log(`    A: ${text || '(EMPTY)'}`);
     } catch (e) {
       console.log(`\n[${i + 1}] Q: ${q}\n    ERROR: ${e.message}`);
