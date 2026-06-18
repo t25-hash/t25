@@ -114,13 +114,37 @@ def normalize_punct(text):
     text = _RE_COMMA_POST.sub('、', text)
     return text
 
+# Embedded subset fonts without a ToUnicode CMap make PyMuPDF emit math/subscript
+# glyphs as Private-Use-Area code points (U+E000-U+F8FF) and Hangul/Yijing
+# collisions. The corpus is Japanese, so these are always garbage (render as tofu
+# □ in the Ask UI). Strip them; drop sentences that are mostly garbage (formula
+# rubble) so no meaningless fragments remain. Keep in sync with
+# scripts/clean-kb-garbage.py.
+_GARBAGE = re.compile('[-가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿䷀-䷿]')
+
+def strip_garbage(body):
+    parts = re.split(r'(?<=。)', body)
+    out = []
+    for s in parts:
+        if not s:
+            continue
+        g = len(_GARBAGE.findall(s))
+        if g == 0:
+            out.append(s)
+            continue
+        if g >= 5 or g / max(1, len(s)) > 0.08:
+            continue                                 # formula rubble -> drop sentence
+        s = _GARBAGE.sub('', s)
+        s = re.sub(r'[、，][、，]+', '、', s)
+        s = re.sub(r',{2,}', ',', s)
+        out.append(s)
+    return ''.join(out)
+
 def normalize_text(text):
     try:
         text = unicodedata.normalize('NFKC', text)
     except:
         pass
-    # Clean up garbled Unicode (Korean jamo artifacts from PDF)
-    text = re.sub(r'[웖-웿위-윏우-웕]+', '', text)
     # Normalize spaces
     text = re.sub(r'[　]+', ' ', text)
     text = re.sub(r'[ \t]+', ' ', text)
@@ -252,8 +276,9 @@ def join_paragraphs(body_lines):
     if not body_lines:
         return ''
     # restore Japanese sentence punctuation on the joined body so that even
-    # cross-line boundaries (a line ending in ',' before a CJK line) are fixed.
-    return normalize_punct(''.join(body_lines))
+    # cross-line boundaries (a line ending in ',' before a CJK line) are fixed,
+    # then remove font-encoding garbage (PUA/Hangul mojibake).
+    return strip_garbage(normalize_punct(''.join(body_lines)))
 
 # ---- PDF ordering ----
 def get_pdf_order():
