@@ -13,6 +13,7 @@
     { group: 'Home',        label: 'Doc 生成',             route: '#/generate' },
 
     { group: 'Foundations', label: 'Academy',              route: '#/academy' },
+    { group: 'Foundations', label: '文法コンパイラ',        route: '#/grammar' },
     { group: 'Foundations', label: 'Playground',           route: '#/playground' },
     { group: 'Foundations', label: 'Neural Lab',           route: '#/neural' },
     { group: 'Foundations', label: 'PDF抽出',              route: '#/pdf' },
