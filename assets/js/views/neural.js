@@ -310,8 +310,32 @@
     var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || defaultSeed();
     var seed = NLM.encode(st.model, seedStr).slice(0, st.model.C);
     if (!seed.length) seed = NLM.encode(st.model, corpusToken()).slice(0, st.model.C);
-    var g = NSCode.babyLLM.join(LAB.generate(seed, { temperature: 0.7, topK: 6, maxTokens: 48 }));
-    out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(g) + '</div>';
+    // self-check agent: 自由生成は1発だと壊れやすいので、複数候補を生成し、
+    // 「整文スコア（文字言語モデルの流暢さ − 繰り返しペナルティ）」で自己評価して
+    // 最良を採用する（観測→評価→選択のループ・完全オフライン）。
+    var K = 6, cands = [];
+    for (var i = 0; i < K; i++) {
+      var temp = 0.5 + 0.09 * i;                              // 0.5〜1.0 で多様化
+      var text = NSCode.babyLLM.join(LAB.generate(seed, { temperature: temp, topK: 6, maxTokens: 48 }));
+      cands.push({ text: text, score: genScore(text) });
+    }
+    cands.sort(function (a, b) { return b.score - a.score; });
+    var best = cands[0];
+    out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(best.text) + '</div>' +
+      '<p class="ns-empty__hint">🧹 文法チェック（自己評価エージェント）：' + K + '候補を生成し、整文スコア最良を採用（スコア ' +
+      cands.map(function (c) { return c.score.toFixed(2); }).join(' / ') + '）</p>';
+  }
+
+  /* 整文スコア：文字言語モデルの流暢さ（日本語らしさ）から、繰り返し（赤ちゃん生成の
+   * 主な破綻）のペナルティを引いた値。高いほど自然。完全オフライン。 */
+  function genScore(text) {
+    var t = String(text || '');
+    if (t.length < 4) return -1e9;
+    var flu = (A.fluency ? A.fluency(t) : 0);                 // ask-engine の文字bigramLM
+    var rep = 0; for (var i = 1; i < t.length; i++) if (t[i] === t[i - 1]) rep++;   // 同一文字の連続
+    var bg = {}, dup = 0;                                     // 繰り返しbigram
+    for (var j = 1; j < t.length; j++) { var k = t[j - 1] + t[j]; if (bg[k]) dup++; else bg[k] = 1; }
+    return flu - 4 * (rep / t.length) - 1.5 * (dup / Math.max(1, t.length - 1));
   }
 
   function renderProbs() {

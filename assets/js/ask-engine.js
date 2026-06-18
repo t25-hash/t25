@@ -760,7 +760,7 @@
   }
 
   NSCode.askEngine = {
-    DEFAULT_DOCS: DEFAULT_DOCS,
+    DEFAULT_DOCS: DEFAULT_DOCS, fluency: fluency,
     getDocs: getDocs, setDocs: setDocs, resetDocs: resetDocs, cleanText: cleanText,
     buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer,
     loadKB: loadKB, searchKB: searchKB, hybridAnswerKB: hybridAnswerKB
