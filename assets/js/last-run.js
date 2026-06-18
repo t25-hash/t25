@@ -26,8 +26,16 @@
     }).join('') + '</div>';
   }
   function answerHtml(run) {
-    var a = (run.answer && run.answer.length) ? run.answer.map(esc).join('<br>') : esc(run.generated || '');
-    return '<p class="ns-qa-answer__lead">' + a + '</p>';
+    // mirror the current Ask output model: baby answer (generated) + memory summary,
+    // and the honest 該当なし state when relevance was too weak.
+    if (run.generated) {
+      var h = '<p class="ns-qa-answer__lead">' + esc(run.generated) + '</p>';
+      if (run.source) h += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + esc(run.source) + '</span></div>';
+      if (run.memo) h += '<p class="ns-empty__hint">🧠 メモリ内の要約: ' + esc(run.memo) + '</p>';
+      return h;
+    }
+    if (run.answer && run.answer.length) return '<p class="ns-qa-answer__lead">' + run.answer.map(esc).join('<br>') + '</p>';
+    return '<p class="ns-empty__hint">十分一致する記述が無く「該当なし」でした。</p>';
   }
 
   /* per-Lab lens on the same run */
@@ -60,7 +68,7 @@
     },
     agent: function (run) {
       return '<p class="ns-empty__hint">Ask の流れを1ステップのエージェントループとして:</p>' +
-        '<pre class="ns-code">Plan    : 知識ベースを検索する\nAction  : search("' + esc(run.query) + '")\nObserve : ' + ((run.hits || []).length) + ' 件の関連チャンク\nAnswer  : 文脈から回答を構成</pre>' + answerHtml(run);
+        '<pre class="ns-code">Plan    : 知識ベースを検索する\nAction  : search_kb("' + esc(run.query) + '")\nObserve : ' + ((run.hits || []).length) + ' 件の関連チャンク\nThink   : 極小ニューラルが文脈を学習\nAnswer  : 根拠から約100字に要約（自信が低ければ「該当なし」）</pre>' + answerHtml(run);
     },
     'multi-agent': function (run) {
       return '<p class="ns-empty__hint">「' + esc(run.query) + '」を複数エージェントで解くなら: Retriever が検索 → Writer が ' +
