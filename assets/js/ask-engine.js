@@ -323,7 +323,8 @@
     'スプリング': ['ばね'], 'コイルばね': ['ばね'],
     '軸受': ['ベアリング'], '歯車': ['ギヤ', 'ギア'],
     'ねじ': ['ボルト'], 'スクリュー': ['ねじ'],
-    'プーリ': ['プーリー', 'ベルト車'], 'ベアリング鋼': ['軸受鋼']
+    'プーリ': ['プーリー', 'ベルト車'], 'ベアリング鋼': ['軸受鋼'],
+    'ステンレス': ['ステンレス鋼'], 'モータ': ['電動機'], 'モーター': ['電動機']
   };
   /* canonical synonyms of a query's key terms (for retrieval expansion + enumeration) */
   function synTerms(query) {
@@ -724,7 +725,7 @@
     // leading conjunction / demonstrative / adverb (これら合金鋼・また肌焼鋼・一般的な炭素鋼)
     // or a leading は/も/や directly before a kanji (は特殊鋼 — a spliced particle, while
     // はすば歯車's は is followed by kana so it survives).
-    var LEAD_PRE = /^(?:これ|それ|あれ|また|なお|およ|且つ|かつ|一般|特に|主に|必ず|多く|よく|なる|[はもや](?=[一-鿿]))/;
+    var LEAD_PRE = /^(?:これ|それ|あれ|また|なお|およ|且つ|かつ|一般|特に|主に|おもに|おもな|必ず|多く|よく|なる|各種|各|[はもや](?=[一-鿿]))/;
     function badPrefix(pre) {
       if (!pre) return false;
       if (/[のをにへとがで、，。．・（(）)\s／/「」：:＝=]/.test(pre)) return true;
@@ -745,8 +746,11 @@
     // curated glossary (DEFAULT_DOCS) is scanned alongside the retrieved docs so a
     // 種類 question over plain prose still enumerates. Anchored to a boundary + a
     // trailing particle/punctuation so flattened-table fragments don't leak in.
-    // head-noun suffixes = the key (if short) plus any short synonym (ベアリング→軸受)
-    var headSufs = sufs.filter(function (s) { return s.length <= 3 && /^[一-鿿ァ-ヶー]+$/.test(s); });
+    // head-noun suffixes = the key (if short) plus any synonym head (ベアリング→軸受,
+    // ステンレス→ステンレス鋼). Synonym heads may be longer than 3 since they are specific
+    // (won't over-match), but a long literal key is excluded to avoid huge enumerations.
+    var synHeads = SYN[key] || [];
+    var headSufs = sufs.filter(function (s) { return /^[一-鿿ァ-ヶー]+$/.test(s) && (s.length <= 3 || synHeads.indexOf(s) >= 0); });
     if (items.length < 4 && headSufs.length) {
       var headRe = new RegExp('(?:^|[\\s、。，．（）()・/「」：:＝=])([一-鿿ぁ-ヿァ-ヶー]{1,8}?)(' + headSufs.map(escRe).join('|') + ')(?=[はがをにのへとも、，。・（(）)：:＝=\\s/「」]|$)', 'gm');
       getDocs().concat(docs || []).forEach(function (d) {
