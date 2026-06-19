@@ -446,6 +446,11 @@
     if ((s.match(/[（(][^）)]{0,40}?[A-Za-z][^）)]{0,40}?[）)]/g) || []).length >= 3) return true;
     var letters = (s.match(/[一-鿿ぁ-ヶ゠-ヿ]/g) || []).length;
     if (letters < s.length * 0.55) return true;
+    // de-interleave splice: an impossible verb conjugation (実現させ-る-た) or an
+    // over-long single sentence packed with こと-clauses is a column-merge artifact
+    // (two half-sentences glued without punctuation). Reject so it never answers.
+    if (/(せ|れ|す|く|ま)るた[をにはがめ]/.test(s)) return true;
+    if (s.length > 95 && (s.match(/こと/g) || []).length >= 3) return true;
     return false;
   }
   function isHeadingLine(line) {
