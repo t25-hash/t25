@@ -85,6 +85,21 @@ kuromoji.builder({ dicPath: path.join(VENDOR, 'dict') }).build(function (err, to
   ok(`plain→polite applied: 私は本を読む。 → ${rp.text}`, /ます。?$/.test(rp.text));
   ok('plain→polite faithful', faithful('私は本を読む', rp.text).kept);
 
+  // 5) coherence gate (生成後処理): real coherent sentences pass; generator salad rejected
+  const coherent = [
+    '歯車は、歯のかみ合いによって確実に動力と回転を伝える機械要素です。',
+    '軸受は回転する軸を支え、摩擦を減らす機械要素である。'
+  ];
+  coherent.forEach((s) => { const c = G.coherence(s); ok(`coherent passes gate: ${s.slice(0, 12)}…`, c.ok, JSON.stringify(c)); });
+  // salad samples captured from real sml-engine generation runs
+  const salad = [
+    'な2に関。',
+    'の．ののをが、32する．に歯循環に循環ののするーをくーする，の歯・部を構るする。',
+    'にきが、のに。、のするとめ。するにするをてーはて',
+    'のに，，，ねじとねじのねじでねじによっておねじは，'
+  ];
+  salad.forEach((s) => { const c = G.coherence(s); ok(`salad rejected by gate: 「${s.slice(0, 10)}…」`, !c.ok, JSON.stringify(c)); });
+
   console.log(`\n==== ${pass} passed, ${fail} failed ====`);
   process.exit(fail === 0 ? 0 : 1);
 });

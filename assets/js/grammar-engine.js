@@ -353,6 +353,39 @@
   // 1節 → SML（kuromoji が使えればそれを、無ければ従来のルール解析を使う）
   function analyzeClause(core) { return _tokenizer ? toSMLk(core) : toSML(core); }
 
+  /* kuromoji による生成文の「コヒーレンス判定」（生成後処理）。極小ニューラル生成器が
+   * 出すトークン崩壊文（助詞・記号の羅列／同語の連続／終止述語なし）を形態素的に検出し、
+   * 弾けるようにする。呼び出し側はこれが false なら抽出回答にフォールバックする。
+   * kuromoji 未ロード時は内容語ベースの簡易ヒューリスティック。 */
+  function coherence(text) {
+    var s = String(text || '').trim();
+    if (!s) return { ok: false, score: 0, reason: 'empty' };
+    if (!_tokenizer) {
+      var runs = contentRuns(s);
+      return { ok: runs.join('').length >= 6 && runs.length >= 2, score: runs.length, reason: 'heuristic' };
+    }
+    var tk; try { tk = _tokenizer.tokenize(s); } catch (e) { return { ok: false, score: 0, reason: 'tokenize-failed' }; }
+    if (!tk.length) return { ok: false, score: 0, reason: 'no-tokens' };
+    var content = 0, funcsym = 0, hasPred = false, hasFinite = false, adjRepeat = 0, funcRun = 0, maxFuncRun = 0;
+    var startsBad = (tk[0].pos === '助詞' || tk[0].pos === '記号');
+    tk.forEach(function (t, idx) {
+      var p = t.pos;
+      if (p === '名詞' || (p === '動詞' && t.pos_detail_1 === '自立') || p === '形容詞' || p === '副詞') content++;
+      var fn = (p === '助詞' || p === '記号');
+      if (fn || p === '助動詞') funcsym++;
+      if (fn) { funcRun++; if (funcRun > maxFuncRun) maxFuncRun = funcRun; } else funcRun = 0;
+      if (p === '動詞' || p === '形容詞' || p === '助動詞') { hasPred = true; if (t.conjugated_form === '基本形') hasFinite = true; }
+      if (idx > 0 && t.surface_form === tk[idx - 1].surface_form) adjRepeat++;   // 直近重複（崩壊の兆候）
+    });
+    var ratio = content / ((content + funcsym) || 1);
+    // 生成は設計上 1 文（最初の句点で停止）なので、文中に句点が複数ある＝過分割の崩壊兆候
+    var enders = (s.match(/[。．！？]/g) || []).length;
+    // 崩壊判定: 先頭が助詞/記号・関数語の連続3以上・隣接重複2以上・終止述語なし・
+    //          内容語比率が低い・句点が複数（過分割）
+    var ok = !startsBad && hasFinite && content >= 2 && maxFuncRun <= 2 && adjRepeat <= 1 && ratio >= 0.30 && enders <= 1;
+    return { ok: ok, score: +ratio.toFixed(2), reason: 'kuromoji', content: content, funcsym: funcsym, finite: hasFinite, adjRepeat: adjRepeat, maxFuncRun: maxFuncRun, startsBad: startsBad, enders: enders };
+  }
+
   /* 自由テキスト → 文ごと・節ごとに SML 化 → compile で正規化。長さに関係なく全文を
    * 通すため、文を読点で節へ分割し、各節を独立に正規化して再結合する。意味保持を厳守
    * （preservesContent 不成立や辞書形不明の節は原文のまま通す＝破壊しない）。 */
@@ -393,5 +426,5 @@
 
   NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
     toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface,
-    initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, _setTokenizer: setTokenizer };
+    initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, coherence: coherence, _setTokenizer: setTokenizer };
 })(window.NSCode);
