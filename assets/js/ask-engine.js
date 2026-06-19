@@ -233,6 +233,15 @@
       }
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
+    // compound pass: mixed ひらがな+漢字 terms (はすば歯車・かさ歯車) where the
+    // hiragana/kanji split above would lose the reading prefix. Keep the whole
+    // compound when the hiragana part doesn't END in a particle (so ねじ「の」強度
+    // is NOT glued into a spurious key).
+    (coreQuery(q).match(/[ぁ-ゖ]{2,3}[一-鿿]{2,}/g) || []).forEach(function (w) {
+      var hira = w.match(/^[ぁ-ゖ]+/)[0];
+      if (HIRA_PARTICLE.test(hira.slice(-1)) || HIRA_STOP[hira]) return;
+      if (!seen[w]) { seen[w] = 1; out.push(w); }
+    });
     return out;
   }
 
