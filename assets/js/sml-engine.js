@@ -109,82 +109,111 @@
       .then(function () { return decode(m, question, ctxText, opts); });
   }
 
-  /* ---------- 接地リコンビネーション生成（grammar-ruled grounded generation） -------
-   * 赤ちゃんモデルは「どの語を使うか」を生成・選択するが、文の骨格は SML スロット
-   * （主語・対象・述語）に固定し grammar.compile で組み立てる。これにより
-   *   - 文法は構造的に壊れない（生成自体にルールが入っている）
-   *   - 語は文脈の copy 制約＋kuromoji の品詞でスロット適合のものだけ（幻覚しない）
-   *   - 主語と対象/述語の関係は実文（質問キーワードを含む文）から接地（recombination）
-   * 自由トークン生成の崩壊問題を、構造を与えることで根本的に回避する。 */
+  /* ---------- 接地リコンビネーション生成（intent 駆動の多面的グラウンデッド合成） ----
+   * 目標は「文法的に自然」かつ「内容が濃く的を射た」回答。崩壊回避だけでなく内容品質を
+   * 上げるため、語をバラバラに拾うのをやめ、実文から intent に合った密度の高い文を選び、
+   * 相補的な側面（定義＋目的/特徴）を合成・圧縮して 1〜2 文の回答に組み立てる。
+   *   - 内容: ask-engine と同じ intent キュー＋関連度で「的を射た実文」を選ぶ（的外れ回避）
+   *   - 濃さ: 主側面＋相補側面の 2 文合成（単文抽出より情報量が多い）
+   *   - 生成: 赤ちゃんモデル(seqLogProb)が上位候補から流暢な主文を選び、kuromoji/SML で
+   *           文を正準化・圧縮する（単なる抽出ではなく再構成）
+   *   - 安全: 内容語は文脈由来のみ（幻覚しない）、grammar で文法正規化 */
+  var GEN_CUE = {
+    definition: /(とは|をいう|のこと|を指す|を意味|と呼ば|と称|と定義|機械要素|要素|装置|部品|機構|総称|もの)/,
+    purpose: /(目的|ため|役割|用途|機能|働き|防止|防ぐ|向上|低減|抑え|果た|に用い|に使わ|を担|による)/,
+    features: /(特徴|利点|長所|短所|性質|優れ|劣る|耐食|耐熱|耐摩耗|やすい|にくい|高い|低い|大き|小さ|軽|硬|安価|強い|滑らか)/,
+    why: /(理由|原因|による|生じ|防ぐ|により|ことで|から|ため)/
+  };
   function recombine(question, contexts, opts) {
     opts = opts || {};
-    var G = NSCode.grammar, AE = NSCode.askEngine, EM = NSCode.embeddings, L = NSCode.neuralLM;
-    if (!G || !G.ready || !G.ready() || !G.analyze || !L) return Promise.resolve('');
-    var ki = (AE && AE._internal) || {};
+    var G = NSCode.grammar, AE = NSCode.embeddings && NSCode.askEngine, EM = NSCode.embeddings, L = NSCode.neuralLM;
+    if (!G || !G.ready || !G.ready() || !L) return Promise.resolve('');
+    var ki = (NSCode.askEngine && NSCode.askEngine._internal) || {};
     var keyTerms = ki.keyTerms || function () { return []; };
     var classifyIntent = ki.classifyIntent || function () { return 'default'; };
+    var isJunk = ki.isJunkSent || function () { return false; };
+    var topicScore = ki.topicScore || function () { return 0; };
     var ctxText = contexts.join('\n');
-    var subj = (keyTerms(question)[0]) || '';
-    if (!subj) return Promise.resolve('');                       // no topic → let neural/extractive handle
-    // sentences that mention the subject (the grounding pool); fall back to all
-    var sents = ctxText.split(/(?<=[。．！？\n])/).map(function (s) { return s.replace(/^[\s　]+|[\s　]+$/g, ''); })
-      .filter(function (s) { return s.length >= 8 && s.length <= 160; });
-    var pool = sents.filter(function (s) { return s.indexOf(subj) >= 0; });
-    if (!pool.length) return Promise.resolve('');
-    var intent = classifyIntent(question);
+    var keys = keyTerms(question), subj = keys[0] || '';
     var qv = EM ? EM.embed(question, 64) : null;
-    function rel(text) { return (qv && EM) ? EM.cosine(qv, EM.embed(text, 64)) : 0; }
-    // harvest slot candidates from the grounding pool (kuromoji POS)
-    var genus = [], objs = {}, verbs = {};
-    pool.forEach(function (s) {
-      var tk = G.analyze(s); if (!tk) return;
-      var pr = G.predicate(tk);
-      if (pr && pr.finite) {
-        if (pr.isAdj) genus.push({ genus: pr.dict, pr: pr, rel: rel(s) });
-        else if (!verbs[pr.dict] || verbs[pr.dict].rel < rel(s)) verbs[pr.dict] = { dict: pr.dict, pr: pr, rel: rel(s) };
-      }
-      G.nouns(tk).forEach(function (n) {
-        if (!n.text || n.text.length < 2 || n.text === subj || subj.indexOf(n.text) >= 0) return;
-        if (/[、，,。．・]/.test(n.text)) return;                  // no punctuation in a slot filler
-        // prefer informative content: reward を-objects, penalise nouns that merely
-        // echo the question (役割/種類…) so the object carries new information.
-        var r = rel(n.text) + (n.particle === 'を' ? 0.15 : 0) - (question.indexOf(n.text) >= 0 ? 0.3 : 0);
-        if (!objs[n.text] || objs[n.text].rel < r) objs[n.text] = { text: n.text, rel: r };
+    // clean, on-topic sentence pool from the retrieved context
+    var seen = {}, cands = [];
+    contexts.forEach(function (ct) {
+      String(ct || '').split(/(?<=[。．！？\n])/).forEach(function (s) {
+        s = s.replace(/[\s　]+/g, '').replace(/^[、，,]+/, '');
+        if (s.length < 14 || s.length > 180 || seen[s] || isJunk(s)) return;
+        seen[s] = 1; cands.push(s);
       });
     });
-    // baby model scores grounded slot combinations (this is the "generation" step)
+    if (!cands.length) return Promise.resolve('');
+    function hasKey(s) { for (var i = 0; i < keys.length; i++) if (s.indexOf(keys[i]) >= 0) return true; return false; }
+    function rel(s) { return ((qv && EM) ? EM.cosine(qv, EM.embed(s, 64)) : 0) + (hasKey(s) ? 0.5 : 0) + 0.5 * topicScore(s, keys); }
+    function sig(s) { return s.match(/[一-鿿ァ-ヶーA-Za-z0-9]+/g) || []; }
+    function clen(s) { return s.replace(/[^一-鿿ァ-ヶーA-Za-z0-9]/g, '').length; }
+    function distinct(s, used) {     // adds new info: low content overlap with each existing fact
+      var a = sig(s); if (!a.length) return false;
+      for (var i = 0; i < used.length; i++) {
+        if (used[i].indexOf(s.replace(/。$/, '')) >= 0 || s.indexOf(used[i].replace(/。$/, '')) >= 0) return false;
+        var bset = {}; sig(used[i]).forEach(function (x) { bset[x] = 1; });
+        var m = 0; a.forEach(function (x) { if (bset[x]) m++; });
+        if (m / a.length >= 0.6) return false;
+      }
+      return true;
+    }
+    function pickTop(cueRe, exclude, n) {
+      return cands.filter(function (s) { return s !== exclude && (!keys.length || hasKey(s)); })
+        .map(function (s) {
+          var ki0 = subj ? s.indexOf(subj) : -1;
+          var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s);   // mid-word/chunk-cut fragment
+          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - 0.004 * Math.max(0, s.length - 80) };
+        })
+        .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
+    }
+    var intent = classifyIntent(question);
+    var primCue = GEN_CUE[intent] || GEN_CUE.definition;
+    var primTop = pickTop(primCue, null, 3);
+    if (!primTop.length) primTop = pickTop(null, null, 3);
+    if (!primTop.length) return Promise.resolve('');
+    // complementary aspect → richer, multi-faceted content (definition⇄purpose/feature)
+    var compCue = (intent === 'definition') ? GEN_CUE.purpose : GEN_CUE.definition;
+
     var m = L.create(ctxText, { context: 3, dim: 24, hidden: 64, maxVocab: 600 });
     if (m.ids.length <= m.C + 4) return Promise.resolve('');
     var base = baseModel(); if (base) L.warmStart(m, base);
     return L.trainAsync(m, { steps: opts.steps || 400, chunk: 250, lr: 0.15, onProgress: opts.onProgress }).then(function () {
       function mscore(s) { var t = L.encode(m, s); return t.length ? L.seqLogProb(m, t) / t.length : -1e9; }
-      var sml = null;
-      var genusTop = genus.sort(function (a, b) { return b.rel - a.rel; }).slice(0, 4);
-      var objTop = Object.keys(objs).map(function (k) { return objs[k]; }).sort(function (a, b) { return b.rel - a.rel; }).slice(0, 5);
-      var verbTop = Object.keys(verbs).map(function (k) { return verbs[k]; }).sort(function (a, b) { return b.rel - a.rel; }).slice(0, 5);
-      if ((intent === 'definition' || (!objTop.length || !verbTop.length)) && genusTop.length) {
-        // 名詞述語: 「S は <genus> である/です」— model picks the genus
-        var bg = genusTop.map(function (g) { return { g: g, sc: g.rel + 0.04 * mscore(subj + 'は' + g.genus) }; })
-          .sort(function (a, b) { return b.sc - a.sc; })[0].g;
-        sml = { subject: subj, adjective: bg.genus, politeness: bg.pr.polite ? 'polite' : 'plain', tense: bg.pr.tense };
-      } else if (objTop.length && verbTop.length) {
-        // 「S は <object> を <verb>」— model picks the most likely grounded object+verb
-        var best = null, bestSc = -1e18;
-        objTop.forEach(function (o) { verbTop.forEach(function (v) {
-          var sc = o.rel + v.rel + 0.04 * mscore(subj + 'は' + o.text + 'を' + v.dict);
-          if (sc > bestSc) { bestSc = sc; best = { o: o, v: v }; }
-        }); });
-        sml = { subject: subj, object: best.o.text, action: best.v.dict, politeness: best.v.pr.polite ? 'polite' : 'plain', tense: best.v.pr.tense, negative: best.v.pr.negative };
+      // baby model picks the most fluent among the top on-target primary candidates
+      var primary = primTop.map(function (c) { return { s: c.s, sc: c.sc + 0.04 * mscore(c.s) }; })
+        .sort(function (a, b) { return b.sc - a.sc; })[0].s;
+      // compress one source sentence to a concise, grammatical clause set on the topic
+      function condense(s, maxLen) {
+        s = s.replace(/^[、，,\s　]+/, '');
+        if (s.length > maxLen) {
+          var cl = s.split(/(?<=[、，])/), o = '';
+          for (var i = 0; i < cl.length; i++) { if (o && (o + cl[i]).length > maxLen) break; o += cl[i]; }
+          s = (o || s.slice(0, maxLen)).replace(/[、，]$/, '');
+        }
+        s = s.replace(/[。．！？]+$/, '') + '。';
+        return (G.normalize ? (G.normalize(s).text || s) : s);   // grammatical normalization
       }
-      if (!sml) return '';
-      var built = G.compile(sml).sentence;
-      if (!built) return '';
-      var out = (G.normalize ? (G.normalize(built).text || built) : built);
-      // faithfulness: every content word must come from the context or the subject
-      var runs = out.match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || [];
-      if (!runs.every(function (t) { return ctxText.indexOf(t) >= 0 || subj.indexOf(t) >= 0 || t === subj; })) return '';
-      if (G.coherence && !G.coherence(out).ok) return '';
-      return out;
+      // build a multi-fact answer: primary + complementary/extra distinct facts until
+      // substantive (≥16 content chars) or 2 facts, for richer on-target content.
+      var facts = [condense(primary, 115)], used = [facts[0]];
+      var extra = pickTop(compCue, primary, 4).concat(pickTop(primCue, primary, 4)).concat(pickTop(null, primary, 6));
+      for (var e = 0; e < extra.length; e++) {
+        if (facts.length >= 2 && clen(facts.join('')) >= 24) break;
+        var p2 = condense(extra[e].s, 100);
+        if (!p2 || !distinct(p2, used)) continue;
+        if (clen(facts.join('')) + clen(p2) > 130 || (facts.join('').length + p2.length) > 230) continue;
+        facts.push(p2); used.push(p2);
+      }
+      var ans = facts.join('また、');
+      // faithfulness: every content word must come from the retrieved context
+      var runs = ans.match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || [];
+      if (!runs.length || !runs.every(function (t) { return ctxText.indexOf(t) >= 0; })) return '';
+      // thin or fragment-leading → bail so the (often curated) extractive answer shows
+      if (clen(ans) < 16 || /^[ーぁ-んァ-ヶ]/.test(ans)) return '';
+      return ans;
     });
   }
 

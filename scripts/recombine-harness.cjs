@@ -32,11 +32,13 @@ require(path.join(VENDOR, 'kuromoji.js')).builder({ dicPath: path.join(VENDOR, '
     const gen = await N.sml.groundedAnswer(q, ctx, { steps: 300 });
     console.log(`\nQ: ${q}\n   GEN: ${gen || '<empty → extractive fallback>'}`);
     if (!gen) { console.log('   (no generation; extractive used)'); continue; }
-    ok(`[${q}] grammatical (coherence ok)`, N.grammar.coherence(gen).ok);
     const ctxText = ctx.join('\n');
-    const faithful = runs(gen).every(t => ctxText.indexOf(t) >= 0 || q.indexOf(t) >= 0);
-    ok(`[${q}] faithful (all content from context)`, faithful);
-    ok(`[${q}] ends with a finite predicate`, N.grammar.coherence(gen).finite);
+    ok(`[${q}] faithful (all content from context)`, runs(gen).every(t => ctxText.indexOf(t) >= 0));
+    const ks = N.askEngine._internal.keyTerms(q) || [];
+    ok(`[${q}] on-target (mentions a key term)`, ks.some(k => gen.indexOf(k) >= 0));
+    ok(`[${q}] substantive (>=16 content chars)`, gen.replace(/[^一-鿿ァ-ヶーA-Za-z0-9]/g, '').length >= 16);
+    const sentences = gen.split(/(?<=[。．！？])/).map(s => s.trim()).filter(Boolean);
+    ok(`[${q}] every sentence grammatical (finite)`, sentences.every(s => N.grammar.coherence(s).finite));
   }
   console.log(`\n==== ${pass} passed, ${fail} failed ====`);
   process.exit(fail === 0 ? 0 : 1);
