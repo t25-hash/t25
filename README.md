@@ -43,6 +43,8 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 | 画面雛形 | [`index.html`](index.html) | ダッシュボード型 SPA の骨格（全モジュールの空ページ） |
 | スタイル | [`assets/css/main.css`](assets/css/main.css) | Dark Mode / レスポンシブ |
 | アプリ | [`assets/js/`](assets/js/) | ハッシュルーティング + 各画面のビュー |
+| 知識ベース | [`assets/kb/`](assets/kb/) | 機械工学（散文）KB：文書 + BM25索引。Ask で検索→生成 |
+| 計算式・表DB | [`assets/calc/`](assets/calc/) | KBとは別の **計算式・表 DB**（便覧の数式/表を抽出・クレンジング、章単位の文書 + 専用BM25索引）。Ask の「対象」で選択して質問可。再生成は [`scripts/build-calc-db.py`](scripts/build-calc-db.py) |
 
 ## スマホ / どこからでも（GitHub Pages）
 
