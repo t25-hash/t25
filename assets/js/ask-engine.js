@@ -258,7 +258,11 @@
       var k = keys[i], from = 0, pos;
       while ((pos = s.indexOf(k, from)) >= 0) {
         from = pos + k.length; found = true;
-        var after = s.substr(pos + k.length, 2), a0 = after.charAt(0);
+        var at = pos + k.length;
+        // skip an immediate gloss parenthetical so 「軸受（ベアリング）は…」 still reads
+        // as topic-position (the （…） is an aside, not a real continuation).
+        if (s.charAt(at) === '（' || s.charAt(at) === '(') { var ce = s.indexOf(s.charAt(at) === '（' ? '）' : ')', at); if (ce > at && ce - at <= 12) at = ce + 1; }
+        var after = s.substr(at, 2), a0 = after.charAt(0);
         var early = pos <= 8, sc;
         if (after.indexOf('とは') === 0 || a0 === 'は' || a0 === 'が' || a0 === '：' || a0 === ':') sc = early ? 0.8 : 0.4;
         else if (a0 === 'の') sc = -0.15;                 // 連体修飾: topic is the following noun (mild demotion)
@@ -792,7 +796,10 @@
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.8 : GENUS.test(c.s) ? 0.55 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0);
+      // definitions are concise genus–differentia statements: reward the definitional
+      // predicate and the key up front, and gently prefer a short clean line over a
+      // long enumerating/classification sentence that merely shares the term.
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
@@ -1048,6 +1055,16 @@
         var chunks = buildChunks(docs);
         var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
         if (!res.hits.length) return { text: '', seed: '', hits: [] };
+        // BLEND curated knowledge: the hand-written DEFAULT_DOCS cleanly DEFINE the
+        // core vocabulary the handbook only uses (歯車・軸受・ねじ…). Add the on-topic
+        // curated docs to the SENTENCE-selection pool (not KB retrieval / not the
+        // neural context) so a definition/purpose question can draw on a textbook
+        // sentence — closing the "no world knowledge" gap offline.
+        var _k0 = keyTerms(question);
+        var cdocs = _k0.length ? getDocs().filter(function (d) {
+          var t = d.text || ''; for (var i = 0; i < _k0.length; i++) if (t.indexOf(_k0[i]) >= 0) return true; return false;
+        }) : [];
+        var pdocs = cdocs.length ? docs.concat(cdocs) : docs;
         var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
         // weight on-topic chunks so the net's recall (used to rerank the answer) is
         // grounded in the asked term, not incidental neighbours.
@@ -1057,11 +1074,11 @@
         var compose = composeAnswer(question, res.hits, docs);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var concise = composeByIntent(question, res.hits, docs, m, opts.target || 100);
+            var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100);
             var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
             var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
-            var memo = weak ? '' : contextMemo(question, res.hits, docs, 3);
+            var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
             if (NSCode.lastRun) NSCode.lastRun.set({

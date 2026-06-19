@@ -101,11 +101,11 @@ const BANK = [
 // hallmark of each intent inside the answer text
 function intentHallmark(intent, a) {
   switch (intent) {
-    case 'definition': return /(である|だ。|をいう|のこと|を指す|と呼ば|と定義|を意味|といい|とは)/.test(a);
+    case 'definition': return /(である|です。|だ。|をいう|のこと|を指す|と呼ば|と定義|を意味|といい|機械要素|装置|とは)/.test(a);
     case 'list': return (a.match(/[・、]/g) || []).length >= 2 || /(種類|大別|分けら|に分類)/.test(a);
     case 'purpose': return /(目的|ため|ねらい|役割|用途|機能|防止|を防)/.test(a);
     case 'why': return /(ため|から|ので|理由|原因|による|起因|生じ|により)/.test(a);
-    case 'features': return /(特徴|利点|長所|短所|性質|優れ|劣る|向く|適する|やすい|にくい|耐食|耐熱|耐摩耗|強度|硬|軽|安価|高い|大きい|小さい|できる)/.test(a);
+    case 'features': return /(特徴|利点|長所|短所|性質|優れ|劣る|向く|適する|やすい|にくい|耐食|耐熱|耐摩耗|強度|硬|軽|安価|高い|大きい|小さい|小さく|滑らか|抑え|生じ|できる)/.test(a);
     case 'compare': return /(に比べ|に対し|一方|より|違い|異な|大きく|小さく|簡単)/.test(a);
     case 'howto': return /(まず|次に|手順|①|②|決め|求め|選び|に基づ|によって|から)/.test(a);
     default: return true;
