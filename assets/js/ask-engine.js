@@ -169,7 +169,13 @@
       '減速機は、歯車などによって入力回転を減速し、トルクを増大して出力する機械装置である。\n\n' +
       'キーは、軸と歯車やプーリのボス部を結合し、回転とトルクを確実に伝える機械要素である。\n\n' +
       'カムは、特定の輪郭形状によって、従動節に決められた運動を与える機械要素である。\n\n' +
-      'ボルトは、ナットと組み合わせ、部材を締め付けて結合する代表的なねじ締結部品である。' }
+      'ボルトは、ナットと組み合わせ、部材を締め付けて結合する代表的なねじ締結部品である。\n\n' +
+      'モジュールは、歯車の歯の大きさを表す基準寸法で、ピッチ円直径を歯数で割った値である。\n\n' +
+      '安全率は、材料の基準強さを設計で許容する応力で割った比で、不確かさに対する余裕を表す数値である。\n\n' +
+      '危険速度は、回転軸の固有振動数と回転数が一致して共振を起こす回転速度である。\n\n' +
+      'モーメントは、物体を回転させようとする力の効果で、力と回転中心までの距離の積で表される量である。\n\n' +
+      '幾何公差は、形状・姿勢・位置・振れなど部品の幾何特性に許容する誤差を規定する公差である（GD&T）。\n\n' +
+      '部品表は、製品を構成する部品の品番・名称・数量などを一覧にした文書である（BOM）。' }
   ];
 
   function getDocs() { return store.get('ask.docs', DEFAULT_DOCS); }
@@ -224,7 +230,7 @@
   /* drop generic question scaffolding so retrieval/sentence-ranking key off the
    * CONTENT words (歯車・軸受…), not boilerplate (「重要な点」「種類と特徴」「とは」).
    * Without this, a doc dense in 重要/設計/種類 (e.g. 重要度分類) hijacks answers. */
-  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え/g;
+  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え|挙げよ|挙げて|挙げる|挙げなさい|挙げ|列挙して|列挙|説明して|説明|ってなに|ってなん|って何|ってな/g;
   function coreQuery(q) { return String(q == null ? '' : q).replace(Q_GENERIC, ''); }
 
   /* generic standalone terms that, ALONE, don't pin a topic. Because matching is
@@ -234,8 +240,14 @@
   var GENERIC_TERM = {};
   ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
+   '原因 理由 要因 違い 差異 比較 影響 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
+  /* bigrams contributed by generic words — demoted in KB doc-selection so a
+   * polysemous generic term (材料の「基礎」→土木の基礎/foundation) can't hijack the
+   * doc ranking away from the real topic (材料). */
+  var GEN_GRAMS = {};
+  Object.keys(GENERIC_TERM).forEach(function (t) { gram(t).forEach(function (g) { GEN_GRAMS[g] = 1; }); });
   /* structural single kanji that are never a topic noun (figure/section/position…) */
   var SINGLE_STOP = {};
   ('図 表 式 章 節 項 例 他 中 内 外 前 後 間 点 等 物 事 方 際 上 下 本 各 同 約 数 部 面 量 値 法 用 性 化 的 時 場 合 者 式 計 図 比 約 種 類 別 性 度 力 行 月 年 日 回 個 件')
@@ -262,12 +274,21 @@
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
     // recognised as the topic). For a hiragana run we take the leading CONTENT segment
     // before any particle (ねじのには…→ねじ, ばねを→ばね) and drop function-words/verbs.
-    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
+    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9&.\-]*[A-Za-z]|[A-Za-z][A-Za-z0-9\-]+/g) || [];
     var seen = {}, out = [];
     runs.forEach(function (r) {
-      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic-first segment
-        r = r.split(HIRA_PARTICLE)[0];
-        if (!r || r.length < 2 || r.length > 4 || HIRA_STOP[r] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(r)) return;
+      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word(s)
+        // a coordinated run (すきまばめ「と」しまりばめ) carries multiple topics: split on
+        // the coordinating particles と/や only (NOT case particles は/が/を, so a word that
+        // STARTS with such a kana — はめあい — stays whole), then keep each segment with
+        // its trailing particles stripped (ねじ「の」→ねじ).
+        r.split(/[とや]/).forEach(function (seg) {
+          seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
+          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
+          if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
+          if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
+        });
+        return;
       }
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
@@ -287,6 +308,38 @@
       var c = mw.charAt(0);
       if (SINGLE_STOP[c] || GENERIC_TERM[c] || seen[c]) return;
       seen[c] = 1; out.push(c);
+    });
+    // bare single-kanji category noun (鋼・弁) left AFTER generic stripping removed
+    // its trailing 「の種類」 — so 「鋼の種類」→coreQuery「鋼」 still keys off 鋼 instead of
+    // returning no key (which let an unrelated doc hijack the answer). Last resort only.
+    if (!out.length) {
+      var cm = coreQuery(q).match(/[一-鿿]/);
+      if (cm && !SINGLE_STOP[cm[0]] && !GENERIC_TERM[cm[0]]) out.push(cm[0]);
+    }
+    return out;
+  }
+
+  /* DOMAIN SYNONYMS / readings — the colloquial or katakana name a user types vs the
+   * formal term the handbook uses. A lexical (BM25/bigram) retriever can't bridge
+   * these on its own, so we expand the query with the canonical term(s). High-
+   * confidence, bidirectional pairs only (mechanical-engineering domain). This is
+   * the classic synonym-filter technique (Lucene/Elasticsearch) done offline. */
+  var SYN = {
+    'ベアリング': ['軸受'], 'ベアリング軸受': ['軸受'],
+    'ギヤ': ['歯車'], 'ギア': ['歯車'], 'ギヤー': ['歯車'],
+    'スプリング': ['ばね'], 'コイルばね': ['ばね'],
+    '軸受': ['ベアリング'], '歯車': ['ギヤ', 'ギア'],
+    'ねじ': ['ボルト'], 'スクリュー': ['ねじ'],
+    'プーリ': ['プーリー', 'ベルト車'], 'ベアリング鋼': ['軸受鋼'],
+    'ステンレス': ['ステンレス鋼'], 'モータ': ['電動機'], 'モーター': ['電動機'],
+    // acronyms → the Japanese term the handbook uses (keyTerms keeps & and . in tokens)
+    'GD&T': ['幾何公差'], 'BOM': ['部品表'], 'CAE': ['解析'], 'CAD': ['設計'], 'GDT': ['幾何公差']
+  };
+  /* canonical synonyms of a query's key terms (for retrieval expansion + enumeration) */
+  function synTerms(query) {
+    var out = [], seen = {};
+    keyTerms(query).forEach(function (k) {
+      (SYN[k] || []).forEach(function (s) { if (!seen[s] && s !== k) { seen[s] = 1; out.push(s); } });
     });
     return out;
   }
@@ -334,6 +387,12 @@
   function keyBoost(query) {
     var b = {};
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { b[t] = 2.2; }); });
+    // expand with domain synonyms so a colloquial query (ベアリング) also boosts the
+    // chunks that use the formal term (軸受). Slightly below the literal key weight.
+    synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((b[t] || 0) < 2.0) b[t] = 2.0; }); });
+    // de-boost generic-word bigrams (基礎/供給…) so a polysemous filler can't make an
+    // off-topic chunk win the BM25 ranking (材料の「基礎」→土木基礎). Keys keep priority.
+    for (var gg in GEN_GRAMS) if (b[gg] == null) b[gg] = 0.3;
     // fold in the feedback layer's learned per-term boosts (👍 reinforcement).
     if (NSCode.feedback && NSCode.feedback.boosts) {
       var fb = NSCode.feedback.boosts(query);
@@ -487,7 +546,7 @@
     if (GARBAGE.test(s)) return true;             // unmapped-font mojibake (PUA/Hangul/…)
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
-    if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
+    if (/^[をはがのにへともでてやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
     if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
     if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
     if ((s.match(/：/g) || []).length >= 2) return true;
@@ -661,16 +720,83 @@
     var keys = keyTerms(question); if (!keys.length) return null;
     var key = keys.slice().sort(function (a, b) { return b.length - a.length; })[0];   // most specific noun
     var sufs = [key]; if (/歯車$/.test(key) || key === '歯車') sufs.push('ギヤ');
+    // a colloquial key (ベアリング) enumerates the formal compound nouns (X軸受) too
+    (SYN[key] || []).forEach(function (s) { if (sufs.indexOf(s) < 0) sufs.push(s); });
     var re = new RegExp('(?:^|[\\s、。，．（）()・/「」])([一-鿿ぁ-ヿァ-ヶー]{1,7}?)(' + sufs.map(escRe).join('|') + ')\\s*（\\s*[A-Za-z]', 'gm');
     var gear = sufs.indexOf('ギヤ') >= 0;
     var reX = gear ? /(?:^|[\s、。，．（）()・/「」])(ラックとピニオン|ラック|ピニオン)\s*（\s*[A-Za-z]/gm : null;
+    // a clean TYPE name has a short modifier prefix: no internal CASE particle/punct
+    // (rejects column-merges 高温用の軸受鋼), no verb morphology (使われる軸受鋼), no
+    // leading structural kanji (各種クロム鋼・用合金鋼 = truncated 構造用…). Reading-kana
+    // (はすば歯車・かさ歯車) are kept — は/や are not treated as case particles here.
+    var STRUCT_PRE = /^[各同本約用種別他主全数当該]/;
+    var VERB_PRE = /(れる|られ|され|する|した|って|われ|いら|よる|ある|いる|でき|よっ)/;
+    // leading conjunction / demonstrative / adverb (これら合金鋼・また肌焼鋼・一般的な炭素鋼)
+    // or a leading は/も/や directly before a kanji (は特殊鋼 — a spliced particle, while
+    // はすば歯車's は is followed by kana so it survives).
+    var LEAD_PRE = /^(?:これ|それ|あれ|また|なお|およ|且つ|かつ|一般|特に|主に|おもに|おもな|必ず|多く|よく|なる|各種|各|[はもや](?=[一-鿿]))/;
+    function badPrefix(pre) {
+      if (!pre) return false;
+      if (/[のをにへとがで、，。．・（(）)\s／/「」：:＝=]/.test(pre)) return true;
+      if (/^[ぁ-ゖ]$/.test(pre)) return true;            // single-kana prefix = truncated fragment (り弁←絞り弁)
+      if (/[はもや](?=[一-鿿])/.test(pre)) return true;   // spliced particle は/も/や before a kanji (後者は安全弁・加工や熱処理)
+      return STRUCT_PRE.test(pre) || VERB_PRE.test(pre) || LEAD_PRE.test(pre);
+    }
     var seen = {}, items = [], srcCount = {}, m;
     (docs || []).forEach(function (d) {
       var t = d.text || '', c = 0; re.lastIndex = 0;
-      while ((m = re.exec(t))) { var w = m[1] + m[2]; c++; if (w !== key && !seen[w]) { seen[w] = 1; items.push(w); } }
+      while ((m = re.exec(t))) { var w = m[1] + m[2]; c++; if (w !== key && !badPrefix(m[1]) && !seen[w]) { seen[w] = 1; items.push(w); } }
       if (reX) { reX.lastIndex = 0; while ((m = reX.exec(t))) { var w2 = m[1]; c++; if (!seen[w2]) { seen[w2] = 1; items.push(w2); } } }
       srcCount[d.name] = c;
     });
+    // HEAD-NOUN hyponyms: when the corpus has no English-glossed taxonomy table
+    // (gloss pass thin), enumerate compound nouns ENDING in the key noun, read as
+    // defined subjects — 炭素鋼・合金鋼・ステンレス鋼 for 鋼, 絞り弁・安全弁 for 弁. The
+    // curated glossary (DEFAULT_DOCS) is scanned alongside the retrieved docs so a
+    // 種類 question over plain prose still enumerates. Anchored to a boundary + a
+    // trailing particle/punctuation so flattened-table fragments don't leak in.
+    // head-noun suffixes = the key (if short) plus any synonym head (ベアリング→軸受,
+    // ステンレス→ステンレス鋼). Synonym heads may be longer than 3 since they are specific
+    // (won't over-match), but a long literal key is excluded to avoid huge enumerations.
+    var synHeads = SYN[key] || [];
+    var headSufs = sufs.filter(function (s) { return /^[一-鿿ァ-ヶー]+$/.test(s) && (s.length <= 3 || synHeads.indexOf(s) >= 0); });
+    if (items.length < 4 && headSufs.length) {
+      var headRe = new RegExp('(?:^|[\\s、。，．（）()・/「」：:＝=])([一-鿿ぁ-ヿァ-ヶー]{1,8}?)(' + headSufs.map(escRe).join('|') + ')(?=[はがをにのへとも、，。・（(）)：:＝=\\s/「」]|$)', 'gm');
+      getDocs().concat(docs || []).forEach(function (d) {
+        var t = d.text || '', c3 = srcCount[d.name] || 0; headRe.lastIndex = 0;
+        while ((m = headRe.exec(t))) {
+          var pre = m[1], hw = m[1] + m[2];
+          if (!pre || hw === key || badPrefix(pre) || sufs.indexOf(hw) >= 0) continue;
+          c3++; if (!seen[hw]) { seen[hw] = 1; items.push(hw); }
+        }
+        srcCount[d.name] = c3;
+      });
+    }
+    // ENUMERATION SENTENCE (constrained): a category whose members aren't compound
+    // nouns sharing a head (機械要素 = ねじ・軸・軸受・歯車…) is listed in prose as
+    // 「代表的なものに、A、B、C…がある」. Require that explicit lead-in phrase (so a plain
+    // ・-run like 伝達・変換・支持 does NOT match) and the key in context, then split the
+    // members by ・/、. Only fires when the taxonomy passes above found too few items.
+    if (items.length < 4) {
+      var LEAD = /(?:代表的なもの|主なもの|おもなもの|次のもの|以下のもの|主要なもの|基本的なもの)(?:に|として)[はとして、：:]*([^。]*?)(?:が(?:あり|ある)|などが|である)/;
+      var epool2 = getDocs().concat(docs || []);
+      for (var pe = 0; pe < epool2.length && items.length < 4; pe++) {
+        var pd = pe < getDocs().length ? getDocs()[pe] : (docs || [])[pe - getDocs().length];
+        if (!pd || (pd.text || '').indexOf(key) < 0) continue;
+        var psents = buildSentences(pd.text);
+        for (var ps = 0; ps < psents.length && items.length < 12; ps++) {
+          var psen = psents[ps]; var lm = psen.match(LEAD); if (!lm) continue;
+          if (psen.indexOf(key) < 0 && !(ps > 0 && psents[ps - 1].indexOf(key) >= 0)) continue;   // on-topic only
+          lm[1].split(/[・･、，]/).forEach(function (it) {
+            it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
+            if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
+            if (!(it.length >= 2 || /^[一-鿿]$/.test(it))) return;          // ≥2 chars, or a single kanji (軸)
+            if (it.length > 8 || /^[をはがのにへとでもやよ]/.test(it)) return;
+            seen[it] = 1; items.push(it); srcCount[pd.name] = (srcCount[pd.name] || 0) + 1;
+          });
+        }
+      }
+    }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
     var out2 = [], s2 = {};
@@ -793,8 +919,10 @@
     q = String(q || '');
     var n = function (re) { return (q.match(re) || []).length; };
     var sc = {
-      list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)/g),
-      compare: n(/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
+      // どんなもの counts as LIST only when it asks what THINGS EXIST (どんなものがある);
+      // 「どんなものですか」 is a definition (handled below), not an enumeration.
+      list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな種類|どんなものが/g),
+      compare: n(/違い|違う|どう違|どこが違|異な|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
       // purpose: 「Xの目的/役割/用途は？」 — a very common form that 何ですか would
       // otherwise mis-route to definition. Asks for what something is FOR.
       purpose: n(/目的|役割|用途|機能|働き|ねらい|何のため/g),
@@ -806,11 +934,13 @@
       // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
       // とは only counts as DEFINITIONAL at clause end / before 何ど (「熱伝達率とは」),
       // not mid-phrase 「平歯車とはすば歯車」 where it is just と+は (≈ "A and B").
-      definition: n(/とは(?=$|[何ど、。．？！\s])/g) + n(/定義|どういうもの|意味/g) + 0.5 * n(/何ですか|何か/g)
+      // colloquial definition asks: 「〜ってなに」「〜どんなものですか」「〜について説明して」 —
+      // overview requests that a definition-shaped answer best satisfies.
+      definition: n(/とは(?=$|[何ど、。．？！\s])/g) + n(/定義|どういうもの|意味|ってなに|って何|どんなもの|について.{0,4}説明|を説明/g) + 0.5 * n(/何ですか|何か/g) + 0.4 * n(/について.{0,3}教え|を教え/g)
     };
-    // an explicit definitional marker is decisive (「熱伝達率とは」), but NOT bare 何ですか,
-    // and not when a comparison/why/list cue is competing.
-    if (/(とは(?=$|[何ど、。．？！\s])|定義|どういうもの)/.test(q) && sc.list === 0 && sc.purpose === 0 && sc.compare === 0 && sc.why === 0) return 'definition';
+    // an explicit definitional marker is decisive (「熱伝達率とは」/「〜ってなに」/「説明して」),
+    // but NOT bare 何ですか, and not when a comparison/why/list cue is competing.
+    if (/(とは(?=$|[何ど、。．？！\s])|定義|どういうもの|ってなに|って何|どんなものですか|どんなものでしょう|について.{0,4}説明)/.test(q) && sc.list === 0 && sc.purpose === 0 && sc.compare === 0 && sc.why === 0) return 'definition';
     var order = ['list', 'compare', 'purpose', 'why', 'features', 'howto', 'definition'];
     var best = 'default', bestSc = 0;
     order.forEach(function (k) { if (sc[k] > bestSc + 1e-9) { bestSc = sc[k]; best = k; } });
@@ -876,7 +1006,7 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
@@ -887,6 +1017,11 @@
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
+    // prefer the highest-scored GENUINE definition over a higher-rel non-definition
+    // mention of a polysemous key (モジュール間通信… must not bury モジュールの定義).
+    for (var di = 0; di < p.cands.length; di++) {
+      if (isDef(p.cands[di].s) && (!key || p.cands[di].s.indexOf(key) >= 0)) { top = p.cands[di]; break; }
+    }
     if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
     // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
     // the key in topic position; else defer to composeConcise (most on-topic line).
@@ -921,13 +1056,18 @@
     }
     // SYNTHESIS fallback: no single sentence compares both subjects — combine the
     // best on-topic sentence about EACH subject into one contrastive answer (a real
-    // two-fact synthesis, the kind a generative model would produce).
-    function bestFor(k) {
-      var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110; })
+    // two-fact synthesis, the kind a generative model would produce). The second
+    // subject prefers a sentence that ISN'T about the first too (a definition of B
+    // that also mentions A — 合金鋼の定義 mentions 炭素鋼 — would otherwise dup the
+    // first pick and collapse the synthesis), and never reuses the first sentence.
+    function bestFor(k, other, avoidS) {
+      var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110 && c.s !== avoidS; })
         .sort(function (a, b) { return b.rel - a.rel; });
+      if (other) { var only = cs.filter(function (c) { return c.s.indexOf(other) < 0; }); if (only.length) return only[0]; }
       return cs[0];
     }
-    var a0 = bestFor(subs[0]), b0 = bestFor(subs[1]);
+    var a0 = bestFor(subs[0], subs[1], null);
+    var b0 = bestFor(subs[1], subs[0], a0 ? a0.s : null);
     if (a0 && b0 && a0.s !== b0.s && (a0.s.length + b0.s.length) <= 210) {
       var sep = /[。．]$/.test(a0.s) ? '一方、' : '。一方、';
       return { text: a0.s + sep + b0.s, source: a0.src };
@@ -999,7 +1139,8 @@
         var b = k.match(/[一-鿿ァ-ヶー]/g) || [];
         for (var j = 0; j < b.length - 1; j++) kg.push(b[j] + b[j + 1]);
       });
-      for (var i = 0; i < kg.length; i++) if (kg[i].length >= 2 && hay.indexOf(kg[i]) >= 0) return false;
+      // a single-kanji key (軸/弁/鋼) counts literally; bigrams need ≥2 chars (avoid noise)
+      for (var i = 0; i < kg.length; i++) if ((kg[i].length >= 2 || /[一-鿿]/.test(kg[i])) && hay.indexOf(kg[i]) >= 0) return false;
       return (topCos == null) || topCos < 0.5;   // no specific term anywhere → trust only very strong retrieval
     }
     // all-generic question (no specific term): fall back to bigram/cos
@@ -1023,7 +1164,7 @@
     var docs = opts.docs || getDocs();
     var chunks = buildChunks(docs);
     if (!chunks.length || !query) return null;
-    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(query) });
+    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(query), bm25: true });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var L = NSCode.babyLLM;
 
@@ -1078,7 +1219,7 @@
     opts = opts || {};
     var chunks = buildChunks(getDocs());
     if (!chunks.length || !question) return Promise.resolve(null);
-    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
+    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question), bm25: true });
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
     var avoid = fbAvoid(question);
     var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
@@ -1099,7 +1240,7 @@
         // from the retrieved passages and re-ranked by the trained net (natural).
         var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100, avoid);
         var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
-        var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+        var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? NSCode.embeddings.cosine(NSCode.embeddings.embed(question, 64), NSCode.embeddings.embed(res.hits[0].chunk.text, 64)) : 0);
         if (weak) concise = { text: '', source: '', intent: concise.intent };
         // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
         var learned = false;
@@ -1144,11 +1285,31 @@
     gram(query).forEach(function (t) { if (w[t] == null) w[t] = 0.25; });             // any term: weak signal
     gram(coreQuery(query)).forEach(function (t) { if ((w[t] || 0) < 1) w[t] = 1; });  // content word: full
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { w[t] = 2.5; }); }); // key term: strong
+    synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((w[t] || 0) < 2.2) w[t] = 2.2; }); }); // synonym (ベアリング→軸受): nearly as strong
+    // demote generic-word bigrams so a polysemous filler (基礎/供給/管理) can't pull the
+    // ranking to an off-topic doc — unless that bigram is also part of a real key term.
+    for (var gg in GEN_GRAMS) if (w[gg] != null && w[gg] < 2) w[gg] = Math.min(w[gg], 0.3);
     var score = {};
     Object.keys(w).forEach(function (t) {
       var p = index.post[t]; if (!p) return;
       p.forEach(function (e) { score[e[0]] = (score[e[0]] || 0) + e[1] * w[t]; });
     });
+    // TITLE-MATCH boost (BM25F-style field weighting): a document whose TITLE contains
+    // the question's specific term(s) is strongly on-topic. The body inverted index is
+    // pruned to K docs per term, so a doc named exactly after a COMMON term (「ひずみ」)
+    // is often dropped from that term's postings; scanning the (short) titles recovers
+    // it and ranks it where it belongs. High precision because titles are topic phrases
+    // and we match only specific key terms (generics removed).
+    if (index.meta) {
+      var tkeys = keyTerms(query).concat(synTerms(query)).filter(function (t) { return t.length >= 2; });
+      if (tkeys.length) {
+        for (var di = 0; di < index.meta.length; di++) {
+          var mt = index.meta[di]; if (!mt) continue;
+          var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
+          if (th) score[di] = (score[di] || 0) + th * 5;     // strong, additive — a title hit should win
+        }
+      }
+    }
     return Object.keys(score).map(function (i) { return { idx: +i, score: score[i], title: index.meta[+i] }; })
       .sort(function (a, b) { return b.score - a.score; }).slice(0, k);
   }
@@ -1171,7 +1332,7 @@
       return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
         var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
         var chunks = buildChunks(docs);
-        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
+        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question), bm25: true });
         if (!res.hits.length) return { text: '', seed: '', hits: [] };
         // BLEND curated knowledge: the hand-written DEFAULT_DOCS cleanly DEFINE the
         // core vocabulary the handbook only uses (歯車・軸受・ねじ…). Add the on-topic
@@ -1182,10 +1343,11 @@
         var cdocs = _k0.length ? getDocs().filter(function (d) {
           var t = d.text || ''; for (var i = 0; i < _k0.length; i++) if (t.indexOf(_k0[i]) >= 0) return true; return false;
         }) : [];
-        // the 用語集 is pure definitions — blend it ONLY for definition questions so it
-        // doesn't override intent-specific sentences (目的/なぜ/特徴). The richer
-        // DEFAULT_DOCS (which also carry features/purpose) blend for every intent.
-        if (classifyIntent(question) !== 'definition') cdocs = cdocs.filter(function (d) { return !/用語集/.test(d.name); });
+        // the 用語集 is pure definitions — blend it for definition AND compare questions
+        // (compare SYNTHESISES each subject's definition: 「ねじは…。一方、ボルトは…」), but
+        // not for 目的/なぜ/特徴 where it would override intent-specific sentences.
+        var _qi = classifyIntent(question);
+        if (_qi !== 'definition' && _qi !== 'compare') cdocs = cdocs.filter(function (d) { return !/用語集/.test(d.name); });
         var pdocs = cdocs.length ? docs.concat(cdocs) : docs;
         var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
         // weight on-topic chunks so the net's recall (used to rerank the answer) is
@@ -1199,7 +1361,7 @@
           .then(function () {
             var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100, avoid);
             var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
-            var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+            var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? NSCode.embeddings.cosine(NSCode.embeddings.embed(question, 64), NSCode.embeddings.embed(res.hits[0].chunk.text, 64)) : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
             // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
             var learned = false;
