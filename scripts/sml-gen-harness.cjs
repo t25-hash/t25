@@ -27,10 +27,15 @@ const FILES = ['core.js', 'last-run.js', 'research-engine.js', 'rag-engine.js', 
   'memory-engine.js', 'llm-engine.js', 'neural-engine.js', 'feedback-engine.js', 'sml-engine.js',
   'grammar-engine.js', 'ask-engine.js'];
 for (const f of FILES) vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'assets/js', f), 'utf8'), { filename: f });
-const N = global.NSCode, A = N.askEngine, S = N.sml, L = N.neuralLM;
+const N = global.NSCode, A = N.askEngine, S = N.sml, L = N.neuralLM, G = N.grammar;
 
 let pass = 0, fail = 0;
 function ok(name, cond) { (cond ? pass++ : fail++); console.log(`  ${cond ? 'OK ' : 'XX '} ${name}`); }
+
+// content-words (kanji/katakana/alnum) of a string — used to assert grammar
+// normalization is meaning-preserving (no facts dropped/invented).
+function contentRuns(s) { return String(s || '').match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || []; }
+let normTotal = 0, normApplied = 0;   // how often clause normalization actually fired
 
 const QS = process.argv.slice(2).length ? process.argv.slice(2) : ['機械とは何か', '歯車とは何ですか', '軸受の役割は'];
 
@@ -56,7 +61,26 @@ const QS = process.argv.slice(2).length ? process.argv.slice(2) : ['機械とは
     // abstractive: not identical to a single verbatim source sentence
     const verbatim = ctxText.indexOf(r.text.replace(/。$/, '')) >= 0;
     ok(`[${q}] recombines (not a verbatim single span)`, !verbatim || r.text.length < 16);
+
+    // Grammar Compiler Layer: run the generated answer through grammar.normalize
+    // (the same path Ask uses for display) and verify it stays faithful.
+    if (G && r.text) {
+      const g = G.normalize(r.text);
+      console.log(`   NORM: ${g.text}`);
+      const clauses = (g.sentences || []).reduce((a, s) => a.concat(s.clauses || []), []);
+      const appliedN = clauses.filter((c) => c.applied).length;
+      normTotal += clauses.length; normApplied += appliedN;
+      // meaning preserved: every content word of the generated text survives normalization
+      const before = contentRuns(r.text).join('|'), afterRuns = contentRuns(g.text);
+      const kept = contentRuns(r.text).every((t) => g.text.indexOf(t) >= 0);
+      ok(`[${q}] grammar-normalize preserves content`, kept);
+      // sanity: normalization never invents content words absent from the source answer
+      const invented = afterRuns.filter((t) => before.indexOf(t) < 0);
+      ok(`[${q}] grammar-normalize invents nothing (${invented.length})`, invented.length === 0);
+      console.log(`   norm clauses applied: ${appliedN}/${clauses.length}`);
+    }
   }
+  if (normTotal) console.log(`\n[grammar] clause normalization fired on ${normApplied}/${normTotal} clauses (${(100 * normApplied / normTotal).toFixed(0)}%)`);
   console.log(`\n==== ${pass} passed, ${fail} failed ====`);
   process.exit(fail === 0 ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

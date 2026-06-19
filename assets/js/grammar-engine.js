@@ -244,31 +244,47 @@
     var rb = contentRuns(made).join('|');
     return contentRuns(orig).every(function (t) { return rb.indexOf(t) >= 0; });
   }
-  // 再コンパイル対象にしてよい簡潔な1文か（複数節・長文・辞書形不明は対象外＝原文保持）
+  // 1節を再コンパイルしてよいか。長さ・読点では弾かない（文字数に関係なく通す方針）。
+  // 節分割後の各節はもう読点を含まないので、辞書形述語が取れた節だけを安全に再構成する。
+  // 述語が辞書形に逆変換できない節（連用中止・て形などの actionSurface）は原文保持。
   function canRecompile(s, sml) {
-    if (/[、，,]/.test(s)) return false;
-    if (contentRuns(s).join('').length > 28) return false;
     if (sml.actionSurface || (!sml.action && !sml.adjective)) return false;
     return true;
   }
-  /* 自由テキスト → 文ごとに SML 化 → compile で正規化。意味保持を厳守し、安全に
-   * 再構成できる簡潔な文だけを正規化、複雑な文は原文のまま通す（破壊しない）。 */
+  /* 自由テキスト → 文ごと・節ごとに SML 化 → compile で正規化。長さに関係なく全文を
+   * 通すため、文を読点で節へ分割し、各節を独立に正規化して再結合する。意味保持を厳守
+   * （preservesContent 不成立や辞書形不明の節は原文のまま通す＝破壊しない）。 */
   function normalize(text, opts) {
     opts = opts || {};
     var sents = String(text || '').split(/(?<=[。．！？])/).map(function (x) { return x.trim(); }).filter(Boolean);
     if (!sents.length && text) sents = [String(text).trim()];
     var per = [], out = [];
     sents.forEach(function (s) {
-      var sml = toSML(s), normalized = ensureP(s), changes = [], applied = false;
-      if (sml) {
-        if (opts.politeness) sml.politeness = opts.politeness;
-        if (canRecompile(s, sml)) {
-          var r = compile(sml);
-          if (r.sentence && preservesContent(s, r.sentence)) { normalized = r.sentence; changes = r.changes; applied = true; }
+      // 文を読点で節に分割（区切りは左の節に残す）。読点が無ければ 1 節。
+      var clauses = s.split(/(?<=[、，,])/).filter(Boolean);
+      var rebuilt = '', clauseInfo = [], anyApplied = false, firstSml = null;
+      clauses.forEach(function (cl) {
+        var trail = (cl.match(/[、，,]$/) || [''])[0];
+        var core = trail ? cl.slice(0, -1) : cl;
+        var sml = toSML(core), normalized = core, changes = [], applied = false;
+        if (sml) {
+          if (opts.politeness) sml.politeness = opts.politeness;
+          if (canRecompile(core, sml)) {
+            var r = compile(sml);
+            if (r.sentence && preservesContent(core, r.sentence)) {
+              // compile は句点を付けるが、節（末尾以外）には不要なので外す
+              normalized = r.sentence.replace(/[。．！？]+$/, ''); changes = r.changes; applied = true;
+            }
+          }
         }
-      }
-      per.push({ original: s, sml: sml, normalized: normalized, changes: changes, applied: applied });
-      out.push(normalized);
+        if (!firstSml) firstSml = sml;
+        anyApplied = anyApplied || applied;
+        clauseInfo.push({ original: core, sml: sml, normalized: normalized, changes: changes, applied: applied });
+        rebuilt += normalized + trail;
+      });
+      rebuilt = ensureP(rebuilt);
+      per.push({ original: s, sml: firstSml, normalized: rebuilt, changes: [], applied: anyApplied, clauses: clauseInfo });
+      out.push(rebuilt);
     });
     return { text: out.join(''), sentences: per };
   }
