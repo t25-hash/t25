@@ -273,7 +273,7 @@
           '<div class="ns-chat__composer">' +
             '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
             '<button id="askBtn" class="ns-btn">送信</button>' +
-            '<button id="askRegen" class="ns-btn ns-btn--ghost" title="直近の質問を再実行">別の回答</button>' +
+            '<button id="askGenBtn" class="ns-btn ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" title="🧠 抽象生成モードのON/OFF（OFF＝抽出・推奨）">🧠 生成モード</button>' +
           '</div>' +
         '</div>';
     },
@@ -285,9 +285,14 @@
       var gen = el('askGen');
       if (gen) gen.addEventListener('change', function () { state.gen = gen.checked; persist(); });
       el('askBtn').addEventListener('click', function () { runAsk(); });
-      el('askRegen').addEventListener('click', function () {
-        var last = state.history.length ? state.history[state.history.length - 1].q : '';
-        runAsk(last || null, { noRecall: true });   // force a fresh (non-recalled) answer
+      // 🧠 生成モードトグル（コンポーザ）: 設定パネルの抽出/生成スイッチ(state.gen)と同じ状態。
+      // 「別の回答」は👎フィードバックと役割が重複するため廃止し、ここに置いた。
+      el('askGenBtn').addEventListener('click', function () {
+        state.gen = !state.gen; persist();
+        var b = el('askGenBtn');
+        b.className = 'ns-btn ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost');
+        b.setAttribute('aria-pressed', state.gen ? 'true' : 'false');
+        var chk = el('askGen'); if (chk) chk.checked = state.gen;   // keep the settings switch in sync
       });
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
       el('chatLog').addEventListener('click', function (e) {
@@ -338,7 +343,7 @@
     persist();
   }
 
-  // runAsk(qOverride): qOverride present (chip / 別の回答) keeps the input; otherwise
+  // runAsk(qOverride): qOverride present (chip) keeps the input; otherwise
   // the composer's value is used and cleared. Each call writes to its own bubble, so
   // overlapping answers don't clobber one another.
   function runAsk(qOverride, runOpts) {

@@ -377,6 +377,99 @@
     return String(s || '').trim();
   }
 
+  /* ---- 句スパン単位の接地再構成（abstractive generation, "読める日本語"）--------
+   * 自由生成（generate）はトークンを1つずつサンプリングするため、赤ちゃん級モデルでは
+   * どうしても語が崩れる。代わりにここでは、モデルが学習したコーパスのトークン列
+   * (m.ids) から「句スパン」＝句読点で区切られた連続トークン（＝実在の句）を取り出し、
+   * 質問に最も接地する句を選んで軽く繋ぐ。各句はコーパス由来の実文字列なのでトークン
+   * 崩れが起きず、必ず文法的に読める日本語になる（grounded reconstruction）。
+   * 重い再学習や新アーキは不要で、既存の重みの「想起（seqLogProb）」だけを使う低コスト策。 */
+  var STRIP_EDGE = /^[\s、。，．！？!?…・]+|[\s、。，．！？!?…・]+$/g;
+  // a 句 cut at a 句読点 can keep a dangling case particle at its edge (前節の
+  // 「…を」尾 / 後節頭の「が…」). Trimming ONE orphan particle per edge — only when
+  // enough content remains — makes the stitched answer read cleaner (意味は保持)。
+  var LEAD_PART = /^[がをにはでともへやの]/;
+  var TAIL_PART = /[がをにへとや]$/;
+  function tidySpan(t) {
+    t = t.replace(STRIP_EDGE, '');
+    if (LEAD_PART.test(t) && t.slice(1).replace(/[\s、。]/g, '').length >= 4) t = t.slice(1);
+    if (TAIL_PART.test(t) && t.slice(0, -1).replace(/[\s、。]/g, '').length >= 4) t = t.slice(0, -1);
+    return t;
+  }
+
+  function phraseSpans(m) {
+    var itos = m.vocab.itos, ids = m.ids, spans = [], seen = {}, cur = [];
+    function flush() {
+      if (cur.length) {
+        var toks = cur.slice(), text = NSCode.babyLLM.join(toks.map(function (id) { return itos[id]; }));
+        var bare = text.replace(/[\s、。，．！？!?…・]/g, '');
+        if (bare.length >= 6 && bare.length <= 48 && !seen[text]) { seen[text] = 1; spans.push({ toks: toks, text: text }); }
+      }
+      cur = [];
+    }
+    for (var i = 0; i < ids.length; i++) {
+      var t = itos[ids[i]];
+      if (t == null || t === '<unk>' || BARRIER.test(t)) flush();   // punctuation / newline / unk = 句 boundary
+      else cur.push(ids[i]);
+    }
+    flush();
+    return spans;
+  }
+
+  /* content terms of the question (kanji/katakana/latin runs — drop particles) */
+  function termsOf(q) { return (String(q || '').match(/[一-鿿ァ-ヶー]{2,}|[A-Za-z][A-Za-z0-9]+/g) || []); }
+
+  /* char-overlap ratio (shared ÷ shorter) — used to drop near-duplicate 句 */
+  function overlapChars(a, b) {
+    var sa = {}, shared = 0;
+    for (var i = 0; i < a.length; i++) sa[a[i]] = 1;
+    for (var j = 0; j < b.length; j++) if (sa[b[j]]) shared++;
+    return shared / Math.max(1, Math.min(a.length, b.length));
+  }
+
+  /* grounded reconstruction: pick the question-grounded 句 from the learned corpus
+   * and stitch the best few into one readable sentence. Keyword overlap dominates;
+   * the net's own recall (seqLogProb) breaks ties so the chosen 句 is also the one
+   * the weights most confidently model. Returns { text, spans, score }. */
+  function groundedAnswer(m, question, opts) {
+    opts = opts || {};
+    var spans = phraseSpans(m);
+    if (!spans.length) return { text: '', spans: [], score: -1e9 };
+    var keys = termsOf(question), maxSpans = opts.maxSpans || 2;
+    function overlap(text) {
+      var sc = 0;
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (text.indexOf(k) >= 0) { sc += 1; continue; }
+        for (var j = 0; j < k.length - 1; j++) if (text.indexOf(k[j] + k[j + 1]) >= 0) { sc += 0.25; break; }
+      }
+      return sc;
+    }
+    spans.forEach(function (s) { s.ov = overlap(s.text); });
+    // keep scoring cheap: only run the net's seqLogProb on the most on-topic 句.
+    var pool = spans.filter(function (s) { return s.ov > 0; });
+    if (pool.length < 3) pool = spans.slice();                 // no keyword hit → consider all (small corpora)
+    pool.sort(function (a, b) { return b.ov - a.ov; });
+    pool = pool.slice(0, opts.scoreCap || 40);
+    pool.forEach(function (s) {
+      var lp = seqLogProb(m, s.toks.map(function (id) { return m.vocab.itos[id]; }));
+      var len = s.text.replace(/[\s、。，．！？!?…・]/g, '').length;
+      s.score = s.ov * 2 + 0.2 * (lp + 6) - 0.015 * Math.abs(len - 22);   // 接地 > 想起 > 長さ整形
+    });
+    pool.sort(function (a, b) { return b.score - a.score; });
+    var picked = [];
+    for (var i = 0; i < pool.length && picked.length < maxSpans; i++) {
+      var s = pool[i], dup = false;
+      for (var p = 0; p < picked.length; p++) if (overlapChars(picked[p].text, s.text) >= 0.6) { dup = true; break; }
+      if (!dup) picked.push(s);
+    }
+    if (!picked.length) picked = [pool[0]];
+    // light abstraction: tidy each grounded 句's edges, then join into one sentence
+    // (、 between, 。 to close). Every fragment is verbatim corpus text → 崩れない。
+    var body = picked.map(function (s) { return tidySpan(s.text); }).filter(Boolean).join('、');
+    return { text: body ? body + '。' : '', spans: picked.map(function (s) { return s.text; }), score: picked[0].score };
+  }
+
   /* project the learned token embeddings to 2D (PCA, top-2 principal components
    * via power iteration) so the vocabulary can be drawn as a map — semantically
    * related subwords end up near each other. Returns [{tok, freq, nx, ny}] with
@@ -467,6 +560,7 @@
     learnMerges: function (text, opts) { opts = opts || {}; return learnMerges(tok(text), opts.numMerges || 300, opts.minMerge || 3); },
     forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
     seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer,
+    phraseSpans: phraseSpans, groundedAnswer: groundedAnswer,
     serialize: serialize, restore: restore, warmStart: warmStart
   };
 
@@ -520,7 +614,8 @@
       retrain: function (opts) { if (opts) assign(state.opts, opts); ensure(true); },
       generate: function (seed, gopts) { return state.model ? generate(state.model, seed, gopts) : null; },
       nextProbs: function (ctxText, k) { return state.model ? nextProbs(state.model, ctxText, k) : null; },
-      answer: function (question, gopts) { return state.model ? answer(state.model, question, gopts) : null; }
+      answer: function (question, gopts) { return state.model ? answer(state.model, question, gopts) : null; },
+      groundedAnswer: function (question, gopts) { return state.model ? groundedAnswer(state.model, question, gopts) : null; }
     };
   })();
 })(window.NSCode);

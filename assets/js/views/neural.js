@@ -310,9 +310,13 @@
     var seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || defaultSeed();
     var seed = NLM.encode(st.model, seedStr).slice(0, st.model.C);
     if (!seed.length) seed = NLM.encode(st.model, corpusToken()).slice(0, st.model.C);
-    // self-check agent: 自由生成は1発だと壊れやすいので、複数候補を生成し、
-    // 「整文スコア（文字言語モデルの流暢さ − 繰り返しペナルティ）」で自己評価して
-    // 最良を採用する（観測→評価→選択のループ・完全オフライン）。
+
+    // ① 接地再構成（主回答・読める日本語）：学習コーパスの「句スパン」を質問に接地して
+    //    選び、軽く繋ぐ。トークン単位で生成しないので崩れず、必ず読める日本語になる。
+    var grounded = LAB.groundedAnswer(seedStr) || { text: '', spans: [] };
+
+    // ② 自由生成（参考）：トークンを1つずつ予測する純粋な自己回帰生成。崩れやすいので
+    //    複数候補を「整文スコア（文字LMの流暢さ − 繰り返し）」で自己評価して最良を採用する。
     var K = 6, cands = [];
     for (var i = 0; i < K; i++) {
       var temp = 0.5 + 0.09 * i;                              // 0.5〜1.0 で多様化
@@ -321,9 +325,16 @@
     }
     cands.sort(function (a, b) { return b.score - a.score; });
     var best = cands[0];
-    out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag">ニューラル生成</span> ' + C.esc(best.text) + '</div>' +
-      '<p class="ns-empty__hint">🧹 文法チェック（自己評価エージェント）：' + K + '候補を生成し、整文スコア最良を採用（スコア ' +
-      cands.map(function (c) { return c.score.toFixed(2); }).join(' / ') + '）</p>';
+
+    var spanTags = grounded.spans.map(function (s) { return '<span class="ns-tag">' + C.esc(s) + '</span>'; }).join(' ');
+    out.innerHTML =
+      (grounded.text
+        ? '<div class="ns-qa-answer__src"><span class="ns-tag ns-tag--on">接地再構成</span> ' + C.esc(grounded.text) + '</div>' +
+          '<p class="ns-empty__hint">🧩 根拠の句（コーパス由来の実在スパン）を質問に接地して繋ぎ、読める日本語に再構成：' + (spanTags || '—') + '</p>'
+        : '') +
+      '<div class="ns-qa-answer__src" style="margin-top:8px"><span class="ns-tag">自由生成（参考）</span> ' + C.esc(best.text) + '</div>' +
+      '<p class="ns-empty__hint">🧹 自由生成は ' + K + ' 候補を整文スコアで自己評価し最良を採用（' +
+      cands.map(function (c) { return c.score.toFixed(2); }).join(' / ') + '）。トークン単位で崩れやすいため、接地再構成を主回答にしています。</p>';
   }
 
   /* 整文スコア：文字言語モデルの流暢さ（日本語らしさ）から、繰り返し（赤ちゃん生成の

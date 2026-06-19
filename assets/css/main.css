@@ -242,6 +242,7 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 }
 .ns-btn:hover { filter: brightness(1.06); }
 .ns-btn--ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.ns-btn--on { background: var(--accent-weak); color: var(--accent); border: 1px solid var(--accent); }
 
 /* ---- Code ---- */
 .ns-code {
