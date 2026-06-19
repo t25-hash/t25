@@ -178,4 +178,4 @@ Challenge レベル: L1 RAG構築 / L2 Agent構築 / L3 MCP構築 / L4 Multi-Age
 | 画面ID | 画面名 | 説明 |
 | --- | --- | --- |
 | SCR-COM-404 | Not Found | 未定義ルートのフォールバック |
-| SCR-COM-SET | Settings | テーマ / モデル既定値 / API キー設定（将来） |
+| SCR-COM-SET | Settings | テーマ / ローカルエンジン既定値（外部 AI API・キーは不使用） |

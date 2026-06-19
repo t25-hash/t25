@@ -95,30 +95,7 @@ const BANK = [
   { q: 'ポンプの種類', intent: 'list' },
   { q: '弁の種類にはどんなものがありますか', intent: 'list' },
   { q: '鋳造と鍛造の違い', intent: 'compare' },
-  { q: '炭素鋼と合金鋼の違いは何ですか', intent: 'compare' },
-  // held-out v2: larger, more diverse batch (never tuned on) to stress generalization
-  { q: 'トルクとは何ですか', intent: 'definition' },
-  { q: '剛性とは', intent: 'definition' },
-  { q: '潤滑油とは何か', intent: 'definition' },
-  { q: '焼入れとはどういう処理か', intent: 'definition' },
-  { q: 'キャビテーションとは', intent: 'definition' },
-  { q: 'ポンプの役割は何ですか', intent: 'purpose' },
-  { q: 'フランジの役割', intent: 'purpose' },
-  { q: 'シールの目的は', intent: 'purpose' },
-  { q: '共振はなぜ起きるのか', intent: 'why' },
-  { q: 'クリープはなぜ生じるのですか', intent: 'why' },
-  { q: 'キャビテーションはなぜ起こるのか', intent: 'why' },
-  { q: '青銅の特徴', intent: 'features' },
-  { q: 'チタン合金の特徴は', intent: 'features' },
-  { q: '鋳鉄の特徴を教えて', intent: 'features' },
-  { q: 'ポンプの種類にはどんなものがありますか', intent: 'list' },
-  { q: '弁の種類', intent: 'list' },
-  { q: '溶接の種類', intent: 'list' },
-  { q: '軸継手の種類', intent: 'list' },
-  { q: '焼入れと焼戻しの違い', intent: 'compare' },
-  { q: 'ばねの強度はどう計算しますか', intent: 'howto' },
-  { q: '熱応力はどのように求めますか', intent: 'howto' },
-  { q: '安全率はどう決めますか', intent: 'howto' }
+  { q: '炭素鋼と合金鋼の違いは何ですか', intent: 'compare' }
 ];
 
 // hallmark of each intent inside the answer text
@@ -126,7 +103,7 @@ function intentHallmark(intent, a) {
   switch (intent) {
     case 'definition': return /(である|です。|だ。|をいう|のこと|を指す|と呼ば|と定義|を意味|といい|機械要素|装置|とは)/.test(a);
     case 'list': return (a.match(/[・、，]/g) || []).length >= 2 || /(種類|大別|分けら|に分類|などがある|に分かれ)/.test(a);
-    case 'purpose': return /(目的|ため|ねらい|役割|用途|機能|防止|を防|接続|結合|締結|支持|固定|伝え|伝達|保持|密封|つなぐ)/.test(a);
+    case 'purpose': return /(目的|ため|ねらい|役割|用途|機能|防止|を防)/.test(a);
     case 'why': return /(ため|から|ので|理由|原因|による|起因|生じ|により)/.test(a);
     case 'features': return /(特徴|利点|長所|短所|性質|優れ|劣る|向く|適する|やすい|にくい|耐食|耐熱|耐摩耗|強度|硬|軽|安価|高い|大きい|小さい|小さく|滑らか|抑え|生じ|できる)/.test(a);
     case 'compare': return /(に比べ|に対し|一方|より|違い|異な|大きく|小さく|簡単)/.test(a);

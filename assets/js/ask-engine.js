@@ -137,22 +137,6 @@
       'パルプ化・洗浄・漂白を経たパルプは、抄紙機（ワイヤパートで脱水、プレスパートで搾水、ドライヤパートで乾燥）を通って連続した紙になります。\n\n' +
       '繊維機械は、紡績（開繊・カード・練条・粗紡・精紡）や織布などで、繊維を糸や布へ加工する設備群です。' },
 
-    /* --- 用語の定義（ハンドブックが定義しない中核語の種差定義） --- */
-    { name: '33-機械工学の用語定義.md', text:
-      '潤滑油は、摩擦面の間に油膜をつくり、摩擦と摩耗を低減するために用いる液体潤滑剤である。\n\n' +
-      'トルクは、物体を軸まわりに回転させる力のモーメントで、力と腕の長さの積で表される回転力である。\n\n' +
-      '剛性は、物体が外力に対して変形しにくい度合いを表す性質で、変形を生じさせるのに必要な力の大きさで表される。\n\n' +
-      '焼入れは、鋼を変態点以上に加熱したのち急冷し、硬さと強度を高める熱処理である。\n\n' +
-      '焼戻しは、焼入れした鋼を再加熱して粘り強さ（靱性）を回復させ、内部応力を除く熱処理である。\n\n' +
-      'キャビテーションは、液体の高速・低圧部で気泡が発生し、圧力回復部で崩壊して壊食・振動・騒音を引き起こす現象である。\n\n' +
-      '共振は、外力の振動数が系の固有振動数に一致したときに振幅が著しく増大する現象である。\n\n' +
-      'クリープは、高温で一定荷重を受け続けた材料が、時間とともにゆっくり変形が進む現象である。\n\n' +
-      'フランジは、管や軸の端に設けるつば状の部分で、ボルトで締結して管や部材どうしを接続・固定する機械要素である。\n\n' +
-      'シールは、すきまをふさいで流体の漏れや異物の侵入を防ぐ密封要素である。\n\n' +
-      '軸継手は、二つの軸を接続して回転とトルクを伝える機械要素である。\n\n' +
-      '青銅は、銅とすずを主成分とする合金で、耐摩耗性・耐食性に優れ、軸受や歯車に用いられる。\n\n' +
-      'モジュールは、歯車の歯の大きさを表す基準で、基準円直径を歯数で割った値である。' },
-
     /* --- 用語集（ハンドブックが定義しない一般用語の簡潔な定義。各文は「Xは、〜である」
      *     の種差定義形にし、定義質問の根拠として使えるようにする） --- */
     { name: '40-機械工学用語集.md', text:
@@ -324,9 +308,6 @@
         // skip an immediate gloss parenthetical so 「軸受（ベアリング）は…」 still reads
         // as topic-position (the （…） is an aside, not a real continuation).
         if (s.charAt(at) === '（' || s.charAt(at) === '(') { var ce = s.indexOf(s.charAt(at) === '（' ? '）' : ')', at); if (ce > at && ce - at <= 12) at = ce + 1; }
-        // skip okurigana (送り仮名): 焼入[れ]は・組[み]立[て]は — trailing inflection
-        // hiragana of the key, stopping at a particle so 〜の genitive still registers.
-        var oku = 0; while (oku < 2 && /[ぁ-ゖ]/.test(s.charAt(at)) && !/[はがをにのへとも]/.test(s.charAt(at))) { at++; oku++; }
         var after = s.substr(at, 2), a0 = after.charAt(0);
         var early = pos <= 8, sc;
         if (after.indexOf('とは') === 0 || a0 === 'は' || a0 === 'が' || a0 === '：' || a0 === ':') sc = early ? 0.8 : 0.4;
@@ -353,7 +334,20 @@
   function keyBoost(query) {
     var b = {};
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { b[t] = 2.2; }); });
+    // fold in the feedback layer's learned per-term boosts (👍 reinforcement).
+    if (NSCode.feedback && NSCode.feedback.boosts) {
+      var fb = NSCode.feedback.boosts(query);
+      if (fb) for (var t in fb) b[t] = Math.max(b[t] || 1, fb[t]);
+    }
     return b;
+  }
+  /* 👎-graded lines to keep out of the answer for this question (empty = none) */
+  function fbAvoid(query) {
+    return (NSCode.feedback && NSCode.feedback.blockedFor) ? NSCode.feedback.blockedFor(query) : [];
+  }
+  /* a previously 👍-vetted answer for a near-duplicate question, or null */
+  function fbRecall(query) {
+    return (NSCode.feedback && NSCode.feedback.recall) ? NSCode.feedback.recall(query) : null;
   }
 
   /* chunk every doc, tagging each chunk with its source document name */
@@ -514,7 +508,7 @@
     // de-interleave splice: an impossible verb conjugation (実現させ-る-た) or an
     // over-long single sentence packed with こと-clauses is a column-merge artifact
     // (two half-sentences glued without punctuation). Reject so it never answers.
-    if (/(さ|せ)せるた[をはが]|(れ|け)るるた/.test(s)) return true;   // 実現させるた等の癒着（するため は除外）
+    if (/(せ|れ|す|く|ま)るた[をにはがめ]/.test(s)) return true;
     if (s.length > 95 && (s.match(/こと/g) || []).length >= 3) return true;
     return false;
   }
@@ -697,7 +691,7 @@
   function answerList(question, hits, docs) {
     var r = listEnumerate(question, docs);
     if (r && r.text) return r;
-    return topByCue(question, hits, docs, /(に大別|大別さ|に分類|分類さ|に分けら|に分かれ|の種類|種類があ|などがある|があり|がある|に分け|区別さ)/, 0.8, 0.45, true);
+    return topByCue(question, hits, docs, /(に大別|大別さ|に分類|分類さ|に分けら|に分かれ|の種類|種類があ|などがある|に大別される)/, 0.8, 0.45, true);
   }
 
   /* CONCISE grounded answer (~target chars) — the baby model's natural reply.
@@ -706,8 +700,9 @@
    * trained net's own confidence (mean log-prob / seqLogProb). The text is always
    * real corpus text → grammatically clean; the net does the selection → it is
    * the baby model's answer, just kept natural and short. Returns {text, source}. */
-  function composeConcise(question, hits, docs, model, target) {
+  function composeConcise(question, hits, docs, model, target, avoid) {
     target = target || 100;
+    var blocked = {}; (avoid || []).forEach(function (s) { blocked[s] = 1; });   // 👎-graded lines to skip
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });   // content words only
     var keys = keyTerms(question);
@@ -721,7 +716,7 @@
     var seen = {}, cands = [];
     groups.forEach(function (g) {
       g.arr.forEach(function (s, idx) {
-        if (s.length < 18 || s.length > 140 || seen[s] || isJunkSent(s)) return;
+        if (s.length < 18 || s.length > 140 || seen[s] || isJunkSent(s) || blocked[s]) return;
         seen[s] = 1; cands.push({ s: s, g: g, idx: idx });
       });
     });
@@ -743,15 +738,26 @@
     shortlist.forEach(function (c) { c.nc = nl ? nl.seqLogProb(model, nl.encode(model, c.s)) : 0; });
     var ncs = shortlist.map(function (c) { return c.nc; });
     var mn = Math.min.apply(null, ncs), mx = Math.max.apply(null, ncs);
+    // feedback-trained persistent net: how "good-answer-like" each line is. It
+    // accumulates over 👍 grades, so its preference sharpens with use (0 when none).
+    var fm = (NSCode.feedback && NSCode.feedback.model) ? NSCode.feedback.model() : null;
+    if (fm && NSCode.neuralLM) {
+      shortlist.forEach(function (c) { c.fc = NSCode.neuralLM.seqLogProb(fm, NSCode.neuralLM.encode(fm, c.s)); });
+      var fcs = shortlist.map(function (c) { return c.fc; });
+      var fmn = Math.min.apply(null, fcs), fmx = Math.max.apply(null, fcs);
+      shortlist.forEach(function (c) { c.fcn = (fmx > fmn) ? (c.fc - fmn) / (fmx - fmn) : 0.5; });
+    } else {
+      shortlist.forEach(function (c) { c.fcn = 0; });
+    }
     shortlist.forEach(function (c) {
       c.ncn = (mx > mn) ? (c.nc - mn) / (mx - mn) : 0.5;
-      c.final = c.rel + 0.4 * c.ncn - 0.0015 * Math.max(0, c.s.length - 120);  // gently prefer ≤~120字 (P4)
+      c.final = c.rel + 0.4 * c.ncn + 0.3 * c.fcn - 0.0015 * Math.max(0, c.s.length - 120);  // gently prefer ≤~120字 (P4)
     });
     shortlist.sort(function (a, b) { return b.final - a.final; });
     var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
     used[top.s] = 1;
     function tryAdd(s) {
-      if (!s || used[s] || isJunkSent(s) || !sharesQuery(s)) return;     // stay on-topic (no drift)
+      if (!s || used[s] || isJunkSent(s) || !sharesQuery(s) || blocked[s]) return;     // stay on-topic (no drift)
       if (len + s.length > target + 20) return;                          // cap ~120字 (P4)
       picked.push(s); used[s] = 1; len += s.length;
     }
@@ -870,16 +876,14 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|潤滑剤|潤滑油|合金|熱処理|処理|回転力|力|剤|液体|気体|金属)(である|だ。|です。|をいう|と呼|で表され|で表す)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      // definitional STRUCTURE dominates lexical repetition, BUT only when the asked
-      // KEY is the subject (topic): so 「キャビテーション数と呼ばれ…」 (defines a
-      // different term) can't beat 「キャビテーションは…現象である」. A short, clean,
-      // key-as-subject genus/strict definition is what wins.
-      var topic = topicScore(c.s, p.keys) >= 0.4;
-      c.sc = c.rel + (topic && STRICT.test(c.s) ? 3.0 : topic && GENUS.test(c.s) ? 2.4 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
+      // definitions are concise genus–differentia statements: reward the definitional
+      // predicate and the key up front, and gently prefer a short clean line over a
+      // long enumerating/classification sentence that merely shares the term.
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
@@ -898,7 +902,7 @@
   function answerPurpose(question, hits, docs) {
     // 「Xの目的/役割/用途は？」 → a sentence stating what it is FOR. Strong cue bonus so
     // the purpose line wins even when X sits in 「Xの目的」 (genitive) position.
-    return topByCue(question, hits, docs, /(目的|ため|ねらい|役割|用途|機能|を防ぐ|防止|向上|低減|果たす|を担|接続|結合|締結|支持|固定|伝え|伝達|保持|密封|つなぐ)/, 0.8, 0.4, false);
+    return topByCue(question, hits, docs, /(目的|ため|ねらい|役割|用途|機能|を防ぐ|防止|向上|低減|果たす|を担)/, 0.8, 0.4, false);
   }
   function answerCompare(question, hits, docs) {
     var p = sentPool(question, hits, docs); var subs = p.keys.slice(0, 2);
@@ -962,7 +966,7 @@
     return { text: lead + '記号は、' + syms + '。', source: '計算式DB' };
   }
   /* router: pick a builder by intent, else fall back to composeConcise */
-  function composeByIntent(question, hits, docs, model, target) {
+  function composeByIntent(question, hits, docs, model, target, avoid) {
     var intent = classifyIntent(question), r = null;
     if (intent === 'list') r = answerList(question, hits, docs);
     else if (intent === 'howto') r = answerCalcHowto(question) || answerHowto(question, hits, docs);
@@ -971,8 +975,11 @@
     else if (intent === 'why') r = answerWhy(question, hits, docs);
     else if (intent === 'features') r = answerFeatures(question, hits, docs);
     else if (intent === 'definition') r = answerDefinition(question, hits, docs);
-    if (r && r.text) { r.intent = intent; return r; }
-    var c = composeConcise(question, hits, docs, model, target); c.intent = 'default'; return c;
+    // a structured answer the user already 👎-graded must not be served again →
+    // fall through to the concise composer (which skips the blocked lines).
+    var isBlocked = r && r.text && avoid && avoid.indexOf(r.text) >= 0;
+    if (r && r.text && !isBlocked) { r.intent = intent; return r; }
+    var c = composeConcise(question, hits, docs, model, target, avoid); c.intent = 'default'; return c;
   }
 
   /* P1 relevance floor — a confident off-topic answer is worse than admitting no
@@ -1073,6 +1080,7 @@
     if (!chunks.length || !question) return Promise.resolve(null);
     var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
+    var avoid = fbAvoid(question);
     var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
     // weight on-topic chunks (those containing a question key term) so the tiny net's
     // recall — used to rerank the answer — is grounded in the asked term, not neighbours.
@@ -1089,37 +1097,29 @@
       .then(function () {
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
-        var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100);
+        var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100, avoid);
         var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
         var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '', intent: concise.intent };
+        // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
+        var learned = false;
+        if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // Grammar Compiler Layer: turn the answer into SML per sentence, then
         // re-compile to natural Japanese (meaning-preserving; complex sentences
         // pass through unchanged).
         var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
-        // 生成モード: the trained net's ABSTRACTIVE answer — 句スパン単位の接地再構成
-        // (real corpus 句 stitched, readable). Only computed on demand (opts.generate).
-        var gen = genFromNet(opts, m, question, weak);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: weak ? [] : compose, generated: gen || concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
-          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], gen: gen };
+        return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
       });
-  }
-
-  /* 生成モード helper: the net's grounded reconstruction (句スパン接地). Returns a
-   * readable string, or '' when off / weak / unavailable. Shared by both pipelines. */
-  function genFromNet(opts, m, question, weak) {
-    if (!opts.generate || weak || !NSCode.neuralLM || !NSCode.neuralLM.groundedAnswer) return '';
-    var g = NSCode.neuralLM.groundedAnswer(m, question);
-    return (g && g.text) ? g.text : '';
   }
 
   /* ---------- Prebuilt knowledge base (機械工学, 5809 docs) ----------
@@ -1194,25 +1194,28 @@
         var L = NSCode.neuralLM;
         var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
         var compose = composeAnswer(question, res.hits, docs);
+        var avoid = fbAvoid(question);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100);
+            var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100, avoid);
             var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
             var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
+            // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
+            var learned = false;
+            if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
-            var gen = genFromNet(opts, m, question, weak);   // 生成モード: 句スパン接地再構成
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: weak ? [] : compose, generated: gen || concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
-              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], gen: gen };
+            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
           });
       });
     });
