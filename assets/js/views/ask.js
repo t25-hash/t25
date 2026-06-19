@@ -102,17 +102,19 @@
       return '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p>' +
         citeDetails(q, a.hits, '検索で近かった候補');
     }
+    // 抽出回答は grammar agent の正規化文を優先表示（複文は normalize 側で原文保持）。
+    var shown = a.normalized || a.text;
     var html;
     if (a.gentext) {   // abstractive answer (in-browser LLM), grounded on the same hits
       html = '<p class="ns-qa-answer__lead">' + highlight(a.gentext, q).replace(/\n/g, '<br>') +
         ' <span class="ns-msg__learned ns-msg__gen">生成</span>' + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
-      if (a.text) html += '<details class="ns-chat__cite"><summary>抽出（参考）</summary><p class="ns-hit__text">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p></details>';
+      if (shown) html += '<details class="ns-chat__cite"><summary>抽出（参考）</summary><p class="ns-hit__text">' + highlight(shown, q).replace(/\n/g, '<br>') + '</p></details>';
     } else if (a.genPending) {
       html = '<p class="ns-empty__hint ns-msg__thinking">抽象生成中…（ブラウザ内LLM）</p>' +
-        '<p class="ns-qa-answer__lead">' + highlight(a.text || '', q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
+        '<p class="ns-qa-answer__lead">' + highlight(shown || '', q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
     } else {
-      html = (a.text
-        ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
+      html = (shown
+        ? '<p class="ns-qa-answer__lead">' + highlight(shown, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
         : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
     }
     if (a.genNote) html += '<p class="ns-empty__hint">' + C.esc(a.genNote) + '</p>';
@@ -236,7 +238,14 @@
     // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
     NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
       entry.a.genPending = false;
-      if (txt) { entry.a.gentext = txt; persist(); }
+      if (txt) {
+        // Grammar Compiler Layer も生成回答に適用（抽出と同じく文法正規化を通す）。
+        // 失敗・未ロード時は生成生文をそのまま使う（破壊しない）。
+        var g = NSCode.grammar ? NSCode.grammar.normalize(txt) : null;
+        entry.a.gentext = (g && g.text) ? g.text : txt;
+        entry.a.gensml = g ? g.sentences : null;   // Lab/デバッグ用に SML 分解を保持
+        persist();
+      }
       else { entry.a.genNote = '※ 生成を構成できなかったため抽出で回答します'; }
       rerenderBubble(botId, entry); scrollBottom();
     }).catch(function (e) {
@@ -290,6 +299,9 @@
         '</div>';
     },
     onMount: function () {
+      // grammar agent を kuromoji 形態素解析で段階的に強化（非ブロッキング・端末内）。
+      // 失敗（vendor 未配置など）時は従来のルール解析にフォールバック。
+      if (NSCode.grammar && NSCode.grammar.initKuromoji) NSCode.grammar.initKuromoji().catch(function () {});
       el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
       if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });

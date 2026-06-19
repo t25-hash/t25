@@ -136,7 +136,11 @@
 
   function groundedAnswer(question, contexts, opts) {
     return debugAnswer(question, contexts, opts).then(function (r) {
-      return (r.text && r.text.length >= 10) ? r.text : '';   // too short/degenerate → let caller fall back
+      if (!r.text || r.text.length < 10) return '';            // too short → let caller fall back
+      // kuromoji coherence gate (生成後処理): reject token-salad so Ask falls back
+      // to the extractive answer instead of showing degenerate output.
+      if (NSCode.grammar && NSCode.grammar.coherence && !NSCode.grammar.coherence(r.text).ok) return '';
+      return r.text;
     });
   }
 
