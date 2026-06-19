@@ -270,15 +270,18 @@
     var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
     var seen = {}, out = [];
     runs.forEach(function (r) {
-      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word
-        // strip TRAILING particles (はめあい「は」/ねじ「の」) to recover the topic word.
-        // (split-on-first-particle wrongly dropped words that START with a particle
-        // char, e.g. はめあい → は is the word's first kana, not a particle.)
-        r = r.replace(/[はがをにでとへものやかよ]+$/, '');
-        if (!r || r.length < 2 || r.length > 4 || HIRA_STOP[r] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(r)) return;
-        // a leading は/も/が/を that leaves a stopword behind was a particle splice
-        // (軸受「は」どう → はどう → どう); drop it. はめあい→めあい(非停止語)は保持。
-        if (/^[はもがを]/.test(r) && HIRA_STOP[r.slice(1)]) return;
+      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word(s)
+        // a coordinated run (すきまばめ「と」しまりばめ) carries multiple topics: split on
+        // the coordinating particles と/や only (NOT case particles は/が/を, so a word that
+        // STARTS with such a kana — はめあい — stays whole), then keep each segment with
+        // its trailing particles stripped (ねじ「の」→ねじ).
+        r.split(/[とや]/).forEach(function (seg) {
+          seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
+          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
+          if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
+          if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
+        });
+        return;
       }
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
@@ -1010,13 +1013,18 @@
     }
     // SYNTHESIS fallback: no single sentence compares both subjects — combine the
     // best on-topic sentence about EACH subject into one contrastive answer (a real
-    // two-fact synthesis, the kind a generative model would produce).
-    function bestFor(k) {
-      var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110; })
+    // two-fact synthesis, the kind a generative model would produce). The second
+    // subject prefers a sentence that ISN'T about the first too (a definition of B
+    // that also mentions A — 合金鋼の定義 mentions 炭素鋼 — would otherwise dup the
+    // first pick and collapse the synthesis), and never reuses the first sentence.
+    function bestFor(k, other, avoidS) {
+      var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110 && c.s !== avoidS; })
         .sort(function (a, b) { return b.rel - a.rel; });
+      if (other) { var only = cs.filter(function (c) { return c.s.indexOf(other) < 0; }); if (only.length) return only[0]; }
       return cs[0];
     }
-    var a0 = bestFor(subs[0]), b0 = bestFor(subs[1]);
+    var a0 = bestFor(subs[0], subs[1], null);
+    var b0 = bestFor(subs[1], subs[0], a0 ? a0.s : null);
     if (a0 && b0 && a0.s !== b0.s && (a0.s.length + b0.s.length) <= 210) {
       var sep = /[。．]$/.test(a0.s) ? '一方、' : '。一方、';
       return { text: a0.s + sep + b0.s, source: a0.src };
@@ -1276,10 +1284,11 @@
         var cdocs = _k0.length ? getDocs().filter(function (d) {
           var t = d.text || ''; for (var i = 0; i < _k0.length; i++) if (t.indexOf(_k0[i]) >= 0) return true; return false;
         }) : [];
-        // the 用語集 is pure definitions — blend it ONLY for definition questions so it
-        // doesn't override intent-specific sentences (目的/なぜ/特徴). The richer
-        // DEFAULT_DOCS (which also carry features/purpose) blend for every intent.
-        if (classifyIntent(question) !== 'definition') cdocs = cdocs.filter(function (d) { return !/用語集/.test(d.name); });
+        // the 用語集 is pure definitions — blend it for definition AND compare questions
+        // (compare SYNTHESISES each subject's definition: 「ねじは…。一方、ボルトは…」), but
+        // not for 目的/なぜ/特徴 where it would override intent-specific sentences.
+        var _qi = classifyIntent(question);
+        if (_qi !== 'definition' && _qi !== 'compare') cdocs = cdocs.filter(function (d) { return !/用語集/.test(d.name); });
         var pdocs = cdocs.length ? docs.concat(cdocs) : docs;
         var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
         // weight on-topic chunks so the net's recall (used to rerank the answer) is

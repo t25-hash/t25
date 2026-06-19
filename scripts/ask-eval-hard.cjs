@@ -91,7 +91,23 @@ const BANK = [
   { q: '軸の設計', intent: 'default', expect: ['軸', 'トルク', 'ねじり', '直径'] },
   // compare paraphrases
   { q: 'すべり軸受と転がり軸受はどう違う', intent: 'compare', expect: ['軸受'] },
-  { q: '炭素鋼と合金鋼の違い', intent: 'compare', expect: ['炭素鋼', '合金鋼', '合金'] }
+  { q: '炭素鋼と合金鋼の違い', intent: 'compare', expect: ['炭素鋼', '合金鋼', '合金'] },
+  // ---- extended bank (round 2): new vocabulary / question shapes ----
+  { q: 'ステンレスの種類', intent: 'list', expect: ['ステンレス', 'オーステナイト', 'フェライト', 'マルテンサイト', '鋼'] },
+  { q: 'ばねの種類', intent: 'list', expect: ['ばね', 'コイル', '板ばね', '皿ばね'] },
+  { q: 'モジュールとは', intent: 'definition', expect: ['モジュール', '歯', 'm'] },
+  { q: '安全率とは何か', intent: 'definition', expect: ['安全率', '応力', '比'] },
+  { q: 'クリープとは', intent: 'definition', expect: ['クリープ', '高温', 'ひずみ', '時間'] },
+  { q: '焼入れと焼戻しの違い', intent: 'compare', expect: ['焼入れ', '焼戻し', '焼戻', '硬', '粘'] },
+  { q: 'カムの役割は', intent: 'purpose', expect: ['カム', '運動', '従動'] },
+  { q: 'ベアリングはなぜ壊れるのか', intent: 'why', expect: ['軸受', '疲労', '剥離', 'フレーキング', '寿命'] },
+  { q: '歯車の歯が折れるのはなぜ', intent: 'why', expect: ['歯', '曲げ', '疲労', '折損', '応力'] },
+  { q: '潤滑油の役割', intent: 'purpose', expect: ['潤滑', '摩擦', '摩耗', '油'] },
+  { q: 'すきまばめとしまりばめの違い', intent: 'compare', expect: ['すきま', '締め', 'しまり', 'はめあい'] },
+  { q: '減速機とは何か', intent: 'definition', expect: ['減速', '歯車', 'トルク', '回転'] },
+  { q: '応力とひずみの関係', intent: 'default', expect: ['応力', 'ひずみ', '比例', 'フック', '弾性'] },
+  { q: 'ねじとボルトの違いは', intent: 'compare', expect: ['ねじ', 'ボルト', '締結'] },
+  { q: '溶接の種類', intent: 'list', expect: ['溶接', 'アーク', 'ガス', '抵抗', 'スポット'] }
 ];
 
 function intentHallmark(intent, a) {
