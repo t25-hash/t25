@@ -27,7 +27,12 @@ require(path.join(VENDOR, 'kuromoji.js')).builder({ dicPath: path.join(VENDOR, '
   const QS = process.argv.slice(2).length ? process.argv.slice(2) : ['歯車とは何ですか', '軸受の役割は', 'ねじの種類', '玉軸受とは何か'];
   for (const q of QS) {
     const a = await N.askEngine.hybridAnswerKB(q, { store: 'kb', steps: 300 });
-    const ctx = (a.hits || []).map(h => h.chunk.text);
+    // mirror views/ask.js maybeGenerate: seed generation with curated content first
+    const seeds = [];
+    if (a.text) seeds.push(a.text);
+    if (a.compose && a.compose.length) seeds.push(...a.compose);
+    if (a.memo) seeds.push(a.memo);
+    const ctx = seeds.concat((a.hits || []).map(h => h.chunk.text));
     if (!ctx.length) { ok(`[${q}] retrieval`, false); continue; }
     const gen = await N.sml.groundedAnswer(q, ctx, { steps: 300 });
     console.log(`\nQ: ${q}\n   GEN: ${gen || '<empty → extractive fallback>'}`);
