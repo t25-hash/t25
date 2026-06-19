@@ -137,6 +137,22 @@
       'パルプ化・洗浄・漂白を経たパルプは、抄紙機（ワイヤパートで脱水、プレスパートで搾水、ドライヤパートで乾燥）を通って連続した紙になります。\n\n' +
       '繊維機械は、紡績（開繊・カード・練条・粗紡・精紡）や織布などで、繊維を糸や布へ加工する設備群です。' },
 
+    /* --- 用語の定義（ハンドブックが定義しない中核語の種差定義） --- */
+    { name: '33-機械工学の用語定義.md', text:
+      '潤滑油は、摩擦面の間に油膜をつくり、摩擦と摩耗を低減するために用いる液体潤滑剤である。\n\n' +
+      'トルクは、物体を軸まわりに回転させる力のモーメントで、力と腕の長さの積で表される回転力である。\n\n' +
+      '剛性は、物体が外力に対して変形しにくい度合いを表す性質で、変形を生じさせるのに必要な力の大きさで表される。\n\n' +
+      '焼入れは、鋼を変態点以上に加熱したのち急冷し、硬さと強度を高める熱処理である。\n\n' +
+      '焼戻しは、焼入れした鋼を再加熱して粘り強さ（靱性）を回復させ、内部応力を除く熱処理である。\n\n' +
+      'キャビテーションは、液体の高速・低圧部で気泡が発生し、圧力回復部で崩壊して壊食・振動・騒音を引き起こす現象である。\n\n' +
+      '共振は、外力の振動数が系の固有振動数に一致したときに振幅が著しく増大する現象である。\n\n' +
+      'クリープは、高温で一定荷重を受け続けた材料が、時間とともにゆっくり変形が進む現象である。\n\n' +
+      'フランジは、管や軸の端に設けるつば状の部分で、ボルトで締結して管や部材どうしを接続・固定する機械要素である。\n\n' +
+      'シールは、すきまをふさいで流体の漏れや異物の侵入を防ぐ密封要素である。\n\n' +
+      '軸継手は、二つの軸を接続して回転とトルクを伝える機械要素である。\n\n' +
+      '青銅は、銅とすずを主成分とする合金で、耐摩耗性・耐食性に優れ、軸受や歯車に用いられる。\n\n' +
+      'モジュールは、歯車の歯の大きさを表す基準で、基準円直径を歯数で割った値である。' },
+
     /* --- 用語集（ハンドブックが定義しない一般用語の簡潔な定義。各文は「Xは、〜である」
      *     の種差定義形にし、定義質問の根拠として使えるようにする） --- */
     { name: '40-機械工学用語集.md', text:
@@ -308,6 +324,9 @@
         // skip an immediate gloss parenthetical so 「軸受（ベアリング）は…」 still reads
         // as topic-position (the （…） is an aside, not a real continuation).
         if (s.charAt(at) === '（' || s.charAt(at) === '(') { var ce = s.indexOf(s.charAt(at) === '（' ? '）' : ')', at); if (ce > at && ce - at <= 12) at = ce + 1; }
+        // skip okurigana (送り仮名): 焼入[れ]は・組[み]立[て]は — trailing inflection
+        // hiragana of the key, stopping at a particle so 〜の genitive still registers.
+        var oku = 0; while (oku < 2 && /[ぁ-ゖ]/.test(s.charAt(at)) && !/[はがをにのへとも]/.test(s.charAt(at))) { at++; oku++; }
         var after = s.substr(at, 2), a0 = after.charAt(0);
         var early = pos <= 8, sc;
         if (after.indexOf('とは') === 0 || a0 === 'は' || a0 === 'が' || a0 === '：' || a0 === ':') sc = early ? 0.8 : 0.4;
@@ -495,7 +514,7 @@
     // de-interleave splice: an impossible verb conjugation (実現させ-る-た) or an
     // over-long single sentence packed with こと-clauses is a column-merge artifact
     // (two half-sentences glued without punctuation). Reject so it never answers.
-    if (/(せ|れ|す|く|ま)るた[をにはがめ]/.test(s)) return true;
+    if (/(さ|せ)せるた[をはが]|(れ|け)るるた/.test(s)) return true;   // 実現させるた等の癒着（するため は除外）
     if (s.length > 95 && (s.match(/こと/g) || []).length >= 3) return true;
     return false;
   }
@@ -678,7 +697,7 @@
   function answerList(question, hits, docs) {
     var r = listEnumerate(question, docs);
     if (r && r.text) return r;
-    return topByCue(question, hits, docs, /(に大別|大別さ|に分類|分類さ|に分けら|に分かれ|の種類|種類があ|などがある|に大別される)/, 0.8, 0.45, true);
+    return topByCue(question, hits, docs, /(に大別|大別さ|に分類|分類さ|に分けら|に分かれ|の種類|種類があ|などがある|があり|がある|に分け|区別さ)/, 0.8, 0.45, true);
   }
 
   /* CONCISE grounded answer (~target chars) — the baby model's natural reply.
@@ -851,14 +870,16 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|潤滑剤|潤滑油|合金|熱処理|処理|回転力|力|剤|液体|気体|金属)(である|だ。|です。|をいう|と呼|で表され|で表す)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      // definitions are concise genus–differentia statements: reward the definitional
-      // predicate and the key up front, and gently prefer a short clean line over a
-      // long enumerating/classification sentence that merely shares the term.
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
+      // definitional STRUCTURE dominates lexical repetition, BUT only when the asked
+      // KEY is the subject (topic): so 「キャビテーション数と呼ばれ…」 (defines a
+      // different term) can't beat 「キャビテーションは…現象である」. A short, clean,
+      // key-as-subject genus/strict definition is what wins.
+      var topic = topicScore(c.s, p.keys) >= 0.4;
+      c.sc = c.rel + (topic && STRICT.test(c.s) ? 3.0 : topic && GENUS.test(c.s) ? 2.4 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
@@ -877,7 +898,7 @@
   function answerPurpose(question, hits, docs) {
     // 「Xの目的/役割/用途は？」 → a sentence stating what it is FOR. Strong cue bonus so
     // the purpose line wins even when X sits in 「Xの目的」 (genitive) position.
-    return topByCue(question, hits, docs, /(目的|ため|ねらい|役割|用途|機能|を防ぐ|防止|向上|低減|果たす|を担)/, 0.8, 0.4, false);
+    return topByCue(question, hits, docs, /(目的|ため|ねらい|役割|用途|機能|を防ぐ|防止|向上|低減|果たす|を担|接続|結合|締結|支持|固定|伝え|伝達|保持|密封|つなぐ)/, 0.8, 0.4, false);
   }
   function answerCompare(question, hits, docs) {
     var p = sentPool(question, hits, docs); var subs = p.keys.slice(0, 2);
