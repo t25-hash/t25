@@ -1294,6 +1294,22 @@
       var p = index.post[t]; if (!p) return;
       p.forEach(function (e) { score[e[0]] = (score[e[0]] || 0) + e[1] * w[t]; });
     });
+    // TITLE-MATCH boost (BM25F-style field weighting): a document whose TITLE contains
+    // the question's specific term(s) is strongly on-topic. The body inverted index is
+    // pruned to K docs per term, so a doc named exactly after a COMMON term (「ひずみ」)
+    // is often dropped from that term's postings; scanning the (short) titles recovers
+    // it and ranks it where it belongs. High precision because titles are topic phrases
+    // and we match only specific key terms (generics removed).
+    if (index.meta) {
+      var tkeys = keyTerms(query).concat(synTerms(query)).filter(function (t) { return t.length >= 2; });
+      if (tkeys.length) {
+        for (var di = 0; di < index.meta.length; di++) {
+          var mt = index.meta[di]; if (!mt) continue;
+          var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
+          if (th) score[di] = (score[di] || 0) + th * 5;     // strong, additive — a title hit should win
+        }
+      }
+    }
     return Object.keys(score).map(function (i) { return { idx: +i, score: score[i], title: index.meta[+i] }; })
       .sort(function (a, b) { return b.score - a.score; }).slice(0, k);
   }
