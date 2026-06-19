@@ -775,9 +775,9 @@
       purpose: n(/目的|役割|用途|機能|働き|ねらい|何のため/g),
       why: n(/なぜ|理由|原因|どうして|要因/g),
       features: n(/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/g),
-      // howto: strong step cues count fully; bare 方法/どのように only weakly (0.4)
-      // so they don't outrank a real definition/why question that mentions them.
-      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g),
+      // howto: strong step cues count fully; bare 方法/どのように/どう〜する only
+      // weakly (0.4–0.5) so they don't outrank a real definition/why question.
+      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g) + 0.5 * n(/どう(設計|決|求|選|計算|配置|使)/g),
       // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
       // とは only counts as DEFINITIONAL at clause end / before 何ど (「熱伝達率とは」),
       // not mid-phrase 「平歯車とはすば歯車」 where it is just と+は (≈ "A and B").
@@ -928,11 +928,23 @@
     if (steps.length > 8) steps = steps.slice(0, 8);
     return { text: steps.map(function (s, i) { return (STEP_MARK[i] || (i + 1) + '.') + ' ' + s; }).join('\n'), source: src.src };
   }
+  /* calculation how-to: when the corpus has no prose steps, a 「どう求める/設計する」
+   * question is genuinely answered by its governing FORMULA. Pull it from the calc
+   * registry (式名＋式＋記号説明) so design/quantity how-tos still get a useful reply. */
+  function answerCalcHowto(question) {
+    if (!NSCode.calc) return null;
+    var f = (NSCode.calc.lookup(question).formulas || [])[0];
+    if (!f) return null;
+    var topic = keyTerms(question)[0] || '';
+    var syms = f.where.map(function (w) { return w.sym + '＝' + w.desc; }).join('、');
+    var lead = (topic ? topic + 'は、' : '') + f.name + '（' + f.expr + '）で求めます。';
+    return { text: lead + '記号は、' + syms + '。', source: '計算式DB' };
+  }
   /* router: pick a builder by intent, else fall back to composeConcise */
   function composeByIntent(question, hits, docs, model, target) {
     var intent = classifyIntent(question), r = null;
     if (intent === 'list') r = answerList(question, hits, docs);
-    else if (intent === 'howto') r = answerHowto(question, hits, docs);
+    else if (intent === 'howto') r = answerCalcHowto(question) || answerHowto(question, hits, docs);
     else if (intent === 'compare') r = answerCompare(question, hits, docs);
     else if (intent === 'purpose') r = answerPurpose(question, hits, docs);
     else if (intent === 'why') r = answerWhy(question, hits, docs);

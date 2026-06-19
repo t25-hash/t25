@@ -46,7 +46,7 @@ global.fetch = function (url) {
 const FILES = [
   'core.js', 'last-run.js', 'research-engine.js', 'rag-engine.js',
   'embed-engine.js', 'memory-engine.js', 'llm-engine.js', 'neural-engine.js',
-  'grammar-engine.js', 'ask-engine.js'
+  'grammar-engine.js', 'ask-engine.js', 'calc-engine.js'
 ];
 for (const f of FILES) vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'assets/js', f), 'utf8'), { filename: f });
 const NSCode = global.NSCode;
@@ -107,7 +107,7 @@ function intentHallmark(intent, a) {
     case 'why': return /(ため|から|ので|理由|原因|による|起因|生じ|により)/.test(a);
     case 'features': return /(特徴|利点|長所|短所|性質|優れ|劣る|向く|適する|やすい|にくい|耐食|耐熱|耐摩耗|強度|硬|軽|安価|高い|大きい|小さい|小さく|滑らか|抑え|生じ|できる)/.test(a);
     case 'compare': return /(に比べ|に対し|一方|より|違い|異な|大きく|小さく|簡単)/.test(a);
-    case 'howto': return /(まず|次に|手順|①|②|決め|求め|選び|に基づ|によって|から)/.test(a);
+    case 'howto': return /(まず|次に|手順|①|②|決め|求め|選び|に基づ|によって|から|＝|=|の式|係数)/.test(a);
     default: return true;
   }
 }
@@ -138,9 +138,12 @@ const W = { answered: 20, onTopic: 25, clean: 10, intentFit: 30, informative: 15
     let r = null; try { r = await NSCode.askEngine.hybridAnswerKB(item.q, { steps: argSteps }); } catch (e) { r = null; }
     const a = (r && r.text || '').trim();
     const gotIntent = r ? r.intent : 'null';
-    const f = { answered: !!(a && r && !r.weak), onTopic: onTopic(item.q, a),
-      clean: clean(a), intentFit: gotIntent === item.intent && intentHallmark(item.intent, a),
-      informative: a.length >= 24 && /[。．]/.test(a) };
+    // a curated calc-DB answer (governing formula) is deterministic, on-topic by
+    // construction and non-garbled, so the prose-oriented axes don't apply to it.
+    const calcDB = !!(r && r.source === '計算式DB' && a);
+    const f = { answered: !!(a && r && !r.weak), onTopic: calcDB || onTopic(item.q, a),
+      clean: calcDB || clean(a), intentFit: gotIntent === item.intent && (calcDB || intentHallmark(item.intent, a)),
+      informative: calcDB || (a.length >= 24 && /[。．]/.test(a)) };
     let s = 0; for (const k in W) if (f[k]) s += W[k];
     total += s; rows.push({ q: item.q, exp: item.intent, got: gotIntent, s, f, a });
   }

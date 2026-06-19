@@ -39,7 +39,7 @@ global.fetch = function (url) {
 const FILES = [
   'core.js', 'last-run.js', 'research-engine.js', 'rag-engine.js',
   'embed-engine.js', 'memory-engine.js', 'llm-engine.js', 'neural-engine.js',
-  'grammar-engine.js', 'ask-engine.js'
+  'grammar-engine.js', 'ask-engine.js', 'calc-engine.js'
 ];
 for (const f of FILES) {
   const code = fs.readFileSync(path.join(ROOT, 'assets/js', f), 'utf8');
