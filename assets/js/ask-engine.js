@@ -173,7 +173,9 @@
       'モジュールは、歯車の歯の大きさを表す基準寸法で、ピッチ円直径を歯数で割った値である。\n\n' +
       '安全率は、材料の基準強さを設計で許容する応力で割った比で、不確かさに対する余裕を表す数値である。\n\n' +
       '危険速度は、回転軸の固有振動数と回転数が一致して共振を起こす回転速度である。\n\n' +
-      'モーメントは、物体を回転させようとする力の効果で、力と回転中心までの距離の積で表される量である。' }
+      'モーメントは、物体を回転させようとする力の効果で、力と回転中心までの距離の積で表される量である。\n\n' +
+      '幾何公差は、形状・姿勢・位置・振れなど部品の幾何特性に許容する誤差を規定する公差である（GD&T）。\n\n' +
+      '部品表は、製品を構成する部品の品番・名称・数量などを一覧にした文書である（BOM）。' }
   ];
 
   function getDocs() { return store.get('ask.docs', DEFAULT_DOCS); }
@@ -272,7 +274,7 @@
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
     // recognised as the topic). For a hiragana run we take the leading CONTENT segment
     // before any particle (ねじのには…→ねじ, ばねを→ばね) and drop function-words/verbs.
-    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
+    var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9&.\-]*[A-Za-z]|[A-Za-z][A-Za-z0-9\-]+/g) || [];
     var seen = {}, out = [];
     runs.forEach(function (r) {
       if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word(s)
@@ -329,7 +331,9 @@
     '軸受': ['ベアリング'], '歯車': ['ギヤ', 'ギア'],
     'ねじ': ['ボルト'], 'スクリュー': ['ねじ'],
     'プーリ': ['プーリー', 'ベルト車'], 'ベアリング鋼': ['軸受鋼'],
-    'ステンレス': ['ステンレス鋼'], 'モータ': ['電動機'], 'モーター': ['電動機']
+    'ステンレス': ['ステンレス鋼'], 'モータ': ['電動機'], 'モーター': ['電動機'],
+    // acronyms → the Japanese term the handbook uses (keyTerms keeps & and . in tokens)
+    'GD&T': ['幾何公差'], 'BOM': ['部品表'], 'CAE': ['解析'], 'CAD': ['設計'], 'GDT': ['幾何公差']
   };
   /* canonical synonyms of a query's key terms (for retrieval expansion + enumeration) */
   function synTerms(query) {
@@ -735,7 +739,7 @@
       if (!pre) return false;
       if (/[のをにへとがで、，。．・（(）)\s／/「」：:＝=]/.test(pre)) return true;
       if (/^[ぁ-ゖ]$/.test(pre)) return true;            // single-kana prefix = truncated fragment (り弁←絞り弁)
-      if (/[はも](?=[一-鿿])/.test(pre)) return true;     // spliced particle は/も before a kanji (後者は安全弁)
+      if (/[はもや](?=[一-鿿])/.test(pre)) return true;   // spliced particle は/も/や before a kanji (後者は安全弁・加工や熱処理)
       return STRUCT_PRE.test(pre) || VERB_PRE.test(pre) || LEAD_PRE.test(pre);
     }
     var seen = {}, items = [], srcCount = {}, m;
@@ -1002,7 +1006,7 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
