@@ -785,16 +785,21 @@
     // alone is excluded (it ends nearly every declarative sentence: 「必要である」).
     // 「である/だ」 count only when introduced by 「…とは」 earlier in the sentence.
     var STRICT = /(とは[^。]*?(である|だ。|だと|をいう|のこと)|をいう|のことである|を指す|を意味|と呼ばれ|と称さ|と定義|といい)/;
+    // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
+    // the COMMONEST definition form. Recognised when a class noun precedes である/だ
+    // AND the key is the topic, so a plain classification still reads as a definition.
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質)(である|だ。|です。|をいう|と呼)/;
+    function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.8 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0);
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.8 : GENUS.test(c.s) ? 0.55 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
     if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
-    // accept only a real definition OR a sentence with the key in topic position;
-    // otherwise defer to composeConcise (which still prefers the most on-topic line).
-    if (!STRICT.test(top.s) && topicScore(top.s, p.keys) < 0.4) return null;
+    // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
+    // the key in topic position; else defer to composeConcise (most on-topic line).
+    if (!isDef(top.s) && topicScore(top.s, p.keys) < 0.4) return null;
     return { text: top.s, source: top.src };
   }
   function answerWhy(question, hits, docs) {
