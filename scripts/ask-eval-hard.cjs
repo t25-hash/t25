@@ -107,7 +107,20 @@ const BANK = [
   { q: '減速機とは何か', intent: 'definition', expect: ['減速', '歯車', 'トルク', '回転'] },
   { q: '応力とひずみの関係', intent: 'default', expect: ['応力', 'ひずみ', '比例', 'フック', '弾性'] },
   { q: 'ねじとボルトの違いは', intent: 'compare', expect: ['ねじ', 'ボルト', '締結'] },
-  { q: '溶接の種類', intent: 'list', expect: ['溶接', 'アーク', 'ガス', '抵抗', 'スポット'] }
+  { q: '溶接の種類', intent: 'list', expect: ['溶接', 'アーク', 'ガス', '抵抗', 'スポット'] },
+  // ---- extended bank (round 3): acronyms / multi-hop / spec / casual ----
+  { q: '歯車が騒音を出すのはなぜ', intent: 'why', expect: ['歯車', '騒音', 'かみ合い', '振動', '歯'] },
+  { q: '軸が折れる原因は', intent: 'why', expect: ['軸', '応力', '疲労', '集中', 'ねじり'] },
+  { q: 'GD&Tとは', intent: 'definition', expect: ['幾何公差', '公差', '形状', '位置'] },
+  { q: 'BOMとは何か', intent: 'definition', expect: ['部品表', 'BOM', '部品'] },
+  { q: 'CAEとは', intent: 'definition', expect: ['解析', 'CAE'] },
+  { q: '歯車のかみ合い率とは', intent: 'definition', expect: ['かみ合い', '歯', '率'] },
+  { q: 'ねじの呼び径とは', intent: 'definition', expect: ['ねじ', '径'] },
+  { q: '熱処理にはどんな種類があるか', intent: 'list', expect: ['焼入れ', '焼戻し', '焼なまし', '焼ならし', '浸炭'] },
+  { q: 'なぜ安全率を設けるのか', intent: 'why', expect: ['安全率', '不確', '余裕', 'ばらつき', '安全'] },
+  { q: 'ばね定数とは何か', intent: 'definition', expect: ['ばね', '定数', '荷重', '変形'] },
+  { q: '潤滑油はどう選ぶ', intent: 'howto', expect: ['潤滑', '粘度', '油', '荷重', '速度'] },
+  { q: '応力集中を防ぐには', intent: 'howto', expect: ['応力集中', 'フィレット', '丸', 'すみ肉', '緩和'] }
 ];
 
 function intentHallmark(intent, a) {

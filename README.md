@@ -21,7 +21,7 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 >
 > | Lab | 実装内容 |
 > | --- | --- |
-> | **Ask (RAG)** ⭐ | 自分の文書を追加（貼付 / .txt・.md・.pdf）→ 質問 → **その文書に基づく回答＋出典**。検索=TF-IDF（実物）/ 回答=抽出型＋👍/👎で学習。**🧠 抽象生成（実験）**＝WebGPU対応端末＋自前重み配置時はブラウザ内LLMが根拠から生成（[`assets/models/`](assets/models/)・外部API不使用）。トップ常設 |
+> | **Ask (RAG)** ⭐ | 自分の文書を追加（貼付 / .txt・.md・.pdf）→ 質問 → **その文書に基づく回答＋出典**。検索=**BM25（Okapi・実物）**＋同義語展開/多義語デブースト/意図分類。回答=抽出＋**🧠 抽象生成（自前SML・接地制約・既定ON）**＋👍/👎で学習。WebGPU対応端末＋自前重み配置時はブラウザ内LLMも利用可（[`assets/models/`](assets/models/)・外部API不使用）。トップ常設 |
 > | **Doc 生成** ⭐ | プロンプト → **Excel(.xlsx) / Word(.doc) / Markdown(.md) / CSV** を生成・DL。表（列・行）/ 見出し / 箇条書きを解釈。Excel は同梱 [SheetJS](https://sheetjs.com)（Apache-2.0）で実 .xlsx |
 > | **Academy** | 全トピックに解説テキスト + 関連 Lab リンク |
 > | **Playground** | LLM: 実トークン数 + リクエスト構造 + モデル別コスト試算（応答は擬似）/ Prompt: 6観点ヒューリスティック評価 + 改善案 |
