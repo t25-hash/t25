@@ -353,6 +353,59 @@
   // 1節 → SML（kuromoji が使えればそれを、無ければ従来のルール解析を使う）
   function analyzeClause(core) { return _tokenizer ? toSMLk(core) : toSML(core); }
 
+  /* ===== 接地生成（grounded generation）のための kuromoji 解析ヘルパ =============
+   * 赤ちゃんモデルが「どの語を使うか」を生成・選択する一方、文の骨格は SML スロットに
+   * 固定して compile で組み立てる（生成自体に文法ルールを入れる）。そのための部品。 */
+  function analyze(text) { if (!_tokenizer) return null; try { return _tokenizer.tokenize(String(text || '')); } catch (e) { return null; } }
+  // 文中の複合名詞句とその直後の助詞を取り出す（スロット候補の語彙プール）
+  function nouns(tokens) {
+    if (!tokens) return [];
+    var out = [], buf = '';
+    tokens.forEach(function (t) {
+      if (t.pos === '名詞' || t.pos === '接頭詞' || (t.pos === '記号' && /[A-Za-z0-9ー・]/.test(t.surface_form))) buf += t.surface_form;
+      else { if (buf) { out.push({ text: buf, particle: t.pos === '助詞' ? t.surface_form : '' }); buf = ''; } }
+    });
+    if (buf) out.push({ text: buf, particle: '' });
+    return out;
+  }
+  // 文の主述語を辞書形＋時制/丁寧/否定/終止判定で取り出す（名詞述語は genus を返す）
+  function predicate(tokens) {
+    if (!tokens || !tokens.length) return null;
+    var tk = tokens.slice();
+    while (tk.length && tk[tk.length - 1].pos === '記号' && !/[A-Za-z0-9]/.test(tk[tk.length - 1].surface_form)) tk.pop();
+    var i = tk.length - 1;
+    while (i >= 0 && tk[i].pos === '助詞') i--;
+    var end = i;
+    while (i >= 0 && isPred(tk[i])) i--;
+    var pred = tk.slice(i + 1, end + 1), head = tk.slice(0, i + 1);
+    if (!pred.length) return null;
+    var dict = null, isAdj = false;
+    for (var k = 0; k < pred.length; k++) {
+      var t = pred[k];
+      if (t.pos === '形容詞') { dict = t.basic_form; isAdj = true; break; }
+      if (t.pos === '動詞') {
+        dict = t.basic_form;
+        if (dict === 'する' && head.length && head[head.length - 1].pos === '名詞' && head[head.length - 1].pos_detail_1 === 'サ変接続') dict = head[head.length - 1].surface_form + 'する';
+        break;
+      }
+    }
+    if (!dict) {   // 名詞述語：述部が助動詞のみ → 直前の連続名詞を genus とする
+      var g = '', j = head.length - 1;
+      while (j >= 0 && (head[j].pos === '名詞' || head[j].pos === '接頭詞')) { g = head[j].surface_form + g; j--; }
+      if (g && pred.every(function (t) { return t.pos === '助動詞'; })) { isAdj = true; dict = g; }
+      else return null;
+    }
+    var polite = false, past = false, negative = false;
+    pred.forEach(function (t) {
+      if (t.pos === '助動詞') { var b = t.basic_form, s = t.surface_form;
+        if (b === 'ます' || b === 'です') polite = true;
+        if (b === 'た' || s === 'た' || s === 'だ' || s === 'でし') past = true;
+        if (b === 'ない' || b === 'ぬ' || b === 'ん') negative = true; }
+      if (t.pos === '形容詞' && t.basic_form === 'ない') negative = true;
+    });
+    return { dict: dict, isAdj: isAdj, tense: past ? 'past' : 'present', polite: polite, negative: negative, finite: pred[pred.length - 1].conjugated_form === '基本形' };
+  }
+
   /* kuromoji による生成文の「コヒーレンス判定」（生成後処理）。極小ニューラル生成器が
    * 出すトークン崩壊文（助詞・記号の羅列／同語の連続／終止述語なし）を形態素的に検出し、
    * 弾けるようにする。呼び出し側はこれが false なら抽出回答にフォールバックする。
@@ -426,5 +479,6 @@
 
   NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
     toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface,
-    initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, coherence: coherence, _setTokenizer: setTokenizer };
+    initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, coherence: coherence,
+    analyze: analyze, nouns: nouns, predicate: predicate, _setTokenizer: setTokenizer };
 })(window.NSCode);

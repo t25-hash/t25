@@ -109,18 +109,103 @@
       .then(function () { return decode(m, question, ctxText, opts); });
   }
 
+  /* ---------- 接地リコンビネーション生成（grammar-ruled grounded generation） -------
+   * 赤ちゃんモデルは「どの語を使うか」を生成・選択するが、文の骨格は SML スロット
+   * （主語・対象・述語）に固定し grammar.compile で組み立てる。これにより
+   *   - 文法は構造的に壊れない（生成自体にルールが入っている）
+   *   - 語は文脈の copy 制約＋kuromoji の品詞でスロット適合のものだけ（幻覚しない）
+   *   - 主語と対象/述語の関係は実文（質問キーワードを含む文）から接地（recombination）
+   * 自由トークン生成の崩壊問題を、構造を与えることで根本的に回避する。 */
+  function recombine(question, contexts, opts) {
+    opts = opts || {};
+    var G = NSCode.grammar, AE = NSCode.askEngine, EM = NSCode.embeddings, L = NSCode.neuralLM;
+    if (!G || !G.ready || !G.ready() || !G.analyze || !L) return Promise.resolve('');
+    var ki = (AE && AE._internal) || {};
+    var keyTerms = ki.keyTerms || function () { return []; };
+    var classifyIntent = ki.classifyIntent || function () { return 'default'; };
+    var ctxText = contexts.join('\n');
+    var subj = (keyTerms(question)[0]) || '';
+    if (!subj) return Promise.resolve('');                       // no topic → let neural/extractive handle
+    // sentences that mention the subject (the grounding pool); fall back to all
+    var sents = ctxText.split(/(?<=[。．！？\n])/).map(function (s) { return s.replace(/^[\s　]+|[\s　]+$/g, ''); })
+      .filter(function (s) { return s.length >= 8 && s.length <= 160; });
+    var pool = sents.filter(function (s) { return s.indexOf(subj) >= 0; });
+    if (!pool.length) return Promise.resolve('');
+    var intent = classifyIntent(question);
+    var qv = EM ? EM.embed(question, 64) : null;
+    function rel(text) { return (qv && EM) ? EM.cosine(qv, EM.embed(text, 64)) : 0; }
+    // harvest slot candidates from the grounding pool (kuromoji POS)
+    var genus = [], objs = {}, verbs = {};
+    pool.forEach(function (s) {
+      var tk = G.analyze(s); if (!tk) return;
+      var pr = G.predicate(tk);
+      if (pr && pr.finite) {
+        if (pr.isAdj) genus.push({ genus: pr.dict, pr: pr, rel: rel(s) });
+        else if (!verbs[pr.dict] || verbs[pr.dict].rel < rel(s)) verbs[pr.dict] = { dict: pr.dict, pr: pr, rel: rel(s) };
+      }
+      G.nouns(tk).forEach(function (n) {
+        if (!n.text || n.text.length < 2 || n.text === subj || subj.indexOf(n.text) >= 0) return;
+        if (/[、，,。．・]/.test(n.text)) return;                  // no punctuation in a slot filler
+        // prefer informative content: reward を-objects, penalise nouns that merely
+        // echo the question (役割/種類…) so the object carries new information.
+        var r = rel(n.text) + (n.particle === 'を' ? 0.15 : 0) - (question.indexOf(n.text) >= 0 ? 0.3 : 0);
+        if (!objs[n.text] || objs[n.text].rel < r) objs[n.text] = { text: n.text, rel: r };
+      });
+    });
+    // baby model scores grounded slot combinations (this is the "generation" step)
+    var m = L.create(ctxText, { context: 3, dim: 24, hidden: 64, maxVocab: 600 });
+    if (m.ids.length <= m.C + 4) return Promise.resolve('');
+    var base = baseModel(); if (base) L.warmStart(m, base);
+    return L.trainAsync(m, { steps: opts.steps || 400, chunk: 250, lr: 0.15, onProgress: opts.onProgress }).then(function () {
+      function mscore(s) { var t = L.encode(m, s); return t.length ? L.seqLogProb(m, t) / t.length : -1e9; }
+      var sml = null;
+      var genusTop = genus.sort(function (a, b) { return b.rel - a.rel; }).slice(0, 4);
+      var objTop = Object.keys(objs).map(function (k) { return objs[k]; }).sort(function (a, b) { return b.rel - a.rel; }).slice(0, 5);
+      var verbTop = Object.keys(verbs).map(function (k) { return verbs[k]; }).sort(function (a, b) { return b.rel - a.rel; }).slice(0, 5);
+      if ((intent === 'definition' || (!objTop.length || !verbTop.length)) && genusTop.length) {
+        // 名詞述語: 「S は <genus> である/です」— model picks the genus
+        var bg = genusTop.map(function (g) { return { g: g, sc: g.rel + 0.04 * mscore(subj + 'は' + g.genus) }; })
+          .sort(function (a, b) { return b.sc - a.sc; })[0].g;
+        sml = { subject: subj, adjective: bg.genus, politeness: bg.pr.polite ? 'polite' : 'plain', tense: bg.pr.tense };
+      } else if (objTop.length && verbTop.length) {
+        // 「S は <object> を <verb>」— model picks the most likely grounded object+verb
+        var best = null, bestSc = -1e18;
+        objTop.forEach(function (o) { verbTop.forEach(function (v) {
+          var sc = o.rel + v.rel + 0.04 * mscore(subj + 'は' + o.text + 'を' + v.dict);
+          if (sc > bestSc) { bestSc = sc; best = { o: o, v: v }; }
+        }); });
+        sml = { subject: subj, object: best.o.text, action: best.v.dict, politeness: best.v.pr.polite ? 'polite' : 'plain', tense: best.v.pr.tense, negative: best.v.pr.negative };
+      }
+      if (!sml) return '';
+      var built = G.compile(sml).sentence;
+      if (!built) return '';
+      var out = (G.normalize ? (G.normalize(built).text || built) : built);
+      // faithfulness: every content word must come from the context or the subject
+      var runs = out.match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || [];
+      if (!runs.every(function (t) { return ctxText.indexOf(t) >= 0 || subj.indexOf(t) >= 0 || t === subj; })) return '';
+      if (G.coherence && !G.coherence(out).ok) return '';
+      return out;
+    });
+  }
+
   function groundedAnswer(question, contexts, opts) {
-    return debugAnswer(question, contexts, opts).then(function (r) {
-      if (!r.text || r.text.length < 10) return '';            // too short → let caller fall back
-      // kuromoji coherence gate (生成後処理): reject token-salad so Ask falls back
-      // to the extractive answer instead of showing degenerate output.
-      if (NSCode.grammar && NSCode.grammar.coherence && !NSCode.grammar.coherence(r.text).ok) return '';
-      return r.text;
+    var G = NSCode.grammar;
+    // Prefer grammar-ruled grounded recombination (natural by construction) when
+    // kuromoji is ready; otherwise fall back to the experimental free token decode.
+    var primary = (G && G.ready && G.ready()) ? recombine(question, contexts, opts) : Promise.resolve('');
+    return primary.then(function (rc) {
+      if (rc) return rc;
+      return debugAnswer(question, contexts, opts).then(function (r) {
+        if (!r.text || r.text.length < 10) return '';           // too short → let caller fall back
+        // coherence gate: reject token-salad so Ask falls back to the extractive answer.
+        if (G && G.coherence && !G.coherence(r.text).ok) return '';
+        return r.text;
+      });
     });
   }
 
   NSCode.sml = {
-    groundedAnswer: groundedAnswer, debugAnswer: debugAnswer,
+    groundedAnswer: groundedAnswer, debugAnswer: debugAnswer, recombine: recombine,
     _allowedSet: allowedSet, _decode: decode, FUNCTION_TOKENS: FUNCTION_TOKENS
   };
 })(window.NSCode);
