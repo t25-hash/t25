@@ -217,24 +217,19 @@
    * grounded on the SAME retrieved passages. Pure augmentation — on any failure
    * (no WebGPU / weights not vendored / error) the extractive answer stays. */
   function maybeGenerate(entry, botId) {
-    if (!state.gen || !NSCode.genllm || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
-    NSCode.genllm.available().then(function (ok) {
-      if (!ok) {
-        entry.a.genNote = NSCode.genllm.hasWebGPU()
-          ? '※ 生成モデル未導入のため抽出で回答（assets/models/ に重みを配置すると生成します）'
-          : '※ この端末はWebGPU非対応のため抽出で回答します';
-        rerenderBubble(botId, entry); return;
-      }
-      entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
-      var ctx = entry.a.hits.map(function (h) { return h.text; });
-      NSCode.genllm.answerRAG(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
-        entry.a.genPending = false;
-        if (txt) { entry.a.gentext = txt; persist(); }
-        rerenderBubble(botId, entry); scrollBottom();
-      }).catch(function (e) {
-        entry.a.genPending = false; entry.a.genNote = '※ 生成に失敗したため抽出で回答（' + (e && e.message ? e.message : e) + '）';
-        rerenderBubble(botId, entry);
-      });
+    if (!state.gen || !NSCode.sml || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
+    entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
+    var ctx = entry.a.hits.map(function (h) { return h.text; });
+    // in-house SML grounded (copy-constrained) generation: on-device, no external
+    // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
+    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
+      entry.a.genPending = false;
+      if (txt) { entry.a.gentext = txt; persist(); }
+      else { entry.a.genNote = '※ 生成を構成できなかったため抽出で回答します'; }
+      rerenderBubble(botId, entry); scrollBottom();
+    }).catch(function (e) {
+      entry.a.genPending = false; entry.a.genNote = '※ 生成に失敗したため抽出で回答（' + (e && e.message ? e.message : e) + '）';
+      rerenderBubble(botId, entry);
     });
   }
 
@@ -265,8 +260,12 @@
           C.Controls([{ label: '対象', control: srcSel }]) +
           '<div id="srcArea">' + srcBody(state.source) + '</div>' +
           C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
-          C.Controls([{ label: '🧠 抽象生成（実験・WebGPU・自前重み）', control: '<label class="ns-switch"><input id="askGen" type="checkbox"' + (state.gen ? ' checked' : '') + '> 検索した根拠からブラウザ内LLMが文章を生成</label>' }]) +
-          '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。抽象生成は WebGPU 対応端末＋<code>assets/models/</code> に重み配置時のみ作動（外部API不使用）。</p>' +
+          C.Controls([{ label: '回答モード', control:
+            '<label class="ns-switch"><input id="askGen" type="checkbox"' + (state.gen ? ' checked' : '') + '> ' +
+            (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・実験）</b>' : '<b>📑 抽出（既定・推奨）</b>') +
+            '</label>' }]) +
+          '<p class="ns-empty__hint">OFF＝従来どおり<b>根拠の実文を抽出</b>（安定）。ON＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。<b>※実験：</b>幻覚はしません（根拠語のみ）が、現状は文章がまだ拙いことがあります。使うほど（学習・👍/👎）改善します。</p>' +
+          '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
         trainPanel() +
         '<div class="ns-chat">' +
