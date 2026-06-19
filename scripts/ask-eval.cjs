@@ -102,7 +102,7 @@ const BANK = [
 function intentHallmark(intent, a) {
   switch (intent) {
     case 'definition': return /(である|です。|だ。|をいう|のこと|を指す|と呼ば|と定義|を意味|といい|機械要素|装置|とは)/.test(a);
-    case 'list': return (a.match(/[・、]/g) || []).length >= 2 || /(種類|大別|分けら|に分類)/.test(a);
+    case 'list': return (a.match(/[・、，]/g) || []).length >= 2 || /(種類|大別|分けら|に分類|などがある|に分かれ)/.test(a);
     case 'purpose': return /(目的|ため|ねらい|役割|用途|機能|防止|を防)/.test(a);
     case 'why': return /(ため|から|ので|理由|原因|による|起因|生じ|により)/.test(a);
     case 'features': return /(特徴|利点|長所|短所|性質|優れ|劣る|向く|適する|やすい|にくい|耐食|耐熱|耐摩耗|強度|硬|軽|安価|高い|大きい|小さい|小さく|滑らか|抑え|生じ|できる)/.test(a);
