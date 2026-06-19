@@ -32,6 +32,10 @@
   function kbBody() {
     return '<div class="ns-empty__hint">📚 機械工学の教科書 <b>5,809 文書</b>（α機械工学概説 / β設計工学 / γ産業機械）。事前に作った索引で関連文書だけを取り出し、その文脈をニューラルが学習して回答します（初回のみ索引を読み込み・gzip約4MB）。</div>';
   }
+  function calcBody() {
+    return '<div class="ns-empty__hint">📐 機械工学便覧の <b>計算式・表 DB</b>（α/β/γ編 281章ぶんの数式と表を抽出・クレンジング）。KB（散文）とは別の索引です。式の記号（例 <code>PV=mRT</code>）や扱いたい量で検索すると、その章の数式・表を取り出して提示します。</div>';
+  }
+  function srcBody(src) { return src === 'kb' ? kbBody() : src === 'calc' ? calcBody() : mineBody(); }
   function mineBody() {
     return '<textarea id="docText" class="ns-input" rows="4" placeholder="覚えさせたい文章を貼り付け…（例：技術文書 / 仕様書 / 教科書の記述）"></textarea>' +
       '<div class="ns-actions">' +
@@ -132,12 +136,13 @@
       var srcSel =
         '<select id="srcSel" class="ns-input">' +
           '<option value="kb"' + (state.source === 'kb' ? ' selected' : '') + '>機械工学 KB（5,809文書）</option>' +
+          '<option value="calc"' + (state.source === 'calc' ? ' selected' : '') + '>計算式・表 DB（281章）</option>' +
           '<option value="mine"' + (state.source === 'mine' ? ' selected' : '') + '>自分の知識（貼付/PDF）</option></select>';
       return C.PageHeader({ title: '🍼 Ask the baby', purpose: '関連箇所を検索 → その文脈をニューラルが学習して回答（検索＋重み＝Claude型・API不要）' }) +
         '<details class="ns-chat__kb">' +
           '<summary>📚 知識ベース・設定</summary>' +
           C.Controls([{ label: '対象', control: srcSel }]) +
-          '<div id="srcArea">' + (state.source === 'kb' ? kbBody() : mineBody()) + '</div>' +
+          '<div id="srcArea">' + srcBody(state.source) + '</div>' +
           C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
@@ -218,8 +223,10 @@
     log.insertAdjacentHTML('beforeend', pendingBubble(botId));
     scrollBottom();
 
-    var run = state.source === 'kb' ? A.hybridAnswerKB : A.hybridAnswer;
+    var prebuilt = state.source === 'kb' || state.source === 'calc';   // prebuilt stores: KB or 計算式・表DB
+    var run = prebuilt ? A.hybridAnswerKB : A.hybridAnswer;
     run(q, {
+      store: state.source,
       temperature: state.temperature,
       onProgress: function (s) {
         var node = el(botId); if (!node) return;

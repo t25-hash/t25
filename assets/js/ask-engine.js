@@ -956,13 +956,25 @@
    * query picks the top docs, only those .md are fetched, then the SAME hybrid
    * (search → neural learns retrieved chunks → generate) runs on them. This
    * scales to thousands of docs without loading everything. */
-  var KB_INDEX_URL = 'assets/kb/index.json', KB_DOC_URL = 'assets/kb/docs/';
-  var kbPromise = null, kbDocCache = {};
+  /* Each store is an independent prebuilt index + docs folder in the same
+   * format (built by scripts/build-kb-index.py / build-calc-db.py). 'kb' is the
+   * 機械工学 prose corpus; 'calc' is the 計算式・表 DB (separate from the KB). */
+  var STORES = {
+    kb:   { index: 'assets/kb/index.json',   docs: 'assets/kb/docs/' },
+    calc: { index: 'assets/calc/index.json', docs: 'assets/calc/docs/' }
+  };
+  var storeCache = {};   // name -> { promise, docCache }
+  function storeOf(name) {
+    var s = STORES[name] ? name : 'kb';
+    if (!storeCache[s]) storeCache[s] = { promise: null, docCache: {} };
+    return storeCache[s];
+  }
 
-  function loadKB() {
-    if (kbPromise) return kbPromise;
-    kbPromise = fetch(KB_INDEX_URL).then(function (r) { if (!r.ok) throw new Error('index ' + r.status); return r.json(); });
-    return kbPromise;
+  function loadKB(name) {
+    var st = storeOf(name), url = STORES[STORES[name] ? name : 'kb'].index;
+    if (st.promise) return st.promise;
+    st.promise = fetch(url).then(function (r) { if (!r.ok) throw new Error('index ' + r.status); return r.json(); });
+    return st.promise;
   }
   function searchKB(index, query, k) {
     // WEIGHTED doc selection: the question's SPECIFIC terms (熱伝達率/ねじ) must
@@ -981,11 +993,12 @@
     return Object.keys(score).map(function (i) { return { idx: +i, score: score[i], title: index.meta[+i] }; })
       .sort(function (a, b) { return b.score - a.score; }).slice(0, k);
   }
-  function fetchKBDoc(idx) {
-    if (kbDocCache[idx]) return Promise.resolve(kbDocCache[idx]);
+  function fetchKBDoc(idx, name) {
+    var st = storeOf(name), base = STORES[STORES[name] ? name : 'kb'].docs;
+    if (st.docCache[idx]) return Promise.resolve(st.docCache[idx]);
     var pad = ('0000' + (idx + 1)).slice(-4);
-    return fetch(KB_DOC_URL + pad + '.md').then(function (r) { return r.ok ? r.text() : ''; })
-      .then(function (t) { kbDocCache[idx] = t; return t; });
+    return fetch(base + pad + '.md').then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (t) { st.docCache[idx] = t; return t; });
   }
 
   /* hybrid answer over the prebuilt KB -> Promise<{text,compose,seed,seeds,hits}>.
@@ -994,10 +1007,11 @@
   function hybridAnswerKB(question, opts) {
     opts = opts || {};
     if (!question) return Promise.resolve(null);
-    return loadKB().then(function (index) {
+    var name = opts.store || 'kb';
+    return loadKB(name).then(function (index) {
       var top = searchKB(index, question, opts.topDocs || 10);
       if (!top.length) return { text: '', seed: '', hits: [] };
-      return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
+      return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx, name); })).then(function (texts) {
         var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
         var chunks = buildChunks(docs);
         var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
