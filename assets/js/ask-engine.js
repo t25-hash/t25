@@ -169,7 +169,11 @@
       '減速機は、歯車などによって入力回転を減速し、トルクを増大して出力する機械装置である。\n\n' +
       'キーは、軸と歯車やプーリのボス部を結合し、回転とトルクを確実に伝える機械要素である。\n\n' +
       'カムは、特定の輪郭形状によって、従動節に決められた運動を与える機械要素である。\n\n' +
-      'ボルトは、ナットと組み合わせ、部材を締め付けて結合する代表的なねじ締結部品である。' }
+      'ボルトは、ナットと組み合わせ、部材を締め付けて結合する代表的なねじ締結部品である。\n\n' +
+      'モジュールは、歯車の歯の大きさを表す基準寸法で、ピッチ円直径を歯数で割った値である。\n\n' +
+      '安全率は、材料の基準強さを設計で許容する応力で割った比で、不確かさに対する余裕を表す数値である。\n\n' +
+      '危険速度は、回転軸の固有振動数と回転数が一致して共振を起こす回転速度である。\n\n' +
+      'モーメントは、物体を回転させようとする力の効果で、力と回転中心までの距離の積で表される量である。' }
   ];
 
   function getDocs() { return store.get('ask.docs', DEFAULT_DOCS); }
@@ -537,7 +541,7 @@
     if (GARBAGE.test(s)) return true;             // unmapped-font mojibake (PUA/Hangul/…)
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
-    if (/^[をはがのにへともでやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
+    if (/^[をはがのにへともでてやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
     if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
     if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
     if ((s.match(/：/g) || []).length >= 2) return true;
@@ -1008,6 +1012,11 @@
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
+    // prefer the highest-scored GENUINE definition over a higher-rel non-definition
+    // mention of a polysemous key (モジュール間通信… must not bury モジュールの定義).
+    for (var di = 0; di < p.cands.length; di++) {
+      if (isDef(p.cands[di].s) && (!key || p.cands[di].s.indexOf(key) >= 0)) { top = p.cands[di]; break; }
+    }
     if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
     // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
     // the key in topic position; else defer to composeConcise (most on-topic line).
