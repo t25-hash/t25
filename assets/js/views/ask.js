@@ -233,7 +233,15 @@
     if (!state.gen || !NSCode.sml || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
     pretrainBaseOnce();   // goal #3: strengthen the base SML once, in the background
     entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
-    var ctx = entry.a.hits.map(function (h) { return h.text; });
+    // Feed the CURATED, on-target content (the same the extractive answer draws on —
+    // selected intent sentence, composed lines, context memo) to generation FIRST,
+    // then the raw retrieved chunks. Otherwise generation is limited to raw chunks
+    // (often mid-sentence fragments) and reads thin/off-target.
+    var seeds = [];
+    if (entry.a.text) seeds.push(entry.a.text);
+    if (entry.a.compose && entry.a.compose.length) seeds = seeds.concat(entry.a.compose);
+    if (entry.a.memo) seeds.push(entry.a.memo);
+    var ctx = seeds.concat(entry.a.hits.map(function (h) { return h.text; }));
     // in-house SML grounded (copy-constrained) generation: on-device, no external
     // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
     NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {

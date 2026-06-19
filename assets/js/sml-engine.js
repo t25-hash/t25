@@ -208,22 +208,40 @@
     return L.trainAsync(m, { steps: opts.steps || 400, chunk: 250, lr: 0.15, onProgress: opts.onProgress }).then(function () {
       function mscore(s) { var t = L.encode(m, s); return t.length ? L.seqLogProb(m, t) / t.length : -1e9; }
       // baby model picks the most fluent among the top on-target primary candidates
-      var primary = primTop.map(function (c) { return { s: c.s, sc: c.sc + 0.04 * mscore(c.s) }; })
-        .sort(function (a, b) { return b.sc - a.sc; })[0].s;
+      var ranked = primTop.map(function (c) { return { s: c.s, sc: c.sc + 0.04 * mscore(c.s) }; })
+        .sort(function (a, b) { return b.sc - a.sc; });
       // compress one source sentence to a concise, grammatical clause set on the topic
+      function norm(x) { return G.normalize ? (G.normalize(x).text || x) : x; }
+      function finite(x) { return !G.coherence || G.coherence(x).finite; }
       function condense(s, maxLen) {
         s = s.replace(/^[、，,\s　]+/, '');
+        s = s.replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{3,12}?)\1+/g, '$1');   // collapse repeated table/junk chunks
         if (s.length > maxLen) {
           var cl = s.split(/(?<=[、，])/), o = '';
           for (var i = 0; i < cl.length; i++) { if (o && (o + cl[i]).length > maxLen) break; o += cl[i]; }
           s = (o || s.slice(0, maxLen)).replace(/[、，]$/, '');
         }
-        s = s.replace(/[。．！？]+$/, '') + '。';
-        return (G.normalize ? (G.normalize(s).text || s) : s);   // grammatical normalization
+        var out = norm(s.replace(/[。．！？]+$/, '') + '。');
+        // guarantee a finite ending: drop trailing non-finite clauses (avoids
+        // mid-sentence cuts like 「…静圧軸受に。」). If none works, reject the fact.
+        if (!finite(out)) {
+          var parts = out.replace(/[。．！？]+$/, '').split(/(?<=[、，])/);
+          out = '';
+          while (parts.length > 1) {
+            parts.pop();
+            var cand = norm(parts.join('').replace(/[、，]$/, '') + '。');
+            if (finite(cand)) { out = cand; break; }
+          }
+        }
+        return finite(out) ? out : '';
       }
+      // primary fact: first top candidate that condenses to a clean finite sentence
+      var primary = '', p1 = '';
+      for (var pi = 0; pi < ranked.length; pi++) { var c = condense(ranked[pi].s, 115); if (c) { primary = ranked[pi].s; p1 = c; break; } }
+      if (!p1) return '';
       // build a multi-fact answer: primary + complementary/extra distinct facts until
       // substantive (≥16 content chars) or 2 facts, for richer on-target content.
-      var facts = [condense(primary, 115)], used = [facts[0]];
+      var facts = [p1], used = [p1];
       var extra = pickTop(compCue, primary, 4).concat(pickTop(primCue, primary, 4)).concat(pickTop(null, primary, 6));
       for (var e = 0; e < extra.length; e++) {
         if (facts.length >= 2 && clen(facts.join('')) >= 24) break;
