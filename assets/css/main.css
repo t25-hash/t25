@@ -358,6 +358,20 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 .ns-chat__cite .ns-hit:last-child { margin-bottom: 0; }
 .ns-chat__links { margin: 10px 0 0; font-size: 12px; }
 
+/* 計算式・表の連投バブル */
+.ns-msg--calc .ns-msg__body { background: var(--surface); }
+.ns-calc__name { font-weight: 600; font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+.ns-calc__expr {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 16px; padding: 10px 14px; margin: 0 0 10px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  white-space: nowrap; overflow-x: auto;
+}
+.ns-calc__label { font-size: 12px; color: var(--text-dim); }
+.ns-calc__syms { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.7; }
+.ns-calc__syms code { font-size: 13px; }
+.ns-msg--calc .ns-table-wrap { margin-top: 4px; }
+
 .ns-chat__welcome { text-align: center; margin: auto 0; padding: 24px; color: var(--text-dim); }
 .ns-chat__welcome .ns-msg__avatar { margin: 0 auto 12px; width: 44px; height: 44px; font-size: 24px; }
 .ns-chat__chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
