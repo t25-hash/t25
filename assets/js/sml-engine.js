@@ -22,10 +22,14 @@
     'および ならびに また さらに 一方 つまり すなわち このため そのため よって したがって ただし なお ' +
     'である です ます だ こと もの ため これ それ この その という による において に対して として').split(' ');
 
+  /* warm-start base = the STRONGER of the Neural Lab base net and the persistent
+   * feedback net (more SGD steps ≈ more fluent). Goal #3 pretrains the feedback net
+   * so this is non-null and well-trained even before the user grades anything. */
   function baseModel() {
-    if (NSCode.neuralLab && NSCode.neuralLab.state && NSCode.neuralLab.state.model) return NSCode.neuralLab.state.model;
-    if (NSCode.feedback && NSCode.feedback.model) { var fm = NSCode.feedback.model(); if (fm) return fm; }
-    return null;
+    var lab = (NSCode.neuralLab && NSCode.neuralLab.state) ? NSCode.neuralLab.state.model : null;
+    var fb = (NSCode.feedback && NSCode.feedback.model) ? NSCode.feedback.model() : null;
+    if (lab && fb) return ((fb.steps || 0) >= (lab.steps || 0)) ? fb : lab;
+    return lab || fb || null;
   }
 
   /* set of allowed vocab ids = context tokens ∪ in-vocab function tokens */

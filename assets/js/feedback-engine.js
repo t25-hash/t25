@@ -25,12 +25,14 @@
   var MAX_TERM = 3.0;          // boost weight ceiling
   var BASE_TERM = 1.0;         // unlearned weight (no boost)
   var REWARD = 0.5;            // +weight per 👍
-  var MAX_ACCEPTED = 200, MAX_EVENTS = 500, MAX_BLOCKED_PER_Q = 50;
+  var MAX_ACCEPTED = 200, MAX_EVENTS = 500, MAX_BLOCKED_PER_Q = 50, MAX_REJECTED = 200;
   var RECALL_MINCOS = 0.9;     // near-duplicate threshold for answer reuse
   var TRAIN_STEPS = 900;       // extra SGD steps per 👍 (warm-started)
+  var PRETRAIN_STEPS = 1400;   // base SML pretraining steps (goal #3: 事前学習強化)
+  var DECAY = 0.5;             // −weight per 👎 on the rejected answer's terms
   var MODEL_OPTS = { context: 3, dim: 24, hidden: 64, maxVocab: 480 };
 
-  function fresh() { return { terms: {}, accepted: [], blocked: {}, model: null, events: [], good: 0, bad: 0 }; }
+  function fresh() { return { terms: {}, accepted: [], rejected: [], blocked: {}, model: null, pretrained: false, events: [], good: 0, bad: 0 }; }
   function load() { var s = NSCode.store ? NSCode.store.get(STORE_KEY, null) : null; return s || fresh(); }
   function save() { if (NSCode.store) NSCode.store.set(STORE_KEY, data); }
   var data = load();
@@ -97,6 +99,17 @@
       var add = [text].concat(sentences(text)).concat(answer.compose || []);
       add.forEach(function (s) { s = (s || '').trim(); if (s && list.indexOf(s) < 0) list.push(s); });
       data.blocked[k] = list.slice(-MAX_BLOCKED_PER_Q);
+      // 👎蓄積: remember the rejected answer and gently DECAY the boost on its terms
+      // so a repeatedly-downvoted topic stops dominating retrieval (continuous correction).
+      if (text) {
+        data.rejected.push({ qTerms: keyTerms(question), text: text, ts: Date.now() });
+        if (data.rejected.length > MAX_REJECTED) data.rejected = data.rejected.slice(-MAX_REJECTED);
+      }
+      var seenB = {};
+      ragTerms(question).forEach(function (t) {
+        if (seenB[t]) return; seenB[t] = 1;
+        if (data.terms[t]) data.terms[t] = Math.max(BASE_TERM, data.terms[t] - DECAY);
+      });
       save();
       return Promise.resolve(null);
     }
@@ -150,6 +163,25 @@
     });
   }
 
+  /* 事前学習強化 (goal #3): build the persistent base SML from a seed corpus (the
+   * curated KB definitions) BEFORE any 👍 exists, so grounded generation / span
+   * ranking start fluent instead of cold. Warm-started from any existing model and
+   * blended with accumulated 👍 answers, so feedback keeps refining the SAME net.
+   * Idempotent-ish: pass force to re-pretrain (e.g. after KB changes). */
+  function pretrain(seedCorpus, opts) {
+    opts = opts || {};
+    var L = NSCode.neuralLM;
+    if (!L) return Promise.resolve(null);
+    if (data.pretrained && !opts.force && model()) return Promise.resolve(model());
+    var corpus = [String(seedCorpus || ''), corpusText()].filter(function (s) { return s.trim(); }).join('\n');
+    var m = L.create(corpus, MODEL_OPTS);
+    if (m.ids.length <= m.C + 4) return Promise.resolve(null);
+    var prev = model();
+    if (prev) L.warmStart(m, prev);
+    return L.trainAsync(m, { steps: opts.steps || PRETRAIN_STEPS, chunk: 400, lr: opts.lr || 0.12, onProgress: opts.onProgress })
+      .then(function () { _model = m; data.model = L.serialize(m); data.pretrained = true; save(); return m; });
+  }
+
   /* ---- status + reset (for the Ask "学習状況" panel) --------------------- */
   function stats() {
     var top = Object.keys(data.terms)
@@ -159,8 +191,8 @@
       .map(function (t) { return { term: t, weight: +data.terms[t].toFixed(2) }; });
     return {
       good: data.good || 0, bad: data.bad || 0,
-      learnedTerms: top, accepted: data.accepted.length,
-      blockedQ: Object.keys(data.blocked).length,
+      learnedTerms: top, accepted: data.accepted.length, rejected: (data.rejected || []).length,
+      blockedQ: Object.keys(data.blocked).length, pretrained: !!data.pretrained,
       model: data.model ? { steps: data.model.steps || 0, loss: +(data.model.loss || 0).toFixed(3), vocab: data.model.V || 0 } : null
     };
   }
@@ -168,7 +200,7 @@
 
   NSCode.feedback = {
     record: record, boosts: boosts, blockedFor: blockedFor, recall: recall,
-    model: model, stats: stats, reset: reset,
+    model: model, pretrain: pretrain, stats: stats, reset: reset,
     keyTerms: keyTerms, sig: sig
   };
 })(window.NSCode);

@@ -213,11 +213,23 @@
     node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>';
   }
 
+  /* goal #3 (事前学習強化): pretrain the persistent base SML once, from the curated
+   * KB definitions, so grounded generation starts fluent. Fire-and-forget; failures
+   * are silently ignored (the Neural Lab base net still serves as a fallback). */
+  var basePretrainKicked = false;
+  function pretrainBaseOnce() {
+    if (basePretrainKicked || !NSCode.feedback || !NSCode.feedback.pretrain) return;
+    basePretrainKicked = true;
+    var seed = (A.DEFAULT_DOCS || []).map(function (d) { return d.text; }).join('\n');
+    try { NSCode.feedback.pretrain(seed); } catch (e) { /* base net fallback stays */ }
+  }
+
   /* abstractive pass (optional): rewrite the answer with the in-browser LLM,
    * grounded on the SAME retrieved passages. Pure augmentation — on any failure
    * (no WebGPU / weights not vendored / error) the extractive answer stays. */
   function maybeGenerate(entry, botId) {
     if (!state.gen || !NSCode.sml || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
+    pretrainBaseOnce();   // goal #3: strengthen the base SML once, in the background
     entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
     var ctx = entry.a.hits.map(function (h) { return h.text; });
     // in-house SML grounded (copy-constrained) generation: on-device, no external

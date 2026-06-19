@@ -5,9 +5,10 @@
 (function (NSCode) {
   'use strict';
   var C = NSCode.C, A = NSCode.askEngine, NLM = NSCode.neuralLM, LAB = NSCode.neuralLab;
+  var GRUL = NSCode.gruLab, GRU = NSCode.gruLM;
   function el(id) { return document.getElementById(id); }
 
-  var unsub = null, autoFilled = false, pendingReplace = false;
+  var unsub = null, gruUnsub = null, autoFilled = false, pendingReplace = false;
 
   /* dynamic defaults (no hardcoded sample words): prefer the latest Ask question,
    * else the most frequent multi-char subword the model actually learned — so the
@@ -88,6 +89,9 @@
     '<p class="ns-lesson" style="margin-top:16px"><b>① このモデルで生成する</b></p>' +
     '<div class="ns-qa-bar"><input id="nlSeed" class="ns-input" placeholder="生成の起点（コーパス/質問から自動）"><button id="nlGen" class="ns-btn">生成</button></div>' +
     '<div id="nlGenOut"></div>' +
+    '<p class="ns-lesson" style="margin-top:12px"><b>①-b GRU（再帰型）で自由生成</b> — 固定窓の FF net と違い、文脈を隠れ状態で持ち越すので自由生成がより滑らかになります（goal #2）。</p>' +
+    '<div class="ns-qa-bar"><button id="nlGru" class="ns-btn ns-btn--ghost">GRU を学習して生成</button></div>' +
+    '<div id="nlGruOut"></div>' +
     '<p class="ns-lesson" style="margin-top:16px"><b>② 次トークンの確率（softmax の実値）</b></p>' +
     '<div class="ns-qa-bar"><input id="nlCtx" class="ns-input" placeholder="文脈トークン（コーパス/質問から自動）"><button id="nlProbBtn" class="ns-btn ns-btn--ghost">予測</button></div>' +
     '<div id="nlProbOut"></div>' +
@@ -141,13 +145,43 @@
       el('nlSeed').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renderGen(); } });
       el('nlProbBtn').addEventListener('click', renderProbs);
       el('nlCtx').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renderProbs(); } });
+      el('nlGru').addEventListener('click', function () { if (GRUL) { GRUL.ensure(); renderGru(); } });
 
       if (unsub) unsub();
       unsub = LAB.onChange(onLab);
+      if (gruUnsub) gruUnsub();
+      if (GRUL) gruUnsub = GRUL.onChange(renderGru);
       LAB.ensure();              // train if not already
       onLab();                   // paint current state immediately
     }
   });
+
+  /* GRU (recurrent) free generation — lazily trained on the same KB. Shows live
+   * training progress, then a few sampled generations (goal #2: smoother free gen). */
+  function renderGru() {
+    var out = el('nlGruOut'); if (!out || !GRUL) return;
+    var st = GRUL.state;
+    if (st.training) {
+      var p = st.prog || { step: 0, total: GRUL.OPTS.steps, loss: 0 };
+      var pct = Math.round(100 * p.step / p.total);
+      out.innerHTML = '<p class="ns-empty__hint">GRU を学習中… ' + pct + '%（BPTT・loss ' + (p.loss ? p.loss.toFixed(3) : '—') + '）</p>' +
+        '<div class="ns-progress"><div class="ns-progress__fill" style="width:' + pct + '%"></div></div>';
+      return;
+    }
+    if (!st.model) { out.innerHTML = '<p class="ns-empty__hint">「GRU を学習して生成」を押すと、同じ KB で再帰型ネットを学習します（数秒）。</p>'; return; }
+    var m = st.model, seedStr = (el('nlSeed') && el('nlSeed').value.trim()) || defaultSeed();
+    var seed = GRU.encode(m, seedStr).filter(function (t) { return m.vocab.stoi[t] != null; }).slice(0, 2);
+    if (!seed.length) { var ct = corpusToken(); seed = ct ? GRU.encode(m, ct).slice(0, 1) : [m.vocab.itos[1]]; }
+    var K = 4, cands = [];
+    for (var i = 0; i < K; i++) {
+      var text = NSCode.babyLLM.join(GRU.generate(m, seed, { temperature: 0.5 + 0.12 * i, topK: 6, maxTokens: 48 }));
+      cands.push({ text: text, score: genScore(text) });
+    }
+    cands.sort(function (a, b) { return b.score - a.score; });
+    out.innerHTML = '<div class="ns-qa-answer__src"><span class="ns-tag ns-tag--on">GRU 自由生成</span> ' + C.esc(cands[0].text) + '</div>' +
+      '<p class="ns-empty__hint">🔁 再帰型（隠れ状態を持ち越す BPTT 学習）。最終 loss ' + m.loss.toFixed(3) + ' / ' + (st.params || 0).toLocaleString() + ' 重み。' +
+      K + '候補から整文スコア最良を採用（' + cands.map(function (c) { return c.score.toFixed(2); }).join(' / ') + '）。</p>';
+  }
 
   function onLab() {
     renderProg(); renderStats();
