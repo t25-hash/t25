@@ -224,7 +224,7 @@
   /* drop generic question scaffolding so retrieval/sentence-ranking key off the
    * CONTENT words (歯車・軸受…), not boilerplate (「重要な点」「種類と特徴」「とは」).
    * Without this, a doc dense in 重要/設計/種類 (e.g. 重要度分類) hijacks answers. */
-  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え/g;
+  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え|挙げよ|挙げて|挙げる|挙げなさい|挙げ|列挙して|列挙/g;
   function coreQuery(q) { return String(q == null ? '' : q).replace(Q_GENERIC, ''); }
 
   /* generic standalone terms that, ALONE, don't pin a topic. Because matching is
@@ -288,6 +288,13 @@
       if (SINGLE_STOP[c] || GENERIC_TERM[c] || seen[c]) return;
       seen[c] = 1; out.push(c);
     });
+    // bare single-kanji category noun (鋼・弁) left AFTER generic stripping removed
+    // its trailing 「の種類」 — so 「鋼の種類」→coreQuery「鋼」 still keys off 鋼 instead of
+    // returning no key (which let an unrelated doc hijack the answer). Last resort only.
+    if (!out.length) {
+      var cm = coreQuery(q).match(/[一-鿿]/);
+      if (cm && !SINGLE_STOP[cm[0]] && !GENERIC_TERM[cm[0]]) out.push(cm[0]);
+    }
     return out;
   }
 
@@ -664,13 +671,48 @@
     var re = new RegExp('(?:^|[\\s、。，．（）()・/「」])([一-鿿ぁ-ヿァ-ヶー]{1,7}?)(' + sufs.map(escRe).join('|') + ')\\s*（\\s*[A-Za-z]', 'gm');
     var gear = sufs.indexOf('ギヤ') >= 0;
     var reX = gear ? /(?:^|[\s、。，．（）()・/「」])(ラックとピニオン|ラック|ピニオン)\s*（\s*[A-Za-z]/gm : null;
+    // a clean TYPE name has a short modifier prefix: no internal CASE particle/punct
+    // (rejects column-merges 高温用の軸受鋼), no verb morphology (使われる軸受鋼), no
+    // leading structural kanji (各種クロム鋼・用合金鋼 = truncated 構造用…). Reading-kana
+    // (はすば歯車・かさ歯車) are kept — は/や are not treated as case particles here.
+    var STRUCT_PRE = /^[各同本約用種別他主全数当該]/;
+    var VERB_PRE = /(れる|られ|され|する|した|って|われ|いら|よる|ある|いる|でき|よっ)/;
+    // leading conjunction / demonstrative / adverb (これら合金鋼・また肌焼鋼・一般的な炭素鋼)
+    // or a leading は/も/や directly before a kanji (は特殊鋼 — a spliced particle, while
+    // はすば歯車's は is followed by kana so it survives).
+    var LEAD_PRE = /^(?:これ|それ|あれ|また|なお|およ|且つ|かつ|一般|特に|主に|必ず|多く|よく|なる|[はもや](?=[一-鿿]))/;
+    function badPrefix(pre) {
+      if (!pre) return false;
+      if (/[のをにへとがで、，。．・（(）)\s／/「」：:＝=]/.test(pre)) return true;
+      if (/^[ぁ-ゖ]$/.test(pre)) return true;            // single-kana prefix = truncated fragment (り弁←絞り弁)
+      if (/[はも](?=[一-鿿])/.test(pre)) return true;     // spliced particle は/も before a kanji (後者は安全弁)
+      return STRUCT_PRE.test(pre) || VERB_PRE.test(pre) || LEAD_PRE.test(pre);
+    }
     var seen = {}, items = [], srcCount = {}, m;
     (docs || []).forEach(function (d) {
       var t = d.text || '', c = 0; re.lastIndex = 0;
-      while ((m = re.exec(t))) { var w = m[1] + m[2]; c++; if (w !== key && !seen[w]) { seen[w] = 1; items.push(w); } }
+      while ((m = re.exec(t))) { var w = m[1] + m[2]; c++; if (w !== key && !badPrefix(m[1]) && !seen[w]) { seen[w] = 1; items.push(w); } }
       if (reX) { reX.lastIndex = 0; while ((m = reX.exec(t))) { var w2 = m[1]; c++; if (!seen[w2]) { seen[w2] = 1; items.push(w2); } } }
       srcCount[d.name] = c;
     });
+    // HEAD-NOUN hyponyms: when the corpus has no English-glossed taxonomy table
+    // (gloss pass thin), enumerate compound nouns ENDING in the key noun, read as
+    // defined subjects — 炭素鋼・合金鋼・ステンレス鋼 for 鋼, 絞り弁・安全弁 for 弁. The
+    // curated glossary (DEFAULT_DOCS) is scanned alongside the retrieved docs so a
+    // 種類 question over plain prose still enumerates. Anchored to a boundary + a
+    // trailing particle/punctuation so flattened-table fragments don't leak in.
+    if (items.length < 4 && key.length <= 3 && /^[一-鿿ァ-ヶー]+$/.test(key)) {
+      var headRe = new RegExp('(?:^|[\\s、。，．（）()・/「」：:＝=])([一-鿿ぁ-ヿァ-ヶー]{1,8}?' + escRe(key) + ')(?=[はがをにのへとも、，。・（(）)：:＝=\\s/「」]|$)', 'gm');
+      getDocs().concat(docs || []).forEach(function (d) {
+        var t = d.text || '', c3 = srcCount[d.name] || 0; headRe.lastIndex = 0;
+        while ((m = headRe.exec(t))) {
+          var hw = m[1], pre = hw.slice(0, hw.length - key.length);
+          if (!pre || hw === key || hw.length < key.length + 1 || badPrefix(pre)) continue;
+          c3++; if (!seen[hw]) { seen[hw] = 1; items.push(hw); }
+        }
+        srcCount[d.name] = c3;
+      });
+    }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
     var out2 = [], s2 = {};
