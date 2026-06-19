@@ -70,11 +70,32 @@
     return s;
   }
 
-  /* token-level grounded decode → {text, tokens, allowedSize} */
+  /* grounded decode → {text, tokens, allowedSize, mode}.
+   * PRIMARY: 句スパン単位の接地再構成 — stitch whole source 句 (phrase-spans) the net
+   * recalls, rather than decoding token-by-token (which a baby model breaks into
+   * 「がの、、、、。」). Every span is verbatim corpus text, so the result reads cleanly
+   * and stays faithful. FALLBACK: the token-level copy-constrained decode below,
+   * used when span reconstruction can't recombine ≥2 distinct 句. */
   function decode(m, question, ctxText, opts) {
     opts = opts || {};
     var L = NSCode.neuralLM, C = m.C;
     var allowed = allowedSet(m, ctxText);
+
+    if (L.groundedAnswer) {
+      var span = L.groundedAnswer(m, question, { maxSpans: opts.maxSpans || 2 });
+      if (span && span.text) {
+        var recombines = span.spans && span.spans.length >= 2;
+        // prefer the readable span reconstruction over the token decode whenever it
+        // recombines ≥2 句 (≥14 chars), or is a solid single 句 (≥18 chars) — either
+        // way it reads cleanly. Only truly empty/tiny span output falls through to
+        // the token-level decode below.
+        if ((recombines && span.text.length >= 14) || span.text.length >= 18) {
+          return { text: cleanup(span.text), tokens: span.tokens || [],
+            spans: span.spans, allowedSize: Object.keys(allowed).length, mode: 'span' };
+        }
+      }
+    }
+
     var enderId = m.vocab.stoi['。'];
     var ctx = seedIds(m, question, ctxText), out = [], counts = {};
     var T = opts.temperature == null ? 0.5 : opts.temperature;
@@ -91,7 +112,7 @@
       if (out.length >= 4 && out[out.length - 1] === out[out.length - 3] && out[out.length - 2] === out[out.length - 4]) break;
     }
     var tokens = out.map(function (i) { return m.vocab.itos[i] || ''; });
-    return { text: cleanup(tokens.join('')), tokens: tokens, allowedSize: Object.keys(allowed).length };
+    return { text: cleanup(tokens.join('')), tokens: tokens, allowedSize: Object.keys(allowed).length, mode: 'token' };
   }
 
   /* hybrid: warm-start from the persistent base, fine-tune on the retrieved

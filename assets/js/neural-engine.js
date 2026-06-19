@@ -392,6 +392,9 @@
   var TAIL_PART = /[がをにへとや]$/;
   function tidySpan(t) {
     t = t.replace(STRIP_EDGE, '');
+    // drop a lone leading ASCII figure/table label (PDF由来: 「c軸受…」「図I3…」の頭文字)
+    // when it's immediately followed by Japanese — it's a label, not part of the 句.
+    t = t.replace(/^[A-Za-z]\s*(?=[一-鿿ぁ-んァ-ヶー])/, '');
     if (LEAD_PART.test(t) && t.slice(1).replace(/[\s、。]/g, '').length >= 4) t = t.slice(1);
     if (TAIL_PART.test(t) && t.slice(0, -1).replace(/[\s、。]/g, '').length >= 4) t = t.slice(0, -1);
     return t;
@@ -463,11 +466,27 @@
       for (var p = 0; p < picked.length; p++) if (overlapChars(picked[p].text, s.text) >= 0.6) { dup = true; break; }
       if (!dup) picked.push(s);
     }
+    // ensure recombination: if the strict (≤0.6 overlap) pass left fewer than maxSpans,
+    // fill the rest from remaining spans that aren't near-identical (≤0.85). A real
+    // 2-句 reconstruction reads as a synthesis, not a single verbatim sentence.
+    for (var i2 = 0; i2 < pool.length && picked.length < maxSpans; i2++) {
+      var s2 = pool[i2]; if (picked.indexOf(s2) >= 0) continue;
+      var same = false;
+      for (var p2 = 0; p2 < picked.length; p2++) if (overlapChars(picked[p2].text, s2.text) >= 0.85) { same = true; break; }
+      if (!same) picked.push(s2);
+    }
     if (!picked.length) picked = [pool[0]];
     // light abstraction: tidy each grounded 句's edges, then join into one sentence
     // (、 between, 。 to close). Every fragment is verbatim corpus text → 崩れない。
     var body = picked.map(function (s) { return tidySpan(s.text); }).filter(Boolean).join('、');
-    return { text: body ? body + '。' : '', spans: picked.map(function (s) { return s.text; }), score: picked[0].score };
+    // faithful token list = ONLY the source-derived span tokens (every one is a
+    // corpus substring). The joining 「、」「。」 are display punctuation, not content,
+    // so they're excluded here — callers verifying "no invented tokens" must not trip
+    // on a synthetic ender (some PDF-derived passages use 「．」 not 「。」).
+    var tokens = [];
+    picked.forEach(function (s) { s.toks.forEach(function (id) { tokens.push(m.vocab.itos[id]); }); });
+    return { text: body ? body + '。' : '', spans: picked.map(function (s) { return s.text; }),
+      tokens: tokens, score: picked[0].score };
   }
 
   /* project the learned token embeddings to 2D (PCA, top-2 principal components
