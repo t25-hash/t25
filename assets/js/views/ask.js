@@ -285,7 +285,7 @@
           '<div class="ns-chat__composer">' +
             '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
             '<button id="askBtn" class="ns-btn">送信</button>' +
-            '<button id="askGenBtn" class="ns-btn ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" title="🧠 抽象生成モードのON/OFF（OFF＝抽出・推奨）">🧠 生成モード</button>' +
+            '<button id="askGenBtn" class="ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" aria-label="生成モード" title="🧠 抽象生成モードのON/OFF（OFF＝抽出・推奨）">🧠</button>' +
           '</div>' +
         '</div>';
     },
@@ -302,7 +302,7 @@
       el('askGenBtn').addEventListener('click', function () {
         state.gen = !state.gen; persist();
         var b = el('askGenBtn');
-        b.className = 'ns-btn ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost');
+        b.className = 'ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost');
         b.setAttribute('aria-pressed', state.gen ? 'true' : 'false');
         var chk = el('askGen'); if (chk) chk.checked = state.gen;   // keep the settings switch in sync
       });

@@ -448,6 +448,22 @@
       }
       return sc;
     }
+    // prose quality: figure/table/caption fragments ("13に…例を示す", "記号の…グループ")
+    // read poorly even though they're grounded. Penalise digit-heavy / caption-like 句
+    // and reward clean prose so the reconstruction picks real explanatory sentences.
+    var CAPTION = /(を示す|に示す|参照|記号|グループ|の欄|一覧|次表|下表|上表|下記|右図|左図|同図|式\(|一例|の例|例。|例$)/;
+    var FIGREF = /[図表式]\s*[0-9０-９IⅠⅡ・･.]/;
+    var HEADING = /(章第|第[0-9０-９一二三四五六七八九十]+章|^#|^[0-9０-９]+[・.][0-9０-９])/;   // breadcrumb / 見出し
+    function noiseOf(text) {
+      var digits = (text.match(/[0-9０-９]/g) || []).length;
+      var latin = (text.match(/[A-Za-z]/g) || []).length;
+      var leadNum = /^[0-9０-９]/.test(text) ? 1.6 : 0;       // bare leading number = figure ref (図3.5→「35…」)
+      return 0.18 * digits + 0.04 * latin + leadNum + (FIGREF.test(text) ? 2.2 : 0) +
+        (CAPTION.test(text) ? 1.6 : 0) + (HEADING.test(text) ? 1.8 : 0);
+    }
+    // definition questions ("Xとは" / "Xとは何か") want a defining 句.
+    var wantDef = /とは|なに|何/.test(question);
+    var DEFCUE = /(とは|をいう|のことである|である|を指す|を意味|と呼)/;
     spans.forEach(function (s) { s.ov = overlap(s.text); });
     // keep scoring cheap: only run the net's seqLogProb on the most on-topic 句.
     var pool = spans.filter(function (s) { return s.ov > 0; });
@@ -457,7 +473,9 @@
     pool.forEach(function (s) {
       var lp = seqLogProb(m, s.toks.map(function (id) { return m.vocab.itos[id]; }));
       var len = s.text.replace(/[\s、。，．！？!?…・]/g, '').length;
-      s.score = s.ov * 2 + 0.2 * (lp + 6) - 0.015 * Math.abs(len - 22);   // 接地 > 想起 > 長さ整形
+      var def = (wantDef && DEFCUE.test(s.text)) ? 1.2 : 0;
+      var topic = (keys.length && s.text.indexOf(keys[0]) >= 0 && s.text.indexOf(keys[0]) <= 4) ? 0.5 : 0;
+      s.score = s.ov * 2 + 0.2 * (lp + 6) - 0.015 * Math.abs(len - 22) + def + topic - noiseOf(s.text);
     });
     pool.sort(function (a, b) { return b.score - a.score; });
     var picked = [];

@@ -406,7 +406,10 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
   position: sticky; bottom: 0; z-index: 5; display: flex; gap: 8px;
   padding: 12px 0; background: var(--bg); border-top: 1px solid var(--border);
 }
-.ns-chat__composer .ns-input { flex: 1; }
+.ns-chat__composer .ns-input { flex: 1 1 auto; min-width: 0; }
+.ns-chat__composer .ns-btn { flex: 0 0 auto; }
+/* icon-only toggle (🧠 generation mode): compact square so the input stays wide */
+.ns-btn--icon { padding: 8px 10px; font-size: 18px; line-height: 1; }
 
 /* ---- RAG Lab ---- */
 .ns-chunks { display: flex; flex-direction: column; gap: 6px; }
