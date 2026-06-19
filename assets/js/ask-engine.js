@@ -236,6 +236,11 @@
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
+  /* bigrams contributed by generic words — demoted in KB doc-selection so a
+   * polysemous generic term (材料の「基礎」→土木の基礎/foundation) can't hijack the
+   * doc ranking away from the real topic (材料). */
+  var GEN_GRAMS = {};
+  Object.keys(GENERIC_TERM).forEach(function (t) { gram(t).forEach(function (g) { GEN_GRAMS[g] = 1; }); });
   /* structural single kanji that are never a topic noun (figure/section/position…) */
   var SINGLE_STOP = {};
   ('図 表 式 章 節 項 例 他 中 内 外 前 後 間 点 等 物 事 方 際 上 下 本 各 同 約 数 部 面 量 値 法 用 性 化 的 時 場 合 者 式 計 図 比 約 種 類 別 性 度 力 行 月 年 日 回 個 件')
@@ -372,6 +377,9 @@
     // expand with domain synonyms so a colloquial query (ベアリング) also boosts the
     // chunks that use the formal term (軸受). Slightly below the literal key weight.
     synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((b[t] || 0) < 2.0) b[t] = 2.0; }); });
+    // de-boost generic-word bigrams (基礎/供給…) so a polysemous filler can't make an
+    // off-topic chunk win the BM25 ranking (材料の「基礎」→土木基礎). Keys keep priority.
+    for (var gg in GEN_GRAMS) if (b[gg] == null) b[gg] = 0.3;
     // fold in the feedback layer's learned per-term boosts (👍 reinforcement).
     if (NSCode.feedback && NSCode.feedback.boosts) {
       var fb = NSCode.feedback.boosts(query);
@@ -1080,7 +1088,8 @@
         var b = k.match(/[一-鿿ァ-ヶー]/g) || [];
         for (var j = 0; j < b.length - 1; j++) kg.push(b[j] + b[j + 1]);
       });
-      for (var i = 0; i < kg.length; i++) if (kg[i].length >= 2 && hay.indexOf(kg[i]) >= 0) return false;
+      // a single-kanji key (軸/弁/鋼) counts literally; bigrams need ≥2 chars (avoid noise)
+      for (var i = 0; i < kg.length; i++) if ((kg[i].length >= 2 || /[一-鿿]/.test(kg[i])) && hay.indexOf(kg[i]) >= 0) return false;
       return (topCos == null) || topCos < 0.5;   // no specific term anywhere → trust only very strong retrieval
     }
     // all-generic question (no specific term): fall back to bigram/cos
@@ -1180,7 +1189,7 @@
         // from the retrieved passages and re-ranked by the trained net (natural).
         var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100, avoid);
         var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
-        var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+        var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? NSCode.embeddings.cosine(NSCode.embeddings.embed(question, 64), NSCode.embeddings.embed(res.hits[0].chunk.text, 64)) : 0);
         if (weak) concise = { text: '', source: '', intent: concise.intent };
         // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
         var learned = false;
@@ -1226,6 +1235,9 @@
     gram(coreQuery(query)).forEach(function (t) { if ((w[t] || 0) < 1) w[t] = 1; });  // content word: full
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { w[t] = 2.5; }); }); // key term: strong
     synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((w[t] || 0) < 2.2) w[t] = 2.2; }); }); // synonym (ベアリング→軸受): nearly as strong
+    // demote generic-word bigrams so a polysemous filler (基礎/供給/管理) can't pull the
+    // ranking to an off-topic doc — unless that bigram is also part of a real key term.
+    for (var gg in GEN_GRAMS) if (w[gg] != null && w[gg] < 2) w[gg] = Math.min(w[gg], 0.3);
     var score = {};
     Object.keys(w).forEach(function (t) {
       var p = index.post[t]; if (!p) return;
@@ -1281,7 +1293,7 @@
           .then(function () {
             var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100, avoid);
             var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
-            var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
+            var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? NSCode.embeddings.cosine(NSCode.embeddings.embed(question, 64), NSCode.embeddings.embed(res.hits[0].chunk.text, 64)) : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
             // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
             var learned = false;
