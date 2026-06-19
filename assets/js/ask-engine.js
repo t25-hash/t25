@@ -770,6 +770,14 @@
     cands.forEach(function (c) { c.rel = rel(c.s); });
     return { cands: cands, keys: keys, hasKey: hasKey };
   }
+  /* GPT-like completeness: extend a one-sentence answer with the FOLLOWING sentence
+   * of the same passage when the lead is short and the continuation stays on-topic
+   * and clean — so the reply reads as a complete 1–2 sentence answer, not a stub. */
+  function withFollowUp(top, hasKey, maxTotal) {
+    var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
+    if (nx && !isJunkSent(nx) && text.length < 70 && (text.length + nx.length) <= (maxTotal || 165) && hasKey(nx)) text += nx;
+    return text;
+  }
   // best sentence carrying an intent cue (+ optional follow-on); null if none good
   function topByCue(question, hits, docs, cueRe, bonus, need, requireCue) {
     var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
@@ -807,7 +815,7 @@
     // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
     // the key in topic position; else defer to composeConcise (most on-topic line).
     if (!isDef(top.s) && topicScore(top.s, p.keys) < 0.4) return null;
-    return { text: top.s, source: top.src };
+    return { text: withFollowUp(top, p.hasKey, 170), source: top.src };
   }
   function answerWhy(question, hits, docs) {
     return topByCue(question, hits, docs, /(ため|から|ので|理由|原因|による|起因|生じ|防ぐ|により|ことで)/, 0.6, 0.4, true);
