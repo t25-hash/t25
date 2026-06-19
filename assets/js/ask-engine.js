@@ -1065,7 +1065,7 @@
     var docs = opts.docs || getDocs();
     var chunks = buildChunks(docs);
     if (!chunks.length || !query) return null;
-    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(query) });
+    var res = NSCode.rag.retrieve(query, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(query), bm25: true });
     var emb = NSCode.embeddings, qv = emb.embed(query, 64);
     var L = NSCode.babyLLM;
 
@@ -1120,7 +1120,7 @@
     opts = opts || {};
     var chunks = buildChunks(getDocs());
     if (!chunks.length || !question) return Promise.resolve(null);
-    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
+    var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question), bm25: true });
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
     var avoid = fbAvoid(question);
     var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
@@ -1213,7 +1213,7 @@
       return Promise.all(top.map(function (t) { return fetchKBDoc(t.idx); })).then(function (texts) {
         var docs = top.map(function (t, i) { return { name: t.title, text: texts[i] }; });
         var chunks = buildChunks(docs);
-        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
+        var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question), bm25: true });
         if (!res.hits.length) return { text: '', seed: '', hits: [] };
         // BLEND curated knowledge: the hand-written DEFAULT_DOCS cleanly DEFINE the
         // core vocabulary the handbook only uses (歯車・軸受・ねじ…). Add the on-topic

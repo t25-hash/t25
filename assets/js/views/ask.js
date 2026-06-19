@@ -16,7 +16,7 @@
   var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
   var MAX_HISTORY = 20;
 
-  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: false, history: [] },
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: true, history: [] },
     NSCode.api.labState('#/ask') || {});
   if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
@@ -274,9 +274,9 @@
           C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
           C.Controls([{ label: '回答モード', control:
             '<label class="ns-switch"><input id="askGen" type="checkbox"' + (state.gen ? ' checked' : '') + '> ' +
-            (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・実験）</b>' : '<b>📑 抽出（既定・推奨）</b>') +
+            (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・既定）</b>' : '<b>📑 抽出のみ</b>') +
             '</label>' }]) +
-          '<p class="ns-empty__hint">OFF＝従来どおり<b>根拠の実文を抽出</b>（安定）。ON＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。<b>※実験：</b>幻覚はしません（根拠語のみ）が、現状は文章がまだ拙いことがあります。使うほど（学習・👍/👎）改善します。</p>' +
+          '<p class="ns-empty__hint">ON（既定）＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。OFF＝<b>根拠の実文を抽出</b>のみ。<b>※実験：</b>幻覚はしません（根拠語のみ）。使うほど（学習・👍/👎）改善します。</p>' +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
         trainPanel() +
@@ -285,7 +285,7 @@
           '<div class="ns-chat__composer">' +
             '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
             '<button id="askBtn" class="ns-btn">送信</button>' +
-            '<button id="askGenBtn" class="ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" aria-label="生成モード" title="🧠 抽象生成モードのON/OFF（OFF＝抽出・推奨）">🧠</button>' +
+            '<button id="askGenBtn" class="ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" aria-label="生成モード" title="🧠 抽象生成モードのON/OFF（既定ON）">🧠</button>' +
           '</div>' +
         '</div>';
     },

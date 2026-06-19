@@ -88,8 +88,52 @@
     return v;
   }
 
+  /* ---------- BM25 (Okapi) ranking ----------
+   * The de-facto standard lexical ranker (Robertson/Sparck-Jones). Two things
+   * TF-IDF cosine lacks and BM25 adds: (1) term-frequency SATURATION (k1) so a
+   * chunk repeating a term 10× doesn't score ~10× a chunk with it once, and
+   * (2) document-LENGTH normalization (b) so long chunks don't win just by being
+   * long. Both materially improve precision@k on the handbook prose. Opt-in via
+   * opts.bm25 so the RAG-Lab cosine visualization and other callers are unchanged. */
+  function buildBM25(chunks) {
+    var N = chunks.length, df = {}, docs = [], totLen = 0;
+    chunks.forEach(function (c) {
+      var m = tf(c.text), len = 0;
+      for (var t in m) len += m[t];
+      docs.push({ tf: m, len: len });
+      totLen += len;
+      Object.keys(m).forEach(function (t) { df[t] = (df[t] || 0) + 1; });
+    });
+    var avgdl = N ? totLen / N : 1, idf = {};
+    // BM25 idf: log(1 + (N - df + 0.5)/(df + 0.5)) — the +1 keeps it ≥0 so a term in
+    // most chunks doesn't subtract score (classic Lucene-style non-negative idf).
+    Object.keys(df).forEach(function (t) { idf[t] = Math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5)); });
+    return { df: df, idf: idf, docs: docs, avgdl: avgdl, N: N };
+  }
+  function retrieveBM25(query, chunks, opts) {
+    opts = opts || {};
+    var k1 = opts.k1 == null ? 1.5 : opts.k1, b = opts.b == null ? 0.75 : opts.b;
+    var topK = opts.topK || 5, threshold = opts.threshold || 0, boost = opts.boost || null;
+    var idx = buildBM25(chunks), qtf = tf(query);
+    var scored = chunks.map(function (c, i) {
+      var d = idx.docs[i], s = 0;
+      for (var t in qtf) {
+        var f = d.tf[t]; if (!f) continue;
+        var w = idx.idf[t]; if (!w) continue;
+        var denom = f + k1 * (1 - b + b * (d.len / idx.avgdl));
+        var contrib = w * (f * (k1 + 1)) / denom;
+        if (boost && boost[t]) contrib *= boost[t];
+        s += contrib;
+      }
+      return { chunk: c, vec: idx.docs[i].tf, score: s };
+    });
+    scored.sort(function (a, b2) { return b2.score - a.score; });
+    return { qvec: qtf, hits: scored.filter(function (s) { return s.score >= threshold; }).slice(0, topK), bm25: true };
+  }
+
   function retrieve(query, chunks, opts) {
     opts = opts || {};
+    if (opts.bm25) return retrieveBM25(query, chunks, opts);
     var topK = opts.topK || 5, threshold = opts.threshold || 0;
     var idx = buildIndex(chunks);
     var qv = vectorize(query, idx.idf);
@@ -158,7 +202,7 @@
   }
 
   NSCode.rag = {
-    terms: terms, chunk: chunk, retrieve: retrieve, mmr: mmr, cosine: cosine,
+    terms: terms, chunk: chunk, retrieve: retrieve, retrieveBM25: retrieveBM25, mmr: mmr, cosine: cosine,
     buildIndex: buildIndex, vectorize: vectorize,
     buildContext: buildContext, analyzeHallucination: analyzeHallucination,
     splitSentences: splitSentences
