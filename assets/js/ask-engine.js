@@ -763,6 +763,31 @@
         srcCount[d.name] = c3;
       });
     }
+    // ENUMERATION SENTENCE (constrained): a category whose members aren't compound
+    // nouns sharing a head (機械要素 = ねじ・軸・軸受・歯車…) is listed in prose as
+    // 「代表的なものに、A、B、C…がある」. Require that explicit lead-in phrase (so a plain
+    // ・-run like 伝達・変換・支持 does NOT match) and the key in context, then split the
+    // members by ・/、. Only fires when the taxonomy passes above found too few items.
+    if (items.length < 4) {
+      var LEAD = /(?:代表的なもの|主なもの|おもなもの|次のもの|以下のもの|主要なもの|基本的なもの)(?:に|として)[はとして、：:]*([^。]*?)(?:が(?:あり|ある)|などが|である)/;
+      var epool2 = getDocs().concat(docs || []);
+      for (var pe = 0; pe < epool2.length && items.length < 4; pe++) {
+        var pd = pe < getDocs().length ? getDocs()[pe] : (docs || [])[pe - getDocs().length];
+        if (!pd || (pd.text || '').indexOf(key) < 0) continue;
+        var psents = buildSentences(pd.text);
+        for (var ps = 0; ps < psents.length && items.length < 12; ps++) {
+          var psen = psents[ps]; var lm = psen.match(LEAD); if (!lm) continue;
+          if (psen.indexOf(key) < 0 && !(ps > 0 && psents[ps - 1].indexOf(key) >= 0)) continue;   // on-topic only
+          lm[1].split(/[・･、，]/).forEach(function (it) {
+            it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
+            if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
+            if (!(it.length >= 2 || /^[一-鿿]$/.test(it))) return;          // ≥2 chars, or a single kanji (軸)
+            if (it.length > 8 || /^[をはがのにへとでもやよ]/.test(it)) return;
+            seen[it] = 1; items.push(it); srcCount[pd.name] = (srcCount[pd.name] || 0) + 1;
+          });
+        }
+      }
+    }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
     var out2 = [], s2 = {};
