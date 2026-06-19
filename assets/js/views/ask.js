@@ -16,7 +16,7 @@
   var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
   var MAX_HISTORY = 20;
 
-  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, history: [] },
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, genMode: false, history: [] },
     NSCode.api.labState('#/ask') || {});
   if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
@@ -60,7 +60,7 @@
 
   function slimAnswer(a) {
     return {
-      text: a.text, source: a.source, weak: !!a.weak,
+      text: a.text, source: a.source, weak: !!a.weak, gen: a.gen || '',
       hits: (a.hits || []).map(function (h) {
         var t = h.chunk.text || '';
         return { source: h.chunk.source, score: h.score, text: t.slice(0, 200), more: t.length > 200 };
@@ -91,6 +91,9 @@
     var html = (a.text
       ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
       : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
+    // 生成モード: show the net's grounded reconstruction (句スパン接地) alongside the
+    // reliable extractive answer, so users can compare 抽出 vs 生成.
+    if (a.gen) html += '<div class="ns-qa-answer__gen"><span class="ns-tag ns-tag--on">🧠 生成</span> ' + highlight(a.gen, q) + '</div>';
     if (a.source) html += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>';
     html += citeDetails(q, a.hits);
     html += '<p class="ns-empty__hint ns-chat__links">🧠 要約は <a href="#/memory">Memory Lab</a>／🔧 文法は <a href="#/grammar">Grammar-agent</a> で確認できます。</p>';
@@ -184,7 +187,7 @@
           '<div class="ns-chat__composer">' +
             '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
             '<button id="askBtn" class="ns-btn">送信</button>' +
-            '<button id="askRegen" class="ns-btn ns-btn--ghost" title="直近の質問を再実行">別の回答</button>' +
+            '<button id="askGen" class="ns-btn ' + (state.genMode ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.genMode ? 'true' : 'false') + '" title="句スパン接地でニューラル生成した回答も表示します">🧠 生成モード</button>' +
           '</div>' +
         '</div>';
     },
@@ -194,9 +197,11 @@
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       el('askBtn').addEventListener('click', function () { runAsk(); });
-      el('askRegen').addEventListener('click', function () {
-        var last = state.history.length ? state.history[state.history.length - 1].q : '';
-        runAsk(last || null);
+      el('askGen').addEventListener('click', function () {
+        state.genMode = !state.genMode; persist();
+        var b = el('askGen');
+        b.className = 'ns-btn ' + (state.genMode ? 'ns-btn--on' : 'ns-btn--ghost');
+        b.setAttribute('aria-pressed', state.genMode ? 'true' : 'false');
       });
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
       el('chatLog').addEventListener('click', function (e) {
@@ -238,7 +243,7 @@
     persist();
   }
 
-  // runAsk(qOverride): qOverride present (chip / 別の回答) keeps the input; otherwise
+  // runAsk(qOverride): qOverride present (chip) keeps the input; otherwise
   // the composer's value is used and cleared. Each call writes to its own bubble, so
   // overlapping answers don't clobber one another.
   function runAsk(qOverride) {
@@ -261,6 +266,7 @@
     run(q, {
       store: state.source,
       temperature: state.temperature,
+      generate: state.genMode,
       onProgress: function (s) {
         var node = el(botId); if (!node) return;
         var pct = Math.round(100 * s.step / s.total);

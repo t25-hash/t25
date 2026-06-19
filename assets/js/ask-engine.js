@@ -1098,17 +1098,28 @@
         // re-compile to natural Japanese (meaning-preserving; complex sentences
         // pass through unchanged).
         var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
+        // 生成モード: the trained net's ABSTRACTIVE answer — 句スパン単位の接地再構成
+        // (real corpus 句 stitched, readable). Only computed on demand (opts.generate).
+        var gen = genFromNet(opts, m, question, weak);
         // publish this run so every Lab can visualize the same query (Ask ↔ sidebar)
         if (NSCode.lastRun) NSCode.lastRun.set({
           query: question,
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-          answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+          answer: weak ? [] : compose, generated: gen || concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
         return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
-          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
+          normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], gen: gen };
       });
+  }
+
+  /* 生成モード helper: the net's grounded reconstruction (句スパン接地). Returns a
+   * readable string, or '' when off / weak / unavailable. Shared by both pipelines. */
+  function genFromNet(opts, m, question, weak) {
+    if (!opts.generate || weak || !NSCode.neuralLM || !NSCode.neuralLM.groundedAnswer) return '';
+    var g = NSCode.neuralLM.groundedAnswer(m, question);
+    return (g && g.text) ? g.text : '';
   }
 
   /* ---------- Prebuilt knowledge base (機械工学, 5809 docs) ----------
@@ -1192,15 +1203,16 @@
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
+            var gen = genFromNet(opts, m, question, weak);   // 生成モード: 句スパン接地再構成
             if (NSCode.lastRun) NSCode.lastRun.set({
               query: question,
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
-              answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+              answer: weak ? [] : compose, generated: gen || concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
             return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
-              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
+              normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], gen: gen };
           });
       });
     });
