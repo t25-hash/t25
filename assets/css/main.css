@@ -389,6 +389,8 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 }
 .ns-train__row { font-size: 13px; margin: 6px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
 .ns-train { margin-top: 8px; }
+.ns-msg__gen { color: #d29922; border-color: #d29922; }   /* abstractive (generated) tag */
+.ns-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 
 .ns-chat__welcome { text-align: center; margin: auto 0; padding: 24px; color: var(--text-dim); }
 .ns-chat__welcome .ns-msg__avatar { margin: 0 auto 12px; width: 44px; height: 44px; font-size: 24px; }

@@ -16,7 +16,7 @@
   var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
   var MAX_HISTORY = 20;
 
-  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, history: [] },
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: false, history: [] },
     NSCode.api.labState('#/ask') || {});
   if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
@@ -102,9 +102,20 @@
       return '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p>' +
         citeDetails(q, a.hits, '検索で近かった候補');
     }
-    var html = (a.text
-      ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
-      : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
+    var html;
+    if (a.gentext) {   // abstractive answer (in-browser LLM), grounded on the same hits
+      html = '<p class="ns-qa-answer__lead">' + highlight(a.gentext, q).replace(/\n/g, '<br>') +
+        ' <span class="ns-msg__learned ns-msg__gen">生成</span>' + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
+      if (a.text) html += '<details class="ns-chat__cite"><summary>抽出（参考）</summary><p class="ns-hit__text">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p></details>';
+    } else if (a.genPending) {
+      html = '<p class="ns-empty__hint ns-msg__thinking">抽象生成中…（ブラウザ内LLM）</p>' +
+        '<p class="ns-qa-answer__lead">' + highlight(a.text || '', q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
+    } else {
+      html = (a.text
+        ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
+        : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
+    }
+    if (a.genNote) html += '<p class="ns-empty__hint">' + C.esc(a.genNote) + '</p>';
     if (a.source) html += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>';
     html += feedbackRow(entry);
     html += citeDetails(q, a.hits);
@@ -196,6 +207,37 @@
       '</details>';
   }
 
+  /* re-render one bot bubble's body in place (by its live DOM id) */
+  function rerenderBubble(botId, entry) {
+    var node = el(botId); if (!node) return;
+    node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>';
+  }
+
+  /* abstractive pass (optional): rewrite the answer with the in-browser LLM,
+   * grounded on the SAME retrieved passages. Pure augmentation — on any failure
+   * (no WebGPU / weights not vendored / error) the extractive answer stays. */
+  function maybeGenerate(entry, botId) {
+    if (!state.gen || !NSCode.genllm || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
+    NSCode.genllm.available().then(function (ok) {
+      if (!ok) {
+        entry.a.genNote = NSCode.genllm.hasWebGPU()
+          ? '※ 生成モデル未導入のため抽出で回答（assets/models/ に重みを配置すると生成します）'
+          : '※ この端末はWebGPU非対応のため抽出で回答します';
+        rerenderBubble(botId, entry); return;
+      }
+      entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
+      var ctx = entry.a.hits.map(function (h) { return h.text; });
+      NSCode.genllm.answerRAG(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
+        entry.a.genPending = false;
+        if (txt) { entry.a.gentext = txt; persist(); }
+        rerenderBubble(botId, entry); scrollBottom();
+      }).catch(function (e) {
+        entry.a.genPending = false; entry.a.genNote = '※ 生成に失敗したため抽出で回答（' + (e && e.message ? e.message : e) + '）';
+        rerenderBubble(botId, entry);
+      });
+    });
+  }
+
   /* a 👍/👎 click: persist the grade, update the row, and on 👎 auto-regenerate */
   function onFeedback(btn) {
     if (!NSCode.feedback) return;
@@ -223,7 +265,8 @@
           C.Controls([{ label: '対象', control: srcSel }]) +
           '<div id="srcArea">' + srcBody(state.source) + '</div>' +
           C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
-          '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
+          C.Controls([{ label: '🧠 抽象生成（実験・WebGPU・自前重み）', control: '<label class="ns-switch"><input id="askGen" type="checkbox"' + (state.gen ? ' checked' : '') + '> 検索した根拠からブラウザ内LLMが文章を生成</label>' }]) +
+          '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。抽象生成は WebGPU 対応端末＋<code>assets/models/</code> に重み配置時のみ作動（外部API不使用）。</p>' +
         '</details>' +
         trainPanel() +
         '<div class="ns-chat">' +
@@ -240,6 +283,8 @@
       if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
+      var gen = el('askGen');
+      if (gen) gen.addEventListener('change', function () { state.gen = gen.checked; persist(); });
       el('askBtn').addEventListener('click', function () { runAsk(); });
       el('askRegen').addEventListener('click', function () {
         var last = state.history.length ? state.history[state.history.length - 1].q : '';
@@ -338,6 +383,7 @@
         if (ex) node.insertAdjacentHTML('afterend', ex);
       }
       scrollBottom();
+      maybeGenerate(entry, botId);   // optional in-browser abstractive rewrite (gated)
     }).catch(function (e) {
       var entry = { q: q, error: (e && e.message) ? e.message : String(e) };
       commit(entry);
