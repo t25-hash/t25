@@ -33,7 +33,7 @@
     return '<div class="ns-empty__hint">📚 機械工学の教科書 <b>5,809 文書</b>（α機械工学概説 / β設計工学 / γ産業機械）。事前に作った索引で関連文書だけを取り出し、その文脈をニューラルが学習して回答します（初回のみ索引を読み込み・gzip約4MB）。</div>';
   }
   function calcBody() {
-    return '<div class="ns-empty__hint">📐 機械工学便覧の <b>計算式・表 DB</b>（α/β/γ編 281章ぶんの数式と表を抽出・クレンジング）。KB（散文）とは別の索引です。式の記号（例 <code>PV=mRT</code>）や扱いたい量で検索すると、その章の数式・表を取り出して提示します。</div>';
+    return '<div class="ns-empty__hint">📐 <b>計算式・表レジストリ</b>。どの対象で質問しても、回答が計算式や表に関係する場合は、KB回答のあとに関連する<b>計算式（式名・式・記号説明つき）</b>と<b>表（表形式）</b>を自動で連投します。例：「歯車の強度」「軸受の寿命」「はめあい」「熱伝達率」。</div>';
   }
   function srcBody(src) { return src === 'kb' ? kbBody() : src === 'calc' ? calcBody() : mineBody(); }
   function mineBody() {
@@ -105,6 +105,36 @@
       '<div class="ns-msg__avatar">🍼</div>' +
       '<div class="ns-msg__body">' + botBody(entry) + '</div></div>';
   }
+  /* ---- 計算式・表の連投（KB回答後に NSCode.calc へ「引っ掛かった」ら） ---------- */
+  function formulaBubble(f) {
+    var syms = f.where.map(function (w) {
+      return '<li><code>' + C.esc(w.sym) + '</code>：' + C.esc(w.desc) + '</li>';
+    }).join('');
+    return '<div class="ns-msg ns-msg--bot ns-msg--calc">' +
+      '<div class="ns-msg__avatar">📐</div>' +
+      '<div class="ns-msg__body">' +
+        '<div class="ns-calc__name">【式】' + C.esc(f.name) + '</div>' +
+        '<div class="ns-calc__expr">' + C.esc(f.expr) + '</div>' +
+        '<div class="ns-calc__where"><span class="ns-calc__label">記号</span><ul class="ns-calc__syms">' + syms + '</ul></div>' +
+      '</div></div>';
+  }
+  function tableBubble(t) {
+    return '<div class="ns-msg ns-msg--bot ns-msg--calc">' +
+      '<div class="ns-msg__avatar">📊</div>' +
+      '<div class="ns-msg__body">' +
+        '<div class="ns-calc__name">【表】' + C.esc(t.name) + '</div>' +
+        C.Table(t.headers, t.rows) +
+      '</div></div>';
+  }
+  // follow-up bubbles for one answered question (empty unless the question hooks
+  // into the calc registry). Formulas first (式名＋式＋記号説明), then tables (表形式).
+  function extrasHtml(q) {
+    if (!NSCode.calc) return '';
+    var r = NSCode.calc.lookup(q);
+    if (!r.formulas.length && !r.tables.length) return '';
+    return r.formulas.map(formulaBubble).join('') + r.tables.map(tableBubble).join('');
+  }
+
   function pendingBubble(id) {
     return '<div class="ns-msg ns-msg--bot" id="' + id + '">' +
       '<div class="ns-msg__avatar">🍼</div>' +
@@ -123,7 +153,10 @@
 
   function logHtml() {
     if (!state.history.length) return welcomeHtml();
-    return state.history.map(function (e) { return userBubble(e.q) + botBubble(e); }).join('');
+    return state.history.map(function (e) {
+      var extras = (e.a && !e.a.weak && !e.error) ? extrasHtml(e.q) : '';
+      return userBubble(e.q) + botBubble(e) + extras;
+    }).join('');
   }
 
   function scrollBottom() {
@@ -239,7 +272,13 @@
       var entry = { q: q, a: slimAnswer(a || {}) };
       commit(entry);
       var node = el(botId);
-      if (node) { node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>'; }
+      if (node) {
+        node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>';
+        // 連投: if the question hooks into the calc registry, post the related
+        // formulas (式名＋式＋記号説明) and tables (表形式) as follow-up bubbles.
+        var ex = (entry.a && !entry.a.weak && !entry.error) ? extrasHtml(q) : '';
+        if (ex) node.insertAdjacentHTML('afterend', ex);
+      }
       scrollBottom();
     }).catch(function (e) {
       var entry = { q: q, error: (e && e.message) ? e.message : String(e) };
