@@ -265,9 +265,15 @@
     var runs = coreQuery(q).match(/[一-鿿]{2,}|[ァ-ヶー]{2,}|[ぁ-ゖ]{2,}|[A-Za-z][A-Za-z0-9\-]+/g) || [];
     var seen = {}, out = [];
     runs.forEach(function (r) {
-      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic-first segment
-        r = r.split(HIRA_PARTICLE)[0];
+      if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word
+        // strip TRAILING particles (はめあい「は」/ねじ「の」) to recover the topic word.
+        // (split-on-first-particle wrongly dropped words that START with a particle
+        // char, e.g. はめあい → は is the word's first kana, not a particle.)
+        r = r.replace(/[はがをにでとへものやかよ]+$/, '');
         if (!r || r.length < 2 || r.length > 4 || HIRA_STOP[r] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(r)) return;
+        // a leading は/も/が/を that leaves a stopword behind was a particle splice
+        // (軸受「は」どう → はどう → どう); drop it. はめあい→めあい(非停止語)は保持。
+        if (/^[はもがを]/.test(r) && HIRA_STOP[r.slice(1)]) return;
       }
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
@@ -867,7 +873,7 @@
       // どんなもの counts as LIST only when it asks what THINGS EXIST (どんなものがある);
       // 「どんなものですか」 is a definition (handled below), not an enumeration.
       list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな種類|どんなものが/g),
-      compare: n(/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
+      compare: n(/違い|違う|どう違|どこが違|異な|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
       // purpose: 「Xの目的/役割/用途は？」 — a very common form that 何ですか would
       // otherwise mis-route to definition. Asks for what something is FOR.
       purpose: n(/目的|役割|用途|機能|働き|ねらい|何のため/g),
