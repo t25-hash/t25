@@ -224,7 +224,7 @@
   /* drop generic question scaffolding so retrieval/sentence-ranking key off the
    * CONTENT words (歯車・軸受…), not boilerplate (「重要な点」「種類と特徴」「とは」).
    * Without this, a doc dense in 重要/設計/種類 (e.g. 重要度分類) hijacks answers. */
-  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え|挙げよ|挙げて|挙げる|挙げなさい|挙げ|列挙して|列挙/g;
+  var Q_GENERIC = /について|に関して|に関する|教えてください|教えて|とは何ですか|とは何か|とは|ですか|でしょうか|の仕組み|の特徴|の種類|の方法|の概要|の定義|仕組み|特徴|種類|方法|概要|定義|重要|な点|ポイント|教え|挙げよ|挙げて|挙げる|挙げなさい|挙げ|列挙して|列挙|説明して|説明|ってなに|ってなん|って何|ってな/g;
   function coreQuery(q) { return String(q == null ? '' : q).replace(Q_GENERIC, ''); }
 
   /* generic standalone terms that, ALONE, don't pin a topic. Because matching is
@@ -298,6 +298,28 @@
     return out;
   }
 
+  /* DOMAIN SYNONYMS / readings — the colloquial or katakana name a user types vs the
+   * formal term the handbook uses. A lexical (BM25/bigram) retriever can't bridge
+   * these on its own, so we expand the query with the canonical term(s). High-
+   * confidence, bidirectional pairs only (mechanical-engineering domain). This is
+   * the classic synonym-filter technique (Lucene/Elasticsearch) done offline. */
+  var SYN = {
+    'ベアリング': ['軸受'], 'ベアリング軸受': ['軸受'],
+    'ギヤ': ['歯車'], 'ギア': ['歯車'], 'ギヤー': ['歯車'],
+    'スプリング': ['ばね'], 'コイルばね': ['ばね'],
+    '軸受': ['ベアリング'], '歯車': ['ギヤ', 'ギア'],
+    'ねじ': ['ボルト'], 'スクリュー': ['ねじ'],
+    'プーリ': ['プーリー', 'ベルト車'], 'ベアリング鋼': ['軸受鋼']
+  };
+  /* canonical synonyms of a query's key terms (for retrieval expansion + enumeration) */
+  function synTerms(query) {
+    var out = [], seen = {};
+    keyTerms(query).forEach(function (k) {
+      (SYN[k] || []).forEach(function (s) { if (!seen[s] && s !== k) { seen[s] = 1; out.push(s); } });
+    });
+    return out;
+  }
+
   /* TOPIC PROMINENCE: a sentence that genuinely addresses a question about <key>
    * has <key> as its TOPIC/SUBJECT (熱伝達率は… / 熱伝達率とは…), not as a genitive
    * modifier (熱伝達率の測定… → the real topic is 測定) or an incidental late mention.
@@ -341,6 +363,9 @@
   function keyBoost(query) {
     var b = {};
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { b[t] = 2.2; }); });
+    // expand with domain synonyms so a colloquial query (ベアリング) also boosts the
+    // chunks that use the formal term (軸受). Slightly below the literal key weight.
+    synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((b[t] || 0) < 2.0) b[t] = 2.0; }); });
     // fold in the feedback layer's learned per-term boosts (👍 reinforcement).
     if (NSCode.feedback && NSCode.feedback.boosts) {
       var fb = NSCode.feedback.boosts(query);
@@ -668,6 +693,8 @@
     var keys = keyTerms(question); if (!keys.length) return null;
     var key = keys.slice().sort(function (a, b) { return b.length - a.length; })[0];   // most specific noun
     var sufs = [key]; if (/歯車$/.test(key) || key === '歯車') sufs.push('ギヤ');
+    // a colloquial key (ベアリング) enumerates the formal compound nouns (X軸受) too
+    (SYN[key] || []).forEach(function (s) { if (sufs.indexOf(s) < 0) sufs.push(s); });
     var re = new RegExp('(?:^|[\\s、。，．（）()・/「」])([一-鿿ぁ-ヿァ-ヶー]{1,7}?)(' + sufs.map(escRe).join('|') + ')\\s*（\\s*[A-Za-z]', 'gm');
     var gear = sufs.indexOf('ギヤ') >= 0;
     var reX = gear ? /(?:^|[\s、。，．（）()・/「」])(ラックとピニオン|ラック|ピニオン)\s*（\s*[A-Za-z]/gm : null;
@@ -701,13 +728,15 @@
     // curated glossary (DEFAULT_DOCS) is scanned alongside the retrieved docs so a
     // 種類 question over plain prose still enumerates. Anchored to a boundary + a
     // trailing particle/punctuation so flattened-table fragments don't leak in.
-    if (items.length < 4 && key.length <= 3 && /^[一-鿿ァ-ヶー]+$/.test(key)) {
-      var headRe = new RegExp('(?:^|[\\s、。，．（）()・/「」：:＝=])([一-鿿ぁ-ヿァ-ヶー]{1,8}?' + escRe(key) + ')(?=[はがをにのへとも、，。・（(）)：:＝=\\s/「」]|$)', 'gm');
+    // head-noun suffixes = the key (if short) plus any short synonym (ベアリング→軸受)
+    var headSufs = sufs.filter(function (s) { return s.length <= 3 && /^[一-鿿ァ-ヶー]+$/.test(s); });
+    if (items.length < 4 && headSufs.length) {
+      var headRe = new RegExp('(?:^|[\\s、。，．（）()・/「」：:＝=])([一-鿿ぁ-ヿァ-ヶー]{1,8}?)(' + headSufs.map(escRe).join('|') + ')(?=[はがをにのへとも、，。・（(）)：:＝=\\s/「」]|$)', 'gm');
       getDocs().concat(docs || []).forEach(function (d) {
         var t = d.text || '', c3 = srcCount[d.name] || 0; headRe.lastIndex = 0;
         while ((m = headRe.exec(t))) {
-          var hw = m[1], pre = hw.slice(0, hw.length - key.length);
-          if (!pre || hw === key || hw.length < key.length + 1 || badPrefix(pre)) continue;
+          var pre = m[1], hw = m[1] + m[2];
+          if (!pre || hw === key || badPrefix(pre) || sufs.indexOf(hw) >= 0) continue;
           c3++; if (!seen[hw]) { seen[hw] = 1; items.push(hw); }
         }
         srcCount[d.name] = c3;
@@ -835,7 +864,9 @@
     q = String(q || '');
     var n = function (re) { return (q.match(re) || []).length; };
     var sc = {
-      list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな(もの|種類)/g),
+      // どんなもの counts as LIST only when it asks what THINGS EXIST (どんなものがある);
+      // 「どんなものですか」 is a definition (handled below), not an enumeration.
+      list: n(/種類|分類|一覧|挙げ|列挙|何があ|どんな種類|どんなものが/g),
       compare: n(/違い|差異|比較|に対して|メリット.*デメリット|長所.*短所/g),
       // purpose: 「Xの目的/役割/用途は？」 — a very common form that 何ですか would
       // otherwise mis-route to definition. Asks for what something is FOR.
@@ -848,11 +879,13 @@
       // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
       // とは only counts as DEFINITIONAL at clause end / before 何ど (「熱伝達率とは」),
       // not mid-phrase 「平歯車とはすば歯車」 where it is just と+は (≈ "A and B").
-      definition: n(/とは(?=$|[何ど、。．？！\s])/g) + n(/定義|どういうもの|意味/g) + 0.5 * n(/何ですか|何か/g)
+      // colloquial definition asks: 「〜ってなに」「〜どんなものですか」「〜について説明して」 —
+      // overview requests that a definition-shaped answer best satisfies.
+      definition: n(/とは(?=$|[何ど、。．？！\s])/g) + n(/定義|どういうもの|意味|ってなに|って何|どんなもの|について.{0,4}説明|を説明/g) + 0.5 * n(/何ですか|何か/g) + 0.4 * n(/について.{0,3}教え|を教え/g)
     };
-    // an explicit definitional marker is decisive (「熱伝達率とは」), but NOT bare 何ですか,
-    // and not when a comparison/why/list cue is competing.
-    if (/(とは(?=$|[何ど、。．？！\s])|定義|どういうもの)/.test(q) && sc.list === 0 && sc.purpose === 0 && sc.compare === 0 && sc.why === 0) return 'definition';
+    // an explicit definitional marker is decisive (「熱伝達率とは」/「〜ってなに」/「説明して」),
+    // but NOT bare 何ですか, and not when a comparison/why/list cue is competing.
+    if (/(とは(?=$|[何ど、。．？！\s])|定義|どういうもの|ってなに|って何|どんなものですか|どんなものでしょう|について.{0,4}説明)/.test(q) && sc.list === 0 && sc.purpose === 0 && sc.compare === 0 && sc.why === 0) return 'definition';
     var order = ['list', 'compare', 'purpose', 'why', 'features', 'howto', 'definition'];
     var best = 'default', bestSc = 0;
     order.forEach(function (k) { if (sc[k] > bestSc + 1e-9) { bestSc = sc[k]; best = k; } });
@@ -918,7 +951,7 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
@@ -1186,6 +1219,7 @@
     gram(query).forEach(function (t) { if (w[t] == null) w[t] = 0.25; });             // any term: weak signal
     gram(coreQuery(query)).forEach(function (t) { if ((w[t] || 0) < 1) w[t] = 1; });  // content word: full
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { w[t] = 2.5; }); }); // key term: strong
+    synTerms(query).forEach(function (s) { gram(s).forEach(function (t) { if ((w[t] || 0) < 2.2) w[t] = 2.2; }); }); // synonym (ベアリング→軸受): nearly as strong
     var score = {};
     Object.keys(w).forEach(function (t) {
       var p = index.post[t]; if (!p) return;
