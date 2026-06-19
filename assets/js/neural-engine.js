@@ -415,11 +415,59 @@
     return pts;
   }
 
+  /* ---- persistence + warm-start (for the feedback-trained "growing baby") ----
+   * serialize(): JSON-able snapshot (weights as plain Arrays). ids are dropped —
+   * scoring (forward/seqLogProb) only needs vocab + weights; training rebuilds ids
+   * from a fresh corpus and warm-starts from the snapshot. */
+  function serialize(m) {
+    if (!m) return null;
+    return {
+      vocab: { stoi: m.vocab.stoi, itos: m.vocab.itos, size: m.vocab.size },
+      merges: m.merges, C: m.C, D: m.D, H: m.H, V: m.V,
+      Emb: Array.prototype.slice.call(m.Emb),
+      W1: Array.prototype.slice.call(m.W1), b1: Array.prototype.slice.call(m.b1),
+      W2: Array.prototype.slice.call(m.W2), b2: Array.prototype.slice.call(m.b2),
+      steps: m.steps || 0, loss: m.loss || 0
+    };
+  }
+  function restore(o) {
+    if (!o) return null;
+    return {
+      vocab: { stoi: o.vocab.stoi, itos: o.vocab.itos, size: o.vocab.size },
+      ids: new Int32Array(0), merges: o.merges || [], C: o.C, D: o.D, H: o.H, V: o.V,
+      Emb: Float32Array.from(o.Emb),
+      W1: Float32Array.from(o.W1), b1: Float32Array.from(o.b1),
+      W2: Float32Array.from(o.W2), b2: Float32Array.from(o.b2),
+      steps: o.steps || 0, loss: o.loss || 0
+    };
+  }
+  /* copy weights from oldM into newM so incremental training keeps prior learning.
+   * Per-token weights (Emb row, W2 column, b2) are matched by VOCAB STRING, so a
+   * rebuilt vocab (different ids / new words) still inherits what overlaps. The
+   * vocab-independent W1/b1 carry over directly when C·D·H match. */
+  function warmStart(newM, oldM) {
+    if (!newM || !oldM) return newM;
+    if (newM.C === oldM.C && newM.D === oldM.D && newM.H === oldM.H) {
+      newM.W1.set(oldM.W1); newM.b1.set(oldM.b1);
+    }
+    if (newM.D !== oldM.D) return newM;     // embedding width changed → can't copy rows
+    var D = newM.D, H = newM.H, Vn = newM.V, Vo = oldM.V, itos = newM.vocab.itos, ostoi = oldM.vocab.stoi;
+    for (var vn = 0; vn < Vn; vn++) {
+      var vo = ostoi[itos[vn]];
+      if (vo == null) continue;
+      for (var d = 0; d < D; d++) newM.Emb[vn * D + d] = oldM.Emb[vo * D + d];
+      if (H === oldM.H) { for (var j = 0; j < H; j++) newM.W2[j * Vn + vn] = oldM.W2[j * Vo + vo]; }
+      newM.b2[vn] = oldM.b2[vo];
+    }
+    return newM;
+  }
+
   NSCode.neuralLM = {
     tokenize: tok, encode: encodeWith, buildVocab: buildVocab, create: create, embedMap: embedMap,
     learnMerges: function (text, opts) { opts = opts || {}; return learnMerges(tok(text), opts.numMerges || 300, opts.minMerge || 3); },
     forward: forward, step: step, trainAsync: trainAsync, generate: generate, nextProbs: nextProbs,
-    seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer
+    seqLogProb: seqLogProb, keySeed: keySeed, keySeeds: keySeeds, answer: answer,
+    serialize: serialize, restore: restore, warmStart: warmStart
   };
 
   /* ---- shared singleton: Ask's "base neural" model ----

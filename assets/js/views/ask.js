@@ -60,12 +60,26 @@
 
   function slimAnswer(a) {
     return {
-      text: a.text, source: a.source, weak: !!a.weak,
+      text: a.text, source: a.source, weak: !!a.weak, learned: !!a.learned,
+      compose: (a.compose || []).slice(0, 8),   // constituent sentences → block on 👎
       hits: (a.hits || []).map(function (h) {
         var t = h.chunk.text || '';
         return { source: h.chunk.source, score: h.score, text: t.slice(0, 200), more: t.length > 200 };
       })
     };
+  }
+
+  /* 👍/👎 row + learned tag. Only meaningful for a real (non-weak) answer. */
+  function feedbackRow(entry) {
+    if (!NSCode.feedback || !entry.a || entry.a.weak || entry.error || !entry.a.text) return '';
+    var fb = entry.feedback && entry.feedback.label;
+    var id = entry.id == null ? '' : entry.id;
+    function btn(label, icon, txt) {
+      return '<button class="ns-feedback__btn' + (fb === label ? ' is-active is-' + label : '') + '"' +
+        ' data-fb="' + label + '" data-fb-id="' + id + '" title="' + txt + '">' + icon + '</button>';
+    }
+    var note = fb ? '<span class="ns-feedback__note">' + (fb === 'good' ? '👍 学習しました' : '👎 学習しました（別の回答を生成）') + '</span>' : '';
+    return '<div class="ns-feedback">' + btn('good', '👍', '意図に沿う回答') + btn('bad', '👎', '意図に沿わない（別回答を再生成）') + note + '</div>';
   }
 
   function citeDetails(q, hits, label) {
@@ -89,9 +103,10 @@
         citeDetails(q, a.hits, '検索で近かった候補');
     }
     var html = (a.text
-      ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p>'
+      ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
       : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
     if (a.source) html += '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(a.source) + '</span></div>';
+    html += feedbackRow(entry);
     html += citeDetails(q, a.hits);
     html += '<p class="ns-empty__hint ns-chat__links">🧠 要約は <a href="#/memory">Memory Lab</a>／🔧 文法は <a href="#/grammar">Grammar-agent</a> で確認できます。</p>';
     return html;
@@ -163,6 +178,37 @@
     window.requestAnimationFrame(function () { window.scrollTo(0, document.body.scrollHeight); });
   }
 
+  /* 🎓 collapsible learning-status panel: what good/bad grading has taught so far */
+  function trainPanel() {
+    if (!NSCode.feedback) return '';
+    var s = NSCode.feedback.stats();
+    var terms = s.learnedTerms.length
+      ? s.learnedTerms.map(function (t) { return '<span class="ns-tag">' + C.esc(t.term) + ' ×' + t.weight + '</span>'; }).join(' ')
+      : '<span class="ns-empty__hint">まだありません</span>';
+    var model = s.model ? ('steps ' + s.model.steps + ' / loss ' + s.model.loss + ' / 語彙 ' + s.model.vocab) : 'まだ学習していません';
+    return '<details class="ns-chat__kb ns-train">' +
+      '<summary>🎓 学習状況（👍 ' + s.good + ' / 👎 ' + s.bad + '）</summary>' +
+      '<p class="ns-empty__hint">good/bad の評価で「検索の重み・回避する回答・育つニューラル」を更新します（端末内・外部APIなし）。</p>' +
+      '<div class="ns-train__row"><b>学習した語</b><div>' + terms + '</div></div>' +
+      '<div class="ns-train__row"><b>記憶した回答</b> ' + s.accepted + ' 件 ／ <b>回避登録</b> ' + s.blockedQ + ' 問</div>' +
+      '<div class="ns-train__row"><b>育つニューラル</b> ' + model + '</div>' +
+      '<button id="fbReset" class="ns-btn ns-btn--ghost">学習をリセット</button>' +
+      '</details>';
+  }
+
+  /* a 👍/👎 click: persist the grade, update the row, and on 👎 auto-regenerate */
+  function onFeedback(btn) {
+    if (!NSCode.feedback) return;
+    var label = btn.getAttribute('data-fb'), id = +btn.getAttribute('data-fb-id'), entry = null;
+    for (var i = 0; i < state.history.length; i++) if (state.history[i].id === id) { entry = state.history[i]; break; }
+    if (!entry || (entry.feedback && entry.feedback.label)) return;   // grade once per answer
+    entry.feedback = { label: label, ts: Date.now() };
+    persist();
+    var row = btn.closest && btn.closest('.ns-feedback'); if (row) row.outerHTML = feedbackRow(entry);
+    NSCode.feedback.record(entry.q, entry.a, label);   // good: also trains the persistent net (async)
+    if (label === 'bad') runAsk(entry.q, { noRecall: true });   // immediately try a different answer
+  }
+
   NSCode.registerView({
     route: '#/ask', module: 'ask', title: 'Ask (Hybrid)',
     render: function () {
@@ -179,6 +225,7 @@
           C.Controls([{ label: '温度 Temperature: <b id="askTv">' + state.temperature + '</b>', control: '<input id="askT" class="ns-range" type="range" min="0.2" max="1.0" step="0.05" value="' + state.temperature + '">' }]) +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
+        trainPanel() +
         '<div class="ns-chat">' +
           '<div id="chatLog" class="ns-chat__log">' + logHtml() + '</div>' +
           '<div class="ns-chat__composer">' +
@@ -196,12 +243,20 @@
       el('askBtn').addEventListener('click', function () { runAsk(); });
       el('askRegen').addEventListener('click', function () {
         var last = state.history.length ? state.history[state.history.length - 1].q : '';
-        runAsk(last || null);
+        runAsk(last || null, { noRecall: true });   // force a fresh (non-recalled) answer
       });
       el('askQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runAsk(); } });
       el('chatLog').addEventListener('click', function (e) {
+        var fbtn = e.target.closest && e.target.closest('.ns-feedback__btn');
+        if (fbtn) { onFeedback(fbtn); return; }
         var chip = e.target.closest && e.target.closest('.ns-chat__chip');
         if (chip) runAsk(chip.getAttribute('data-q'));
+      });
+      var rst = el('fbReset');
+      if (rst) rst.addEventListener('click', function () {
+        if (NSCode.feedback && window.confirm('学習内容（評価・重み・記憶・育てたニューラル）をすべて消去します。よろしいですか？')) {
+          NSCode.feedback.reset(); NSCode.renderCurrent();
+        }
       });
       scrollBottom();
     }
@@ -233,6 +288,7 @@
   }
 
   function commit(entry) {
+    if (entry.id == null) { state.seq = (state.seq || 0) + 1; entry.id = state.seq; }
     state.history.push(entry);
     if (state.history.length > MAX_HISTORY) state.history = state.history.slice(-MAX_HISTORY);
     persist();
@@ -241,7 +297,8 @@
   // runAsk(qOverride): qOverride present (chip / 別の回答) keeps the input; otherwise
   // the composer's value is used and cleared. Each call writes to its own bubble, so
   // overlapping answers don't clobber one another.
-  function runAsk(qOverride) {
+  function runAsk(qOverride, runOpts) {
+    runOpts = runOpts || {};
     var input = el('askQ'), log = el('chatLog');
     if (!log) return;
     var fromInput = (qOverride == null);
@@ -260,6 +317,7 @@
     var run = prebuilt ? A.hybridAnswerKB : A.hybridAnswer;
     run(q, {
       store: state.source,
+      noRecall: !!runOpts.noRecall,   // 👎 regenerate: skip the vetted-answer shortcut
       temperature: state.temperature,
       onProgress: function (s) {
         var node = el(botId); if (!node) return;

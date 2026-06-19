@@ -372,6 +372,24 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 .ns-calc__syms code { font-size: 13px; }
 .ns-msg--calc .ns-table-wrap { margin-top: 4px; }
 
+/* 👍/👎 feedback row under an answer + the "learned" tag and 学習状況 panel */
+.ns-feedback { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.ns-feedback__btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 8px; padding: 2px 8px; font-size: 14px; line-height: 1.5; cursor: pointer;
+}
+.ns-feedback__btn:hover { border-color: var(--accent); }
+.ns-feedback__btn.is-active { cursor: default; }
+.ns-feedback__btn.is-active.is-good { border-color: #3fb950; background: rgba(63, 185, 80, 0.16); }
+.ns-feedback__btn.is-active.is-bad  { border-color: #e5534b; background: rgba(229, 83, 75, 0.16); }
+.ns-feedback__note { font-size: 12px; color: var(--text-dim); }
+.ns-msg__learned {
+  font-size: 11px; color: var(--accent); border: 1px solid var(--accent);
+  border-radius: 6px; padding: 0 5px; margin-left: 4px; vertical-align: middle;
+}
+.ns-train__row { font-size: 13px; margin: 6px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.ns-train { margin-top: 8px; }
+
 .ns-chat__welcome { text-align: center; margin: auto 0; padding: 24px; color: var(--text-dim); }
 .ns-chat__welcome .ns-msg__avatar { margin: 0 auto 12px; width: 44px; height: 44px; font-size: 24px; }
 .ns-chat__chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }

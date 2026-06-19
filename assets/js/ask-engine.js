@@ -334,7 +334,20 @@
   function keyBoost(query) {
     var b = {};
     keyTerms(query).forEach(function (kt) { gram(kt).forEach(function (t) { b[t] = 2.2; }); });
+    // fold in the feedback layer's learned per-term boosts (👍 reinforcement).
+    if (NSCode.feedback && NSCode.feedback.boosts) {
+      var fb = NSCode.feedback.boosts(query);
+      if (fb) for (var t in fb) b[t] = Math.max(b[t] || 1, fb[t]);
+    }
     return b;
+  }
+  /* 👎-graded lines to keep out of the answer for this question (empty = none) */
+  function fbAvoid(query) {
+    return (NSCode.feedback && NSCode.feedback.blockedFor) ? NSCode.feedback.blockedFor(query) : [];
+  }
+  /* a previously 👍-vetted answer for a near-duplicate question, or null */
+  function fbRecall(query) {
+    return (NSCode.feedback && NSCode.feedback.recall) ? NSCode.feedback.recall(query) : null;
   }
 
   /* chunk every doc, tagging each chunk with its source document name */
@@ -687,8 +700,9 @@
    * trained net's own confidence (mean log-prob / seqLogProb). The text is always
    * real corpus text → grammatically clean; the net does the selection → it is
    * the baby model's answer, just kept natural and short. Returns {text, source}. */
-  function composeConcise(question, hits, docs, model, target) {
+  function composeConcise(question, hits, docs, model, target, avoid) {
     target = target || 100;
+    var blocked = {}; (avoid || []).forEach(function (s) { blocked[s] = 1; });   // 👎-graded lines to skip
     var emb = NSCode.embeddings, qv = emb.embed(question, 64);
     var qg = {}; gram(coreQuery(question)).forEach(function (x) { qg[x] = 1; });   // content words only
     var keys = keyTerms(question);
@@ -702,7 +716,7 @@
     var seen = {}, cands = [];
     groups.forEach(function (g) {
       g.arr.forEach(function (s, idx) {
-        if (s.length < 18 || s.length > 140 || seen[s] || isJunkSent(s)) return;
+        if (s.length < 18 || s.length > 140 || seen[s] || isJunkSent(s) || blocked[s]) return;
         seen[s] = 1; cands.push({ s: s, g: g, idx: idx });
       });
     });
@@ -724,15 +738,26 @@
     shortlist.forEach(function (c) { c.nc = nl ? nl.seqLogProb(model, nl.encode(model, c.s)) : 0; });
     var ncs = shortlist.map(function (c) { return c.nc; });
     var mn = Math.min.apply(null, ncs), mx = Math.max.apply(null, ncs);
+    // feedback-trained persistent net: how "good-answer-like" each line is. It
+    // accumulates over 👍 grades, so its preference sharpens with use (0 when none).
+    var fm = (NSCode.feedback && NSCode.feedback.model) ? NSCode.feedback.model() : null;
+    if (fm && NSCode.neuralLM) {
+      shortlist.forEach(function (c) { c.fc = NSCode.neuralLM.seqLogProb(fm, NSCode.neuralLM.encode(fm, c.s)); });
+      var fcs = shortlist.map(function (c) { return c.fc; });
+      var fmn = Math.min.apply(null, fcs), fmx = Math.max.apply(null, fcs);
+      shortlist.forEach(function (c) { c.fcn = (fmx > fmn) ? (c.fc - fmn) / (fmx - fmn) : 0.5; });
+    } else {
+      shortlist.forEach(function (c) { c.fcn = 0; });
+    }
     shortlist.forEach(function (c) {
       c.ncn = (mx > mn) ? (c.nc - mn) / (mx - mn) : 0.5;
-      c.final = c.rel + 0.4 * c.ncn - 0.0015 * Math.max(0, c.s.length - 120);  // gently prefer ≤~120字 (P4)
+      c.final = c.rel + 0.4 * c.ncn + 0.3 * c.fcn - 0.0015 * Math.max(0, c.s.length - 120);  // gently prefer ≤~120字 (P4)
     });
     shortlist.sort(function (a, b) { return b.final - a.final; });
     var top = shortlist[0], picked = [top.s], used = {}, len = top.s.length;
     used[top.s] = 1;
     function tryAdd(s) {
-      if (!s || used[s] || isJunkSent(s) || !sharesQuery(s)) return;     // stay on-topic (no drift)
+      if (!s || used[s] || isJunkSent(s) || !sharesQuery(s) || blocked[s]) return;     // stay on-topic (no drift)
       if (len + s.length > target + 20) return;                          // cap ~120字 (P4)
       picked.push(s); used[s] = 1; len += s.length;
     }
@@ -941,7 +966,7 @@
     return { text: lead + '記号は、' + syms + '。', source: '計算式DB' };
   }
   /* router: pick a builder by intent, else fall back to composeConcise */
-  function composeByIntent(question, hits, docs, model, target) {
+  function composeByIntent(question, hits, docs, model, target, avoid) {
     var intent = classifyIntent(question), r = null;
     if (intent === 'list') r = answerList(question, hits, docs);
     else if (intent === 'howto') r = answerCalcHowto(question) || answerHowto(question, hits, docs);
@@ -950,8 +975,11 @@
     else if (intent === 'why') r = answerWhy(question, hits, docs);
     else if (intent === 'features') r = answerFeatures(question, hits, docs);
     else if (intent === 'definition') r = answerDefinition(question, hits, docs);
-    if (r && r.text) { r.intent = intent; return r; }
-    var c = composeConcise(question, hits, docs, model, target); c.intent = 'default'; return c;
+    // a structured answer the user already 👎-graded must not be served again →
+    // fall through to the concise composer (which skips the blocked lines).
+    var isBlocked = r && r.text && avoid && avoid.indexOf(r.text) >= 0;
+    if (r && r.text && !isBlocked) { r.intent = intent; return r; }
+    var c = composeConcise(question, hits, docs, model, target, avoid); c.intent = 'default'; return c;
   }
 
   /* P1 relevance floor — a confident off-topic answer is worse than admitting no
@@ -1052,6 +1080,7 @@
     if (!chunks.length || !question) return Promise.resolve(null);
     var res = NSCode.rag.retrieve(question, chunks, { topK: opts.topK || 4, threshold: 0, boost: keyBoost(question) });
     if (!res.hits.length) return Promise.resolve({ text: '', seed: '', hits: [] });
+    var avoid = fbAvoid(question);
     var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
     // weight on-topic chunks (those containing a question key term) so the tiny net's
     // recall — used to rerank the answer — is grounded in the asked term, not neighbours.
@@ -1068,10 +1097,13 @@
       .then(function () {
         // baby model's answer: one concise, grounded ~100-char sentence selected
         // from the retrieved passages and re-ranked by the trained net (natural).
-        var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100);
+        var concise = composeByIntent(question, res.hits, getDocs(), m, opts.target || 100, avoid);
         var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
         var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
         if (weak) concise = { text: '', source: '', intent: concise.intent };
+        // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
+        var learned = false;
+        if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
         var memo = weak ? '' : contextMemo(question, res.hits, getDocs(), 3);
         // Grammar Compiler Layer: turn the answer into SML per sentence, then
         // re-compile to natural Japanese (meaning-preserving; complex sentences
@@ -1085,7 +1117,7 @@
           answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
-        return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+        return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
       });
   }
@@ -1162,12 +1194,16 @@
         var L = NSCode.neuralLM;
         var m = L.create(context, { context: 4, dim: 20, hidden: 48, maxVocab: 400 });
         var compose = composeAnswer(question, res.hits, docs);
+        var avoid = fbAvoid(question);
         return L.trainAsync(m, { steps: opts.steps || 5000, chunk: 1250, lr: 0.18, onProgress: opts.onProgress })
           .then(function () {
-            var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100);
+            var concise = composeByIntent(question, res.hits, pdocs, m, opts.target || 100, avoid);
             var structured = concise.intent === 'list' || concise.intent === 'howto';   // trust structured extractions
             var weak = !structured && weakRelevance(question, concise.text, concise.source, res.hits[0] ? res.hits[0].score : 0);
             if (weak) concise = { text: '', source: '', intent: concise.intent };
+            // reuse a previously 👍-vetted answer for a near-duplicate question (unless regenerating)
+            var learned = false;
+            if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
@@ -1178,7 +1214,7 @@
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
           });
       });
