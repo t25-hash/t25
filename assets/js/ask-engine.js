@@ -135,7 +135,41 @@
       'パルプ・製紙機械は、木材などの原料からパルプをつくり、紙へ抄き上げる一連の設備です。\n\n' +
       '調木・チップ工程では、原木の樹皮をバーカ（barker）で除去し、チッパで木材をチップに切削します。樹皮はパルプ歩留りの低下やちりの原因になるため除去します。ドラムバーカは、やや傾けて回転するドラム内で丸太同士やドラム壁との摩擦により樹皮を剥ぎ取ります。\n\n' +
       'パルプ化・洗浄・漂白を経たパルプは、抄紙機（ワイヤパートで脱水、プレスパートで搾水、ドライヤパートで乾燥）を通って連続した紙になります。\n\n' +
-      '繊維機械は、紡績（開繊・カード・練条・粗紡・精紡）や織布などで、繊維を糸や布へ加工する設備群です。' }
+      '繊維機械は、紡績（開繊・カード・練条・粗紡・精紡）や織布などで、繊維を糸や布へ加工する設備群です。' },
+
+    /* --- 用語集（ハンドブックが定義しない一般用語の簡潔な定義。各文は「Xは、〜である」
+     *     の種差定義形にし、定義質問の根拠として使えるようにする） --- */
+    { name: '40-機械工学用語集.md', text:
+      '熱伝達率は、固体表面と接する流体との間の対流熱伝達のしやすさを表す係数で、単位面積・単位温度差あたりに伝わる熱流量で定義される物理量である。\n\n' +
+      '熱伝導率は、物質の内部を熱が伝わりやすさを表す物性値である。\n\n' +
+      '応力集中は、切欠き・穴・段付きなど断面が急に変化する部分で、局所的に応力が高くなる現象である。\n\n' +
+      '疲労破壊は、繰り返し荷重を受けることで、静的強度より低い応力でも亀裂が発生・進展して起こる破壊である。\n\n' +
+      '座屈は、細長い部材が圧縮荷重を受けたとき、ある荷重で急に横へ曲がって不安定になる現象である。\n\n' +
+      'クリープは、高温で一定の荷重を長時間受けたとき、時間とともにひずみが増大していく現象である。\n\n' +
+      '腐食は、金属が周囲の環境と化学的・電気化学的に反応して表面から劣化していく現象である。\n\n' +
+      '弁は、流体の流れの開閉・流量・圧力・方向を制御する機械要素である。\n\n' +
+      'ポンプは、機械的エネルギーを与えて液体を移送し、または圧力を高める流体機械である。\n\n' +
+      '送風機は、気体に圧力とエネルギーを与えて送り出す流体機械である。\n\n' +
+      '熱交換器は、温度の異なる二つの流体の間で熱を移動させる装置である。\n\n' +
+      '溶接は、母材を局部的に加熱・溶融させ、または圧力を加えて一体に接合する金属接合法である。\n\n' +
+      '鋳造は、溶かした金属を鋳型に流し込み、凝固させて目的の形状の製品を作る加工法である。\n\n' +
+      '鍛造は、金属を打撃・加圧して塑性変形させ、形状を作るとともに内部組織を緻密にする加工法である。\n\n' +
+      '熱処理は、金属材料を加熱・冷却して、硬さ・強さ・粘り強さなどの性質を改善する操作である。\n\n' +
+      '焼入れは、鋼を高温に加熱してから急冷し、硬さを高める熱処理である。\n\n' +
+      '焼戻しは、焼入れした鋼を再加熱して粘り強さを与え、内部応力を除く熱処理である。\n\n' +
+      '潤滑は、接触して運動する面の間に潤滑剤を介在させ、摩擦と摩耗を低減する処置である。\n\n' +
+      '摩擦は、接触する二つの物体が相対運動しようとするとき、その運動を妨げる向きに生じる抵抗力である。\n\n' +
+      '公差は、加工される寸法に許容される、最大と最小の差の範囲である。\n\n' +
+      'はめあいは、穴と軸を組み合わせるときの、すきまや締め代の関係である。\n\n' +
+      '炭素鋼は、鉄と炭素を主成分とし、炭素量によって強さや硬さが変わる最も基本的な鋼である。\n\n' +
+      '合金鋼は、炭素鋼にクロム・ニッケル・モリブデンなどの合金元素を加え、強度や耐食性などを高めた鋼である。\n\n' +
+      'ステンレス鋼は、クロムを多く含み、表面に不動態被膜をつくることで高い耐食性をもつ合金鋼である。\n\n' +
+      '鋳鉄は、鉄に炭素を多く含み、鋳造性や被削性に優れるが、もろい性質をもつ鉄系材料である。\n\n' +
+      'アルミニウム合金は、軽量で加工性や耐食性に優れ、添加元素で強度を高めた金属材料である。\n\n' +
+      '減速機は、歯車などによって入力回転を減速し、トルクを増大して出力する機械装置である。\n\n' +
+      'キーは、軸と歯車やプーリのボス部を結合し、回転とトルクを確実に伝える機械要素である。\n\n' +
+      'カムは、特定の輪郭形状によって、従動節に決められた運動を与える機械要素である。\n\n' +
+      'ボルトは、ナットと組み合わせ、部材を締め付けて結合する代表的なねじ締結部品である。' }
   ];
 
   function getDocs() { return store.get('ask.docs', DEFAULT_DOCS); }
@@ -202,6 +236,10 @@
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
+  /* structural single kanji that are never a topic noun (figure/section/position…) */
+  var SINGLE_STOP = {};
+  ('図 表 式 章 節 項 例 他 中 内 外 前 後 間 点 等 物 事 方 際 上 下 本 各 同 約 数 部 面 量 値 法 用 性 化 的 時 場 合 者 式 計 図 比 約 種 類 別 性 度 力 行 月 年 日 回 個 件')
+    .split(' ').forEach(function (t) { SINGLE_STOP[t] = 1; });
 
   /* the question's SPECIFIC terms: kanji/katakana runs (hiragana particles split
    * them) minus generic words. Kanji and katakana runs are split separately so a
@@ -241,6 +279,14 @@
       var hira = w.match(/^[ぁ-ゖ]+/)[0];
       if (HIRA_PARTICLE.test(hira.slice(-1)) || HIRA_STOP[hira]) return;
       if (!seen[w]) { seen[w] = 1; out.push(w); }
+    });
+    // single-kanji topic noun (弁・軸・梁) — LAST RESORT only, when no multi-char key
+    // exists (so it doesn't interfere with multi-key questions). The char must stand
+    // as a noun (a particle follows) and not be a structural/generic kanji.
+    if (!out.length) (coreQuery(q).match(/[一-鿿][はがをにのへとも、]/g) || []).forEach(function (mw) {
+      var c = mw.charAt(0);
+      if (SINGLE_STOP[c] || GENERIC_TERM[c] || seen[c]) return;
+      seen[c] = 1; out.push(c);
     });
     return out;
   }
@@ -843,10 +889,25 @@
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
-    if (!top || !CUE.test(top.s)) return null;
-    var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
-    if (nx && !isJunkSent(nx) && text.length < 80 && (text.length + nx.length) <= 160) text += nx;
-    return { text: text, source: top.src };
+    if (top && CUE.test(top.s)) {
+      var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
+      if (nx && !isJunkSent(nx) && text.length < 80 && (text.length + nx.length) <= 160) text += nx;
+      return { text: text, source: top.src };
+    }
+    // SYNTHESIS fallback: no single sentence compares both subjects — combine the
+    // best on-topic sentence about EACH subject into one contrastive answer (a real
+    // two-fact synthesis, the kind a generative model would produce).
+    function bestFor(k) {
+      var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110; })
+        .sort(function (a, b) { return b.rel - a.rel; });
+      return cs[0];
+    }
+    var a0 = bestFor(subs[0]), b0 = bestFor(subs[1]);
+    if (a0 && b0 && a0.s !== b0.s && (a0.s.length + b0.s.length) <= 210) {
+      var sep = /[。．]$/.test(a0.s) ? '一方、' : '。一方、';
+      return { text: a0.s + sep + b0.s, source: a0.src };
+    }
+    return null;
   }
   var STEP_MARK = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
   function answerHowto(question, hits, docs) {
@@ -1077,6 +1138,10 @@
         var cdocs = _k0.length ? getDocs().filter(function (d) {
           var t = d.text || ''; for (var i = 0; i < _k0.length; i++) if (t.indexOf(_k0[i]) >= 0) return true; return false;
         }) : [];
+        // the 用語集 is pure definitions — blend it ONLY for definition questions so it
+        // doesn't override intent-specific sentences (目的/なぜ/特徴). The richer
+        // DEFAULT_DOCS (which also carry features/purpose) blend for every intent.
+        if (classifyIntent(question) !== 'definition') cdocs = cdocs.filter(function (d) { return !/用語集/.test(d.name); });
         var pdocs = cdocs.length ? docs.concat(cdocs) : docs;
         var _ctx = res.hits.map(function (h) { return h.chunk.text; }), _qk = keyTerms(question);
         // weight on-topic chunks so the net's recall (used to rerank the answer) is
