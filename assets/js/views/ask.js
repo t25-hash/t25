@@ -287,6 +287,9 @@
         '</div>';
     },
     onMount: function () {
+      // grammar agent を kuromoji 形態素解析で段階的に強化（非ブロッキング・端末内）。
+      // 失敗（vendor 未配置など）時は従来のルール解析にフォールバック。
+      if (NSCode.grammar && NSCode.grammar.initKuromoji) NSCode.grammar.initKuromoji().catch(function () {});
       el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
       if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });

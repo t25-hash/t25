@@ -251,6 +251,108 @@
     if (sml.actionSurface || (!sml.action && !sml.adjective)) return false;
     return true;
   }
+  /* ===== kuromoji 形態素解析（任意・段階的強化） =================================
+   * 端末内で動く本格的な形態素解析器。読み込めれば toSML をルール推定から品詞ベースの
+   * 正確な解析に置き換える（述語の辞書形・時制・丁寧・否定、そして「終止形か連用中止か」
+   * を確実に判定）。未ロード時は従来のルール解析にフォールバック（壊さない）。
+   * tokenize はロード後は同期なので normalize の同期 API はそのまま維持できる。 */
+  var _tokenizer = null, _initing = null;
+  function setTokenizer(tok) { _tokenizer = tok || null; return _tokenizer; }
+  function ready() { return !!_tokenizer; }
+  /* kuromoji を遅延ロードしてトークナイザを構築（ブラウザ）。SheetJS/PDF.js と同じ
+   * vendor 遅延ロード方式。重い辞書(約18MB)は初回利用時のみ取得し、以後は同期解析。 */
+  function initKuromoji(opts) {
+    opts = opts || {};
+    if (_tokenizer) return Promise.resolve(_tokenizer);
+    if (_initing) return _initing;
+    var dicPath = opts.dicPath || 'assets/vendor/kuromoji/dict/';
+    var src = opts.src || 'assets/vendor/kuromoji/kuromoji.js';
+    _initing = new Promise(function (resolve, reject) {
+      function build() {
+        if (!window.kuromoji) return reject(new Error('kuromoji global not found'));
+        window.kuromoji.builder({ dicPath: dicPath }).build(function (err, tok) {
+          if (err) { _initing = null; return reject(err); }
+          _tokenizer = tok; resolve(tok);
+        });
+      }
+      if (window.kuromoji) return build();
+      if (typeof document === 'undefined') return reject(new Error('no document'));
+      var sc = document.createElement('script'); sc.src = src; sc.async = true;
+      sc.onload = build; sc.onerror = function () { _initing = null; reject(new Error('kuromoji.js load failed')); };
+      document.head.appendChild(sc);
+    });
+    return _initing;
+  }
+
+  // 表現できる格/係助詞 → SML スロット（compile が再構成できるものだけ）
+  var KSLOT = { 'は': 'subject', 'が': 'subject', 'を': 'object', 'で': 'place', 'に': 'destination', 'へ': 'destination', 'と': 'companion' };
+  function isPred(t) { return t.pos === '動詞' || t.pos === '形容詞' || t.pos === '助動詞'; }
+  /* 1節（読点なし）→ SML。kuromoji の品詞・活用で述語と格構造を正確に取る。
+   * 安全側に倒し、表現できない助詞・修飾節を含む複雑節や非終止（連用中止/て形）は
+   * null を返して原文保持させる（recompile しない）。 */
+  function toSMLk(core) {
+    var tk;
+    try { tk = _tokenizer.tokenize(core); } catch (e) { return null; }
+    if (!tk || !tk.length) return null;
+    while (tk.length && tk[tk.length - 1].pos === '記号' && !/[A-Za-z0-9]/.test(tk[tk.length - 1].surface_form)) tk.pop();
+    if (!tk.length) return null;
+    var i = tk.length - 1;
+    while (i >= 0 && tk[i].pos === '助詞') i--;            // 終助詞・接続助詞の末尾を外す
+    var end = i;
+    while (i >= 0 && isPred(tk[i])) i--;                   // 述語ラン（動詞/形容詞/助動詞）
+    var predStart = i + 1;
+    var head = tk.slice(0, Math.max(predStart, 0)), pred = tk.slice(predStart, end + 1);
+    var sml = { _original: core }, dictForm = null, isAdj = false;
+    for (var k = 0; k < pred.length; k++) {
+      var t = pred[k];
+      if (t.pos === '形容詞') { dictForm = t.basic_form; isAdj = true; break; }
+      if (t.pos === '動詞') {
+        dictForm = t.basic_form;
+        if (dictForm === 'する' && head.length && head[head.length - 1].pos === '名詞' && head[head.length - 1].pos_detail_1 === 'サ変接続') {
+          dictForm = head[head.length - 1].surface_form + 'する'; head = head.slice(0, -1);   // サ変名詞＋する
+        }
+        break;
+      }
+    }
+    if (!dictForm) {   // 名詞述語（N＋だ/です/である）
+      if (head.length && head[head.length - 1].pos === '名詞' && pred.length && pred.every(function (t) { return t.pos === '助動詞'; })) {
+        isAdj = true; dictForm = head[head.length - 1].surface_form; head = head.slice(0, -1);
+      } else return null;
+    }
+    // 終止形か？ 連用中止・て形・未然などは非終止＝原文保持（compile すると文法が壊れる）
+    var finite = !pred.length || pred[pred.length - 1].conjugated_form === '基本形';
+    if (!finite) return null;
+    var polite = false, past = false, negative = false;
+    pred.forEach(function (t) {
+      if (t.pos === '助動詞') {
+        var b = t.basic_form, s = t.surface_form;
+        if (b === 'ます' || b === 'です') polite = true;
+        if (b === 'た' || s === 'た' || s === 'だ' || s === 'でし') past = true;
+        if (b === 'ない' || b === 'ぬ' || b === 'ん') negative = true;
+      }
+      if (t.pos === '形容詞' && t.basic_form === 'ない') negative = true;
+    });
+    // head → スロット（名詞＋表現可能な助詞のみ。修飾節・副詞・未対応助詞があれば bail）
+    var buf = '';
+    for (var h = 0; h < head.length; h++) {
+      var ht = head[h];
+      if (ht.pos === '助詞') {
+        var sl = KSLOT[ht.surface_form]; if (!sl) return null;
+        if (buf) { if (!sml[sl]) sml[sl] = buf; buf = ''; }
+      } else if (ht.pos === '名詞' || ht.pos === '接頭詞' || (ht.pos === '記号' && /[A-Za-z0-9ー・]/.test(ht.surface_form))) {
+        buf += ht.surface_form;
+      } else return null;        // 副詞/連体詞/動詞/形容詞などの修飾は複雑 → 原文保持
+    }
+    if (buf) return null;        // 助詞の付かない宙ぶらりんな名詞 → 原文保持
+    sml.tense = past ? 'past' : 'present';
+    sml.politeness = polite ? 'polite' : 'plain';
+    sml.negative = negative;
+    if (isAdj) sml.adjective = dictForm; else sml.action = dictForm;
+    return sml;
+  }
+  // 1節 → SML（kuromoji が使えればそれを、無ければ従来のルール解析を使う）
+  function analyzeClause(core) { return _tokenizer ? toSMLk(core) : toSML(core); }
+
   /* 自由テキスト → 文ごと・節ごとに SML 化 → compile で正規化。長さに関係なく全文を
    * 通すため、文を読点で節へ分割し、各節を独立に正規化して再結合する。意味保持を厳守
    * （preservesContent 不成立や辞書形不明の節は原文のまま通す＝破壊しない）。 */
@@ -266,7 +368,7 @@
       clauses.forEach(function (cl) {
         var trail = (cl.match(/[、，,]$/) || [''])[0];
         var core = trail ? cl.slice(0, -1) : cl;
-        var sml = toSML(core), normalized = core, changes = [], applied = false;
+        var sml = analyzeClause(core), normalized = core, changes = [], applied = false;
         if (sml) {
           if (opts.politeness) sml.politeness = opts.politeness;
           if (canRecompile(core, sml)) {
@@ -290,5 +392,6 @@
   }
 
   NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
-    toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface };
+    toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface,
+    initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, _setTokenizer: setTokenizer };
 })(window.NSCode);
