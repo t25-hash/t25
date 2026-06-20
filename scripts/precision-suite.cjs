@@ -14,6 +14,7 @@ const CHECKS = [
   { name: 'recall (title→doc)', file: 'ask-recall-eval.cjs', pass: /Recall@1 : (9[0-9]|100|8[5-9])/ },
   { name: 'ask-eval 品質', file: 'ask-eval.cjs', pass: /QUALITY SCORE: 100\.0/ },
   { name: 'calc 式・表検索', file: 'calc-lookup-eval.cjs', pass: /CALC LOOKUP SCORE: (\d+) \/ \1/ },
+  { name: 'junk-filter 判定', file: 'junk-filter-test.cjs', pass: /JUNK FILTER SCORE: (\d+) \/ \1/ },
   { name: 'recombine', file: 'recombine-harness.cjs', pass: /0 failed/ },
   { name: 'grammar-kuromoji', file: 'grammar-kuromoji-harness.cjs', pass: /0 failed/ },
   { name: 'intent 網羅', file: 'intent-coverage-harness.cjs', pass: /問題: なし/ }
