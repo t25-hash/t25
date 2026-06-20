@@ -58,7 +58,14 @@ const CASES = [
   { q: '角柱の断面', cat: 'none' },              // 柱→euler
   { q: 'やはり強度が大事だ', cat: 'none' },      // はり→bending を抑止
   { q: '橋梁の点検', cat: 'none' },              // 梁→bending
-  { q: 'ねじれ角の計算', cat: 'none' }           // ねじ→bolt を抑止
+  { q: 'ねじれ角の計算', cat: 'none' },           // ねじ→bolt を抑止
+  // --- v3: generic化した曖昧語の過検出抑止＋同義語のrecall ---
+  { q: '製品の寿命を延ばす', cat: 'none' },        // 寿命→l10 を抑止
+  { q: '疲労寿命の評価', cat: 'none' },            // 寿命→l10
+  { q: '冷却ファンの選定', cat: 'none' },          // 冷却→newton を抑止
+  { q: '横弾性係数とは', cat: 'none' },            // 弾性→hooke を抑止(横弾性はGでhooke対象外)
+  { q: '安全係数を求めたい', cat: 'formula', id: 'safety' },     // 安全率の同義語 recall
+  { q: 'ニュートンの冷却則とは', cat: 'formula', id: 'newton' }  // 冷却則 で recall 維持
 ];
 
 let pass = 0; const fails = [];
