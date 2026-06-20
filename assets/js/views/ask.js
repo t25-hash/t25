@@ -177,9 +177,42 @@
       '<div class="ns-chat__chips">' + chips + '</div></div>';
   }
 
+  /* ---- map selection: show a node's source Md (or 式・表) as an answer bubble ---- */
+  function paragraphs(t) {
+    return String(t == null ? '' : t).split(/\n{2,}/).map(function (p) {
+      p = p.trim(); return p ? '<p class="ns-doc__p">' + C.esc(p).replace(/\n/g, '<br>') + '</p>' : '';
+    }).join('');
+  }
+  function docBubble(e) {
+    var d = e.doc || {};
+    if (d.kind === 'formula' && d.formula) return formulaBubble(d.formula);
+    if (d.kind === 'table' && d.table) return tableBubble(d.table);
+    return '<div class="ns-msg ns-msg--bot ns-msg--doc">' +
+      '<div class="ns-msg__avatar">📄</div>' +
+      '<div class="ns-msg__body">' +
+        '<p class="ns-qa-answer__lead"><b>' + C.esc(d.title || '') + '</b> <span class="ns-msg__learned">Md全文</span></p>' +
+        paragraphs(d.text) +
+        (d.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(d.source) + '</span></div>' : '') +
+      '</div></div>';
+  }
+  // post a map-selected node's full content as an answer (called by ask-graph)
+  function showNode(payload) {
+    if (!payload) return;
+    var entry = { q: '🗺️ ' + (payload.title || ''), doc: payload };
+    commit(entry);
+    var log = el('chatLog');
+    if (log) {
+      var w = log.querySelector('.ns-chat__welcome'); if (w) log.innerHTML = '';
+      log.insertAdjacentHTML('beforeend', userBubble(entry.q) + docBubble(entry));
+    }
+    scrollBottom();
+  }
+  NSCode.askChat = { showNode: showNode };
+
   function logHtml() {
     if (!state.history.length) return welcomeHtml();
     return state.history.map(function (e) {
+      if (e.doc) return userBubble(e.q) + docBubble(e);
       var extras = (e.a && !e.a.weak && !e.error) ? extrasHtml(e.q) : '';
       return userBubble(e.q) + botBubble(e) + extras;
     }).join('');
@@ -299,6 +332,7 @@
               '<small>ノードをクリック→質問を挿入</small>' +
             '</div>' +
             '<div id="askGraph" class="ns-graph-host"></div>' +
+            '<div class="ns-graph-search"><input id="graphSearch" class="ns-input" placeholder="🔍 ノードを検索（例：歯車 / 安全率）→ Enterで全文表示"></div>' +
           '</aside>' +
         '</div>';
     },
@@ -336,6 +370,11 @@
       // desktop right-rail knowledge/system map (hidden on mobile via CSS + matchMedia)
       document.body.classList.add('is-ask');
       if (NSCode.askGraph) NSCode.askGraph.mount(el('askGraph'));
+      var gs = el('graphSearch');
+      if (gs && NSCode.askGraph) {
+        gs.addEventListener('input', function () { NSCode.askGraph.search(gs.value); });
+        gs.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); NSCode.askGraph.selectFirst(gs.value); } });
+      }
     }
   });
 

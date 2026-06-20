@@ -512,7 +512,13 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
   .ns-graph-svg { width: 100%; height: 100%; display: block; }
   .ns-graph-node { cursor: pointer; transition: opacity .12s ease; }
   .ns-graph-node text { pointer-events: none; user-select: none; }
+  .ns-graph-search { flex: 0 0 auto; margin-top: 8px; }
+  .ns-graph-search .ns-input { width: 100%; font-size: 13px; padding: 7px 10px; }
 }
+
+/* map-selected document bubble (full Md / 用語定義 shown as an answer) */
+.ns-msg--doc .ns-doc__p { font-size: 13.5px; line-height: 1.75; margin: 6px 0; color: var(--text); }
+.ns-msg--doc .ns-msg__body { max-height: 60vh; overflow: auto; }
 
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }

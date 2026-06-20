@@ -24,7 +24,7 @@
   var KINDS = { '機械要素': 1, '歯車': 1, '軸受': 1, 'ねじ・ばね': 1 };
 
   var GRAPH = null;     // cached settled model { nodes, edges, byId, adj }
-  var container = null, raf = 0, hoverId = '', mql = null, mqlHandler = null;
+  var container = null, raf = 0, hoverId = '', filter = '', mql = null, mqlHandler = null;
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function trunc(s, n) { s = String(s || ''); return s.length > (n || 8) ? s.slice(0, n || 8) + '…' : s; }
@@ -56,6 +56,7 @@
       var cat = pre >= 30 ? 'cat-mech' : 'cat-elem';
       var snippet = (d.text || '').slice(0, 240);
       var n = add({ id: 'topic-' + pre, label: label, type: 'topic', vec: emb(label + ' ' + snippet) });
+      n.doc = { kind: 'md', title: label, text: d.text || '', source: d.name };   // 全文 (curated Md)
       link(cat, n.id, 14);
       topics.push(n);
     });
@@ -79,10 +80,11 @@
       var terms = [], tseen = {};
       (gloss.text || '').split(/\n\n+/).forEach(function (p) {
         var m = p.match(/^([^\s、，。]{2,8}?)は[、，]/);
-        if (m && !tseen[m[1]]) { tseen[m[1]] = 1; terms.push(m[1]); }
+        if (m && !tseen[m[1]]) { tseen[m[1]] = 1; terms.push({ t: m[1], p: p.trim() }); }
       });
-      terms.slice(0, 24).forEach(function (t, i) {
-        var n = add({ id: 'term-' + i, label: t, type: 'term', vec: emb(t) });
+      terms.slice(0, 24).forEach(function (e, i) {
+        var n = add({ id: 'term-' + i, label: e.t, type: 'term', vec: emb(e.t) });
+        n.doc = { kind: 'md', title: e.t, text: e.p, source: gloss.name };   // 用語の定義(全文)
         link('cat-term', n.id, 11);
       });
     }
@@ -101,12 +103,14 @@
     (CALC.FORMULAS || []).forEach(function (f) {
       var lbl = shortName(f.name), tr = f.terms || [];
       var n = add({ id: 'f-' + f.id, label: lbl, type: 'formula', q: lbl + 'はどう求めますか？', vec: emb(f.name + ' ' + tr.join(' ')) });
+      n.doc = { kind: 'formula', title: f.name, formula: f };
       link('hub-calc', n.id, 18);
       bestKB(n.vec, tr).forEach(function (o) { link(n.id, o.k.id, 15); });
     });
     (CALC.TABLES || []).forEach(function (t) {
       var lbl = shortName(t.name), tr = t.terms || [];
       var n = add({ id: 't-' + t.id, label: lbl, type: 'table', q: lbl + 'は？', vec: emb(t.name + ' ' + tr.join(' ')) });
+      n.doc = { kind: 'table', title: t.name, table: t };
       link('hub-calc', n.id, 18);
       bestKB(n.vec, tr).forEach(function (o) { link(n.id, o.k.id, 15); });
     });
@@ -172,7 +176,11 @@
   function render() {
     if (!container || !GRAPH) return;
     var hi = hoverId, nb = hi ? GRAPH.adj[hi] : null;
-    function dim(id) { return hi && id !== hi && !(nb && nb[id]); }
+    function dim(id) {
+      var n = GRAPH.byId[id];
+      if (filter && (!n.label || n.label.toLowerCase().indexOf(filter) < 0)) return true;   // search filter
+      return hi && id !== hi && !(nb && nb[id]);                                            // hover focus
+    }
     var out = '<svg class="ns-graph-svg" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="xMidYMid meet">';
     GRAPH.edges.forEach(function (e) {
       var a = GRAPH.byId[e[0]], b = GRAPH.byId[e[1]], on = hi && (e[0] === hi || e[1] === hi);
@@ -204,12 +212,27 @@
     inp.dispatchEvent(new Event('input', { bubbles: true }));   // lets ask.js sync state.query + persist
     inp.focus();
   }
+  // selecting a node OUTPUTS its source as an answer in the chat (Md全文 / 式・表).
+  function open(n) {
+    if (!n) return;
+    if (n.doc && NSCode.askChat && NSCode.askChat.showNode) { NSCode.askChat.showNode(n.doc); return; }
+    if (n.type === 'kb' || n.type === 'calc') { var inp = document.getElementById('askQ'); if (inp) inp.focus(); return; }
+    setQ(KINDS[n.label] ? n.label + 'の種類は？' : n.label + 'とは？');   // category fallback → seed a question
+  }
   function onClick(e) {
     var g = e.target.closest && e.target.closest('[data-id]'); if (!g || !GRAPH) return;
-    var n = GRAPH.byId[g.getAttribute('data-id')]; if (!n) return;
-    if (n.type === 'kb' || n.type === 'calc') { var inp = document.getElementById('askQ'); if (inp) inp.focus(); return; }
-    if (n.q) { setQ(n.q); return; }                              // 計算式・表 → 専用の質問
-    setQ(KINDS[n.label] ? n.label + 'の種類は？' : n.label + 'とは？');   // KBトピック/用語
+    open(GRAPH.byId[g.getAttribute('data-id')]);
+  }
+  /* node search (input lives below the map): filter dims non-matches; Enter opens the best match */
+  function norm(s) { return String(s == null ? '' : s).toLowerCase().trim(); }
+  function search(str) { filter = norm(str); if (!raf) render(); }
+  function selectFirst(str) {
+    var f = norm(str); if (!f || !GRAPH) return;
+    var hits = GRAPH.nodes.filter(function (n) { return n.doc && norm(n.label).indexOf(f) >= 0; })
+      .sort(function (a, b) { return (norm(a.label).indexOf(f) - norm(b.label).indexOf(f)) || (a.label.length - b.label.length); });
+    if (!hits.length) return;
+    hoverId = hits[0].id; if (!raf) render();
+    open(hits[0]);
   }
   function onHover(e) {
     var g = e.target.closest && e.target.closest('[data-id]');
@@ -238,8 +261,8 @@
   function unmount() {
     if (raf) { window.cancelAnimationFrame(raf); raf = 0; }
     if (mql && mqlHandler) { if (mql.removeEventListener) mql.removeEventListener('change', mqlHandler); else if (mql.removeListener) mql.removeListener(mqlHandler); }
-    mqlHandler = null; mql = null; container = null; hoverId = '';
+    mqlHandler = null; mql = null; container = null; hoverId = ''; filter = '';
   }
 
-  NSCode.askGraph = { mount: mount, unmount: unmount, _build: buildModel };
+  NSCode.askGraph = { mount: mount, unmount: unmount, search: search, selectFirst: selectFirst, _build: buildModel };
 })(window.NSCode);
