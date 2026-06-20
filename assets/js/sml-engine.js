@@ -173,7 +173,7 @@
     var seeds = opts.seeds || [];
     function inSeed(s) { for (var i = 0; i < seeds.length; i++) { if (seeds[i] && (seeds[i].indexOf(s) >= 0 || s.indexOf(seeds[i]) >= 0)) return true; } return false; }
     // table/numeric junk from PDF extraction (e.g. 「系列Ⅰ系列Ⅱ」「4600MPa…4200MPa…」)
-    function tableJunk(s) { return (s.match(/[Ⅰ-Ⅻ]/g) || []).length >= 2 || (s.match(/\d{3,}/g) || []).length >= 3 || /系列[Ⅰ-Ⅻ]/.test(s); }
+    function tableJunk(s) { return (s.match(/[Ⅰ-Ⅻ]/g) || []).length >= 2 || (s.match(/\d{3,}/g) || []).length >= 2 || /系列[Ⅰ-Ⅻ]/.test(s); }
     // clean, on-topic sentence pool from the retrieved context
     var seen = {}, cands = [];
     contexts.forEach(function (ct) {
@@ -188,13 +188,15 @@
     function rel(s) { return ((qv && EM) ? EM.cosine(qv, EM.embed(s, 64)) : 0) + (hasKey(s) ? 0.5 : 0) + 0.5 * topicScore(s, keys); }
     function sig(s) { return s.match(/[一-鿿ァ-ヶーA-Za-z0-9]+/g) || []; }
     function clen(s) { return s.replace(/[^一-鿿ァ-ヶーA-Za-z0-9]/g, '').length; }
-    function distinct(s, used) {     // adds new info: low content overlap with each existing fact
+    function distinct(s, used) {     // adds new info: low content overlap (both directions) with each fact
       var a = sig(s); if (!a.length) return false;
       for (var i = 0; i < used.length; i++) {
         if (used[i].indexOf(s.replace(/。$/, '')) >= 0 || s.indexOf(used[i].replace(/。$/, '')) >= 0) return false;
-        var bset = {}; sig(used[i]).forEach(function (x) { bset[x] = 1; });
+        var b = sig(used[i]), bset = {}; b.forEach(function (x) { bset[x] = 1; });
+        var aset = {}; a.forEach(function (x) { aset[x] = 1; });
         var m = 0; a.forEach(function (x) { if (bset[x]) m++; });
-        if (m / a.length >= 0.6) return false;
+        var m2 = 0; b.forEach(function (x) { if (aset[x]) m2++; });
+        if (m / a.length >= 0.5 || (b.length && m2 / b.length >= 0.5)) return false;   // symmetric
       }
       return true;
     }
@@ -278,7 +280,10 @@
       // build a multi-fact answer: primary + complementary/extra distinct facts until
       // substantive (≥16 content chars) or 2 facts, for richer on-target content.
       var facts = [p1], used = [p1];
-      var extra = pickTop(compCue, primary, 4).concat(pickTop(primCue, primary, 4)).concat(pickTop(null, primary, 6));
+      // the 2nd fact must be a genuine ASPECT (carries a definition/purpose/feature
+      // cue), not a tangential subtype sentence — else keep a single clean fact.
+      var aspectCue = new RegExp(compCue.source + '|' + primCue.source + '|' + GEN_CUE.features.source);
+      var extra = pickTop(compCue, primary, 5).concat(pickTop(primCue, primary, 5)).filter(function (c) { return aspectCue.test(c.s); });
       for (var e = 0; e < extra.length; e++) {
         if (facts.length >= 2 && clen(facts.join('')) >= 24) break;
         var p2 = condense(extra[e].s, 100);
@@ -290,8 +295,10 @@
       // faithfulness: every content word must come from the retrieved context
       var runs = ans.match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || [];
       if (!runs.length || !runs.every(function (t) { return ctxText.indexOf(t) >= 0; })) return '';
-      // thin or fragment-leading → bail so the (often curated) extractive answer shows
-      if (clen(ans) < 16 || /^[ーぁ-んァ-ヶ]/.test(ans)) return '';
+      // thin or fragment-leading → bail so the (often curated) extractive answer shows.
+      // measure by non-punctuation length (Japanese definitions are hiragana-heavy, so
+      // a kanji-only count wrongly rejects good answers like 「歯車は…機械要素です。」).
+      if (ans.replace(/[。、，．・\s　]/g, '').length < 16 || /^[ーぁ-んァ-ヶ]/.test(ans)) return '';
       return ans;
     });
   }

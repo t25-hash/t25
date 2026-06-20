@@ -41,7 +41,7 @@ require(path.join(VENDOR, 'kuromoji.js')).builder({ dicPath: path.join(VENDOR, '
     ok(`[${q}] faithful (all content from context)`, runs(gen).every(t => ctxText.indexOf(t) >= 0));
     const ks = N.askEngine._internal.keyTerms(q) || [];
     ok(`[${q}] on-target (mentions a key term)`, ks.some(k => gen.indexOf(k) >= 0));
-    ok(`[${q}] substantive (>=16 content chars)`, gen.replace(/[^一-鿿ァ-ヶーA-Za-z0-9]/g, '').length >= 16);
+    ok(`[${q}] substantive (>=16 content chars)`, gen.replace(/[。、，．・\s　]/g,'').length >= 16);
     const sentences = gen.split(/(?<=[。．！？])/).map(s => s.trim()).filter(Boolean);
     ok(`[${q}] every sentence grammatical (finite)`, sentences.every(s => N.grammar.endsFinite(s)));
   }
