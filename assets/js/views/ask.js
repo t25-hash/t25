@@ -279,14 +279,27 @@
           '<p class="ns-empty__hint">ON（既定）＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。OFF＝<b>根拠の実文を抽出</b>のみ。<b>※実験：</b>幻覚はしません（根拠語のみ）。使うほど（学習・👍/👎）改善します。</p>' +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
-        trainPanel() +
-        '<div class="ns-chat">' +
-          '<div id="chatLog" class="ns-chat__log">' + logHtml() + '</div>' +
-          '<div class="ns-chat__composer">' +
-            '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
-            '<button id="askBtn" class="ns-btn">送信</button>' +
-            '<button id="askGenBtn" class="ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" aria-label="生成モード" title="🧠 抽象生成モードのON/OFF（既定ON）">🧠</button>' +
+        '<div class="ns-ask-2pane">' +
+          '<div class="ns-ask-main">' +
+            trainPanel() +
+            '<div class="ns-chat">' +
+              '<div id="chatLog" class="ns-chat__log">' + logHtml() + '</div>' +
+              '<div class="ns-chat__composer">' +
+                '<input id="askQ" class="ns-input" placeholder="質問を入力…（例：歯車の種類は？）" value="' + C.esc(state.query) + '">' +
+                '<button id="askBtn" class="ns-btn">送信</button>' +
+                '<button id="askGenBtn" class="ns-btn ns-btn--icon ' + (state.gen ? 'ns-btn--on' : 'ns-btn--ghost') + '" aria-pressed="' + (state.gen ? 'true' : 'false') + '" aria-label="生成モード" title="🧠 抽象生成モードのON/OFF（既定ON）">🧠</button>' +
+              '</div>' +
+            '</div>' +
           '</div>' +
+          '<aside class="ns-ask-graph" aria-label="ナレッジ／システムマップ">' +
+            '<div class="ns-graph-legend">🗺️ ナレッジ／システムマップ' +
+              '<span><i class="ns-graph-dot" style="background:#6ea8fe"></i>KB</span>' +
+              '<span><i class="ns-graph-dot" style="background:#c792ea"></i>用語</span>' +
+              '<span><i class="ns-graph-dot" style="background:#f6bd60"></i>JS/Lab</span>' +
+              '<small>ノードをクリック→質問を挿入／Labへ移動</small>' +
+            '</div>' +
+            '<div id="askGraph" class="ns-graph-host"></div>' +
+          '</aside>' +
         '</div>';
     },
     onMount: function () {
@@ -320,6 +333,17 @@
         }
       });
       scrollBottom();
+      // desktop right-rail knowledge/system map (hidden on mobile via CSS + matchMedia)
+      document.body.classList.add('is-ask');
+      if (NSCode.askGraph) NSCode.askGraph.mount(el('askGraph'));
+    }
+  });
+
+  // leaving Ask → drop the widened layout and stop the graph's animation loop
+  window.addEventListener('nscode:navigated', function (e) {
+    if (!e.detail || !e.detail.view || e.detail.view.module !== 'ask') {
+      document.body.classList.remove('is-ask');
+      if (NSCode.askGraph) NSCode.askGraph.unmount();
     }
   });
 
