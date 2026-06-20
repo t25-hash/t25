@@ -180,9 +180,11 @@
     var topicRe = subj ? new RegExp('(^|[。、，,\\s　（(「])' + subj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(は|とは|が|とは、)') : null;
     function pickTop(cueRe, exclude, n) {
       var base = cands.filter(function (s) { return s !== exclude; });
-      // require the MAIN topic to appear in every fact (on-target); fall back to any key
-      var pool = subj ? base.filter(function (s) { return s.indexOf(subj) >= 0; }) : [];
-      if (!pool.length) pool = base.filter(function (s) { return !keys.length || hasKey(s); });
+      // require the MAIN topic in every fact (on-target). When a subject exists, do
+      // NOT broaden to secondary keys (else 「歯車ポンプ」→ポンプ→真空ポンプ off-target);
+      // if no subject sentence exists, recombine defers to the extractive answer.
+      var pool = subj ? base.filter(function (s) { return s.indexOf(subj) >= 0; })
+                      : base.filter(function (s) { return !keys.length || hasKey(s); });
       return pool
         .map(function (s) {
           var ki0 = subj ? s.indexOf(subj) : -1;
