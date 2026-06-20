@@ -190,7 +190,8 @@
         .sort(function (a, b) { return b.sc - a.sc; });
       // compress one source sentence to a concise, grammatical clause set on the topic
       function norm(x) { return G.normalize ? (G.normalize(x).text || x) : x; }
-      function finite(x) { return !G.coherence || G.coherence(x).finite; }
+      // a usable fact must END on a finite predicate (no noun-stop / 連用中止 / 助詞止め)
+      function finite(x) { return G.endsFinite ? G.endsFinite(x) : (!G.coherence || G.coherence(x).finite); }
       function condense(s, maxLen) {
         s = s.replace(/^[、，,\s　]+/, '');
         s = s.replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{3,12}?)\1+/g, '$1');   // collapse repeated table/junk chunks

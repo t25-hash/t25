@@ -43,7 +43,7 @@ require(path.join(VENDOR, 'kuromoji.js')).builder({ dicPath: path.join(VENDOR, '
     ok(`[${q}] on-target (mentions a key term)`, ks.some(k => gen.indexOf(k) >= 0));
     ok(`[${q}] substantive (>=16 content chars)`, gen.replace(/[^一-鿿ァ-ヶーA-Za-z0-9]/g, '').length >= 16);
     const sentences = gen.split(/(?<=[。．！？])/).map(s => s.trim()).filter(Boolean);
-    ok(`[${q}] every sentence grammatical (finite)`, sentences.every(s => N.grammar.coherence(s).finite));
+    ok(`[${q}] every sentence grammatical (finite)`, sentences.every(s => N.grammar.endsFinite(s)));
   }
   console.log(`\n==== ${pass} passed, ${fail} failed ====`);
   process.exit(fail === 0 ? 0 : 1);

@@ -52,7 +52,7 @@ require(path.join(V, 'kuromoji.js')).builder({ dicPath: path.join(V, 'dict') }).
     const ctxText = ctx.join('\n');
     const faithful = !gen || runs(gen).every(t => ctxText.indexOf(t) >= 0);
     const sentences = (gen || '').split(/(?<=[。．！？])/).map(s => s.trim()).filter(Boolean);
-    const grammatical = !gen || sentences.every(s => N.grammar.coherence(s).finite);
+    const grammatical = !gen || sentences.every(s => N.grammar.endsFinite(s));
     byIntent[intent] = byIntent[intent] || { n: 0, gen: 0 };
     byIntent[intent].n++; if (gen) byIntent[intent].gen++;
     if (gen && (!faithful || !grammatical)) problems.push(`${q} [${faithful?'':'UNFAITHFUL '}${grammatical?'':'NONFINITE'}]`);
