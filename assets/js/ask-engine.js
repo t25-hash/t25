@@ -550,7 +550,9 @@
     if (GARBAGE.test(s)) return true;             // unmapped-font mojibake (PUA/Hangul/…)
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
-    if (/^[をはがのにへともでてやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
+    // 先頭の助詞断片は棄却。ただし と/も/や は「ところで・もちろん・やはり」等 正当な
+    // 接続詞/副詞の語頭にもなり誤棄却するため除外（残りの を/は/が/の/に/へ/で/て は断片）。
+    if (/^[をはがのにへでてゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
     if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
     if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
     if ((s.match(/：/g) || []).length >= 2) return true;
