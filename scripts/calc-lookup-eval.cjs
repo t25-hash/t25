@@ -65,7 +65,10 @@ const CASES = [
   { q: '冷却ファンの選定', cat: 'none' },          // 冷却→newton を抑止
   { q: '横弾性係数とは', cat: 'none' },            // 弾性→hooke を抑止(横弾性はGでhooke対象外)
   { q: '安全係数を求めたい', cat: 'formula', id: 'safety' },     // 安全率の同義語 recall
-  { q: 'ニュートンの冷却則とは', cat: 'formula', id: 'newton' }  // 冷却則 で recall 維持
+  { q: 'ニュートンの冷却則とは', cat: 'formula', id: 'newton' }, // 冷却則 で recall 維持
+  // --- v4: 実在の recall ギャップ補完 ---
+  { q: '動等価荷重から軸受寿命を計算', cat: 'formula', id: 'l10' },  // 等価荷重
+  { q: '中間ばめとは', cat: 'table', id: 'fit' }                  // 中間ばめ
 ];
 
 let pass = 0; const fails = [];
@@ -85,5 +88,36 @@ CASES.forEach(function (c, i) {
 
 console.log('=== calc-lookup-eval ===');
 fails.forEach(function (f) { console.log('  ✗ #' + f.i + ' ' + f.q + '  期待:' + f.want + ' / 実際:' + f.got); });
-console.log('==== CALC LOOKUP SCORE: ' + pass + ' / ' + CASES.length + ' ====');
-process.exit(pass === CASES.length ? 0 : 1);
+console.log('---- ケース採点: ' + pass + ' / ' + CASES.length);
+
+// 恒久ガードA: 全エントリが「自分の名前」で先頭ヒットする（recall coverage）
+let covPass = 0, covTotal = 0; const covFail = [];
+[['formula', calc.FORMULAS], ['table', calc.TABLES]].forEach(function (pair) {
+  pair[1].forEach(function (e) {
+    covTotal++;
+    const list = calc.lookup(e.name)[pair[0] === 'formula' ? 'formulas' : 'tables'];
+    if (list[0] && list[0].id === e.id) covPass++; else covFail.push('name "' + e.name + '" -> ' + (list[0] ? list[0].id : '(なし)') + ' (期待 ' + e.id + ')');
+  });
+});
+covFail.forEach(function (m) { console.log('  ✗ [coverage] ' + m); });
+console.log('---- 名前coverage: ' + covPass + ' / ' + covTotal);
+
+// 恒久ガードB: 全 specific term が自エントリに到達する（dead term 検出）
+const GEN = { '応力': 1, '荷重': 1, '軸': 1, '材料': 1, '種類': 1, '強度': 1, '直径': 1, '寿命': 1, '冷却': 1, '弾性': 1 };
+let termPass = 0, termTotal = 0; const termFail = [];
+[['formula', calc.FORMULAS], ['table', calc.TABLES]].forEach(function (pair) {
+  pair[1].forEach(function (e) {
+    e.terms.forEach(function (t) {
+      if (GEN[t] || t.length <= 1) return;   // specific のみ
+      termTotal++;
+      const ids = calc.lookup(t)[pair[0] === 'formula' ? 'formulas' : 'tables'].map(function (x) { return x.id; });
+      if (ids.indexOf(e.id) >= 0) termPass++; else termFail.push('term "' + t + '" -> ' + e.id + ' 未到達');
+    });
+  });
+});
+termFail.forEach(function (m) { console.log('  ✗ [term] ' + m); });
+console.log('---- specific term到達: ' + termPass + ' / ' + termTotal);
+
+const total = CASES.length + covTotal + termTotal, allPass = pass + covPass + termPass;
+console.log('==== CALC LOOKUP SCORE: ' + allPass + ' / ' + total + ' ====');
+process.exit(allPass === total ? 0 : 1);
