@@ -1329,6 +1329,13 @@
         // generic 成形/燃料 docs. Precise (won't fire for why-questions whose coreQuery
         // carries extra words). English glosses / section numbers normalized away.
         var coreN = coreQuery(query).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
+        // coreN は coreQuery 由来で generic 接尾辞（種類/設計…）を落とすため、兄弟セクション
+        // を exact-match で区別できない。raw 質問から boilerplate（とは/何ですか/について…）
+        // だけを外した coreRaw でも exact 判定し、「リベット継手の種類」を当てる。
+        var coreRaw = String(query == null ? '' : query)
+          .replace(/[?？]+$/, '')
+          .replace(/(とは(何(です)?か?)?|って何(です)?か?|について(教えて|知りたい)?|の意味|を(教えて|説明して?)|を教えて|ですか|でしょうか)$/, '')
+          .replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
         // aspect tokens: raw-query content tokens NOT already a key token — usually a
         // generic aspect (種類/設計/方法…) dropped by coreQuery. A small bonus, gated on a
         // real key-token title hit (th>0), breaks sibling-section ties toward the matching
@@ -1345,7 +1352,7 @@
           }
           if (coreN.length >= 2) {
             var ttopic = mt.replace(/^[\d０-９]+(?:[・.·][\d０-９]+)*\s*/, '').replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
-            if (ttopic === coreN) score[di] = (score[di] || 0) + 25;   // exact section-title match
+            if (ttopic === coreN || (coreRaw.length >= 2 && ttopic === coreRaw)) score[di] = (score[di] || 0) + 25;   // exact section-title match
           }
         }
       }
