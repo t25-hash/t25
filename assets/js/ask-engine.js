@@ -1303,10 +1303,17 @@
     if (index.meta) {
       var tkeys = keyTerms(query).concat(synTerms(query)).filter(function (t) { return t.length >= 2; });
       if (tkeys.length) {
+        // Intent-aware weight: for definition/list/features the TITLED doc IS the answer,
+        // so boost strongly (recovers exact-topic docs the pruned body index dropped).
+        // For why/purpose/howto the reason lives in a body whose title need not contain
+        // the term — a strong title boost would wrongly pull a generic title-matching doc
+        // (why-bearings-fail → generic 軸受 doc), so keep it weak.
+        var qIntent = classifyIntent(query);
+        var tw = (qIntent === 'why' || qIntent === 'purpose' || qIntent === 'howto') ? 5 : 12;
         for (var di = 0; di < index.meta.length; di++) {
           var mt = index.meta[di]; if (!mt) continue;
           var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
-          if (th) score[di] = (score[di] || 0) + th * 5;     // strong, additive — a title hit should win
+          if (th) score[di] = (score[di] || 0) + th * tw;     // strong, additive — a title hit should win
         }
       }
     }
