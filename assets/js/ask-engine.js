@@ -1352,7 +1352,10 @@
           }
           if (coreN.length >= 2) {
             var ttopic = mt.replace(/^[\d０-９]+(?:[・.·][\d０-９]+)*\s*/, '').replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
-            if (ttopic === coreN || (coreRaw.length >= 2 && ttopic === coreRaw)) score[di] = (score[di] || 0) + 25;   // exact section-title match
+            // exact section-title match is the strongest signal (the query IS a section
+            // title), so make it dominate body scores — even a near-identical sibling
+            // (固定点の「ある」/「ない」) must not outrank the exactly-titled doc on body.
+            if (ttopic === coreN || (coreRaw.length >= 2 && ttopic === coreRaw)) score[di] = (score[di] || 0) + 100;
           }
         }
       }
