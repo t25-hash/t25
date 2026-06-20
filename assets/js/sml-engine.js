@@ -190,7 +190,8 @@
           var ki0 = subj ? s.indexOf(subj) : -1;
           var isTopic = topicRe && topicRe.test(s);
           var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s) || /^[0-9０-９「『（(・,，.．/／\-]/.test(s);   // mid-word/chunk-cut/number fragment
-          return { s: s, sc: rel(s) + (inSeed(s) ? 0.6 : 0) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (isTopic ? 0.5 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
+          var figRef = /[図表][\d０-９Ⅰ-ⅫA-Za-z]/.test(s) || /に示す。?$/.test(s);   // low-info figure/table pointer 「図V-2・61に示す」
+          return { s: s, sc: rel(s) + (inSeed(s) ? 0.6 : 0) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (isTopic ? 0.5 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - (figRef ? 0.45 : 0) - 0.004 * Math.max(0, s.length - 80) };
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
     }
