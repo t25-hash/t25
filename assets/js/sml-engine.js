@@ -119,7 +119,7 @@
    *           文を正準化・圧縮する（単なる抽出ではなく再構成）
    *   - 安全: 内容語は文脈由来のみ（幻覚しない）、grammar で文法正規化 */
   var GEN_CUE = {
-    definition: /(とは|をいう|のこと|を指す|を意味|と呼ば|と称|と定義|機械要素|要素|装置|部品|機構|総称|もの)/,
+    definition: /(とは[^いえ]|をいう|のことである|のことをいう|を指す|を意味|と呼ば|と称|と定義|機械要素|要素である|装置である|部品である|機構要素|総称)/,
     purpose: /(目的|ため|役割|用途|機能|働き|防止|防ぐ|向上|低減|抑え|果た|に用い|に使わ|を担|による)/,
     features: /(特徴|利点|長所|短所|性質|優れ|劣る|耐食|耐熱|耐摩耗|やすい|にくい|高い|低い|大き|小さ|軽|硬|安価|強い|滑らか)/,
     why: /(理由|原因|による|生じ|防ぐ|により|ことで|から|ため)/
@@ -169,6 +169,9 @@
       }
       return true;
     }
+    // sentence whose TOPIC is the subject itself (「軸受は…」), not a compound subtype
+    // (「気体軸受は…」) — strongly preferred for definitions to avoid defining a subtype.
+    var topicRe = subj ? new RegExp('(^|[。、，,\\s　（(「])' + subj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(は|とは|が|とは、)') : null;
     function pickTop(cueRe, exclude, n) {
       var base = cands.filter(function (s) { return s !== exclude; });
       // require the MAIN topic to appear in every fact (on-target); fall back to any key
@@ -177,8 +180,9 @@
       return pool
         .map(function (s) {
           var ki0 = subj ? s.indexOf(subj) : -1;
+          var isTopic = topicRe && topicRe.test(s);
           var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s) || /^[0-9０-９「『（(・,，.．/／\-]/.test(s);   // mid-word/chunk-cut/number fragment
-          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
+          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (isTopic ? 0.5 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
     }
