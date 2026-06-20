@@ -27,7 +27,7 @@ for (const c of CHECKS) {
   catch (e) { out = (e.stdout || '') + (e.stderr || ''); }   // 非ゼロ終了でも出力で判定
   const ok = c.pass.test(out);
   if (!ok) allOk = false;
-  const metric = (out.match(/(HARD RETRIEVAL SCORE[^\n]*|Recall@1[^\n]*|QUALITY SCORE[^\n]*|CALC LOOKUP SCORE[^\n]*|\d+ passed[^\n]*|問題: [^\n]*)/) || ['?'])[0].trim();
+  const metric = (out.match(/(HARD RETRIEVAL SCORE[^\n]*|Recall@1[^\n]*|QUALITY SCORE[^\n]*|CALC LOOKUP SCORE[^\n]*|JUNK FILTER SCORE[^\n]*|\d+ passed[^\n]*|問題: [^\n]*)/) || ['?'])[0].trim();
   console.log((ok ? '  OK   ' : '  FAIL ') + c.name.padEnd(20) + ' | ' + metric);
 }
 console.log('==== PRECISION SUITE: ' + (allOk ? 'ALL PASS' : 'REGRESSION DETECTED') + ' ====');
