@@ -177,7 +177,7 @@
       return pool
         .map(function (s) {
           var ki0 = subj ? s.indexOf(subj) : -1;
-          var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s);   // mid-word/chunk-cut fragment
+          var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s) || /^[0-9０-９「『（(・,，.．/／\-]/.test(s);   // mid-word/chunk-cut/number fragment
           return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
@@ -214,8 +214,9 @@
       // a usable fact must END on a finite predicate (no noun-stop / 連用中止 / 助詞止め)
       function finite(x) { return G.endsFinite ? G.endsFinite(x) : (!G.coherence || G.coherence(x).finite); }
       function condense(s, maxLen) {
-        // strip leading punctuation/dots and stray connectives (avoids 「また、.…」「また、したがって」)
-        s = s.replace(/^[、，,。．・.\s　]+/, '').replace(/^(また|さらに|したがって|なお|ただし|一方|つまり|すなわち|そして|そのため|よって)[、，,]?/, '');
+        // strip leading punctuation/digits/dots and stray connectives
+        // (avoids 「また、.…」「また、したがって」「0003「…」 number fragments)
+        s = s.replace(/^[、，,。．・.\s　0-9０-９/／\-]+/, '').replace(/^(また|さらに|したがって|なお|ただし|一方|つまり|すなわち|そして|そのため|よって)[、，,]?/, '');
         s = s.replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{3,12}?)\1+/g, '$1');   // collapse repeated table/junk chunks
         s = s.replace(/系列[Ⅰ-Ⅻ]+/g, '').replace(/(?:[一-鿿ァ-ヶー]*\d{3,}\s?(?:MPa|mm|kg|°C)?){2,}/g, '');   // strip table/number runs
         if (s.length > maxLen) {
