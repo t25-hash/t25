@@ -87,20 +87,33 @@
       terms: ['安全率', '荷重'] }
   ];
 
-  function matchCount(terms, q) {
-    var c = 0; for (var i = 0; i < terms.length; i++) if (q.indexOf(terms[i]) >= 0) c++; return c;
+  /* generic な概念語（応力・荷重・軸…）はトリガとして弱い。単独で当たっても式・表を
+   * 確定させず、specific 語（オイラー・はめあい・断面係数…）と一緒のときだけ効かせる。
+   * これで「軸とは」「応力とは」のような誤検出を抑え、「軸のねじり応力」は torsion に当てる。 */
+  var GENERIC = { '応力': 1, '荷重': 1, '軸': 1, '材料': 1, '種類': 1, '強度': 1, '直径': 1 };
+  var W_SPECIFIC = 2, W_GENERIC = 1, MIN_SCORE = 2;   // 確定には specific 1語ぶん相当が必要
+
+  function scoreTerms(terms, q) {
+    var s = 0, n = 0;
+    for (var i = 0; i < terms.length; i++) {
+      if (q.indexOf(terms[i]) >= 0) { s += GENERIC[terms[i]] ? W_GENERIC : W_SPECIFIC; n++; }
+    }
+    return { s: s, n: n };
   }
 
   /* the JS hook: which formulas/tables does this question trigger?
-   * matches by substring on the question's terms, ranked by how many distinct
-   * terms hit (more specific first), capped so the chat isn't flooded. */
+   * substring match on terms, weighted so generic concept words don't fire alone;
+   * ranked by weighted score then by #distinct terms, capped so the chat isn't flooded. */
   function lookup(question, opts) {
     opts = opts || {};
     var q = String(question == null ? '' : question);
     function pick(list, cap) {
       var hit = [];
-      list.forEach(function (e) { var c = matchCount(e.terms, q); if (c > 0) hit.push({ e: e, c: c }); });
-      hit.sort(function (a, b) { return b.c - a.c; });
+      list.forEach(function (e) {
+        var r = scoreTerms(e.terms, q);
+        if (r.s >= MIN_SCORE) hit.push({ e: e, s: r.s, n: r.n });   // generic単独(=1)は閾値未満で落ちる
+      });
+      hit.sort(function (a, b) { return (b.s - a.s) || (b.n - a.n); });
       return hit.slice(0, cap).map(function (h) { return h.e; });
     }
     return {
