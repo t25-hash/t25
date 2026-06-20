@@ -1301,7 +1301,17 @@
     // it and ranks it where it belongs. High precision because titles are topic phrases
     // and we match only specific key terms (generics removed).
     if (index.meta) {
-      var tkeys = keyTerms(query).concat(synTerms(query)).filter(function (t) { return t.length >= 2; });
+      // title-match tokens: key/synonym terms PLUS the query's content segments
+      // (coreQuery split on particles) so a single-kanji topic dropped by keyTerms
+      // (「管」の成形 / 「軸」の強度) still counts toward title overlap. Generics are
+      // already stripped by coreQuery, and counting OVERLAP keeps it precise on the
+      // short titles (the doc matching the most query terms wins).
+      var ttoks = {};
+      keyTerms(query).concat(synTerms(query)).forEach(function (t) { if (t.length >= 2) ttoks[t] = 1; });
+      coreQuery(query).split(/[のはがをにでとへやもからまでよりという、。\s　]+/).forEach(function (seg) {
+        (seg.match(/[一-鿿ァ-ヶー]+/g) || []).forEach(function (t) { if (t) ttoks[t] = 1; });
+      });
+      var tkeys = Object.keys(ttoks);
       if (tkeys.length) {
         // Intent-aware weight: for definition/list/features the TITLED doc IS the answer,
         // so boost strongly (recovers exact-topic docs the pruned body index dropped).
