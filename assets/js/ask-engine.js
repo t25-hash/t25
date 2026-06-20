@@ -1159,6 +1159,62 @@
       .then(function (t) { kbDocCache[idx] = t; return t; });
   }
 
+  /* ---- Section cross-reference following ------------------------------------
+   * When an answer defers to another section (「…は2・2・5項で解説する」), follow that
+   * reference: find the KB doc whose title is that section, pick its most on-topic
+   * sentence, and surface it as a follow-up so the user actually gets the content. */
+  function zen2han(s) { return String(s).replace(/[０-９]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0xFEE0); }); }
+  function normSec(s) { return zen2han(s).replace(/[.．]/g, '・'); }
+  function sectionTopic(t) { return zen2han(t).replace(/^[0-9・\s　]+/, '').trim(); }   // title minus its section number
+  // KB docs whose title is the referenced section number (numbers repeat across volumes)
+  function findSectionDocs(index, sec) {
+    var out = [];
+    for (var i = 0; i < index.meta.length; i++) {
+      var nt = normSec(index.meta[i]);
+      if (nt.indexOf(sec) === 0) { var nx = nt.charAt(sec.length); if (nx === '' || /[\s　]/.test(nx) || !/[0-9・]/.test(nx)) out.push({ idx: i, title: index.meta[i] }); }
+    }
+    return out;
+  }
+  // best on-topic sentence of a referenced section's doc
+  function sectionSentence(question, docText, title, exclude) {
+    var emb = NSCode.embeddings, topic = sectionTopic(title), qv = emb.embed(question + ' ' + topic, 64);
+    var keys = keyTerms(question).concat(keyTerms(topic)), best = '', bestSc = -1;
+    var G = NSCode.grammar, ex = exclude || '';
+    buildSentences(docText).forEach(function (s) {
+      if (s.length < 16 || s.length > 160 || isJunkSent(s)) return;
+      if (ex && (ex.indexOf(s) >= 0 || s.indexOf(ex) >= 0)) return;            // skip the answer sentence itself (self-reference)
+      var nonfin = G && G.endsFinite && !G.endsFinite(s);                      // prefer finite prose over headings/noun-stops
+      var fig = /[図表][0-9０-９Ⅰ-ⅫA-Za-z]/.test(s) || (s.match(/\d{3,}/g) || []).length >= 2;
+      var sc = emb.cosine(qv, emb.embed(s, 64)) + (keys.some(function (k) { return s.indexOf(k) >= 0; }) ? 0.5 : 0) + (topic && s.indexOf(topic) >= 0 ? 0.3 : 0) - (nonfin ? 0.6 : 0) - (fig ? 0.5 : 0);
+      if (sc > bestSc) { bestSc = sc; best = s; }
+    });
+    if (best && NSCode.grammar) { if (NSCode.grammar.tidy) best = NSCode.grammar.tidy(best); var n = NSCode.grammar.normalize ? NSCode.grammar.normalize(best) : null; if (n && n.text) best = n.text; }
+    return best;
+  }
+  // detect 「N・N・N項で解説/述べる/示す/参照」 in the answer and resolve to section content
+  function resolveSectionRefs(question, text, index, exclude) {
+    if (!text || !index || !index.meta) return Promise.resolve([]);
+    var re = /([0-9０-９]+(?:[・.．][0-9０-９]+)+)\s*項?(?:で|に|を|については)?\s*(?:解説|説明|述べ|示し|示す|詳述|詳しく|参照)/g;
+    var m, seen = {}, secs = [];
+    while ((m = re.exec(text))) { var s = normSec(m[1]); if (!seen[s]) { seen[s] = 1; secs.push(s); } }
+    if (!secs.length) return Promise.resolve([]);
+    var emb = NSCode.embeddings, qv = emb.embed(question, 64), picks = [];
+    secs.slice(0, 2).forEach(function (sec) {
+      var docs = findSectionDocs(index, sec); if (!docs.length) return;
+      docs.forEach(function (d) { d.sc = emb.cosine(qv, emb.embed(sectionTopic(d.title), 64)); });
+      docs.sort(function (a, b) { return b.sc - a.sc; });
+      picks.push({ sec: sec, doc: docs[0] });
+    });
+    if (!picks.length) return Promise.resolve([]);
+    return Promise.all(picks.map(function (p) {
+      return fetchKBDoc(p.doc.idx).then(function (txt) {
+        var sent = sectionSentence(question, txt, p.doc.title, exclude);
+        if (!sent) return null;
+        return { section: p.sec, title: p.doc.title, text: sent };
+      }).catch(function () { return null; });
+    })).then(function (rs) { return rs.filter(Boolean); });
+  }
+
   /* hybrid answer over the prebuilt KB -> Promise<{text,compose,seed,seeds,hits}>.
    * Mirrors hybridAnswer (compose + neural generation + publish lastRun) so every
    * Lab can visualize the same KB query. */
@@ -1214,8 +1270,11 @@
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+            var result = { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
+            // follow any 「…項で解説する」 cross-reference and attach the section's content
+            if (weak || !concise.text) return result;
+            return resolveSectionRefs(question, concise.text, index, concise.text).then(function (refs) { if (refs.length) result.refs = refs; return result; });
           });
       });
     });
