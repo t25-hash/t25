@@ -103,7 +103,9 @@
         citeDetails(q, a.hits, '検索で近かった候補');
     }
     // 抽出回答は grammar agent の正規化文を優先表示（複文は normalize 側で原文保持）。
+    // 表示直前に tidy で PDF 由来ノイズ（表のローマ数字連・重複・先頭断片）を除去。
     var shown = a.normalized || a.text;
+    if (shown && NSCode.grammar && NSCode.grammar.tidy) shown = NSCode.grammar.tidy(shown);
     var html;
     if (a.gentext) {   // abstractive answer (in-browser LLM), grounded on the same hits
       html = '<p class="ns-qa-answer__lead">' + highlight(a.gentext, q).replace(/\n/g, '<br>') +
@@ -154,6 +156,20 @@
         C.Table(t.headers, t.rows) +
       '</div></div>';
   }
+  // 連投: 回答が「…は2・2・5項で解説する」のように別の項を参照しているとき、その参照先
+  // セクションの内容をフォローアップ・バブルとして続けて表示する。
+  function refBubble(r, q) {
+    return '<div class="ns-msg ns-msg--bot ns-msg--ref">' +
+      '<div class="ns-msg__avatar">📎</div>' +
+      '<div class="ns-msg__body">' +
+        '<div class="ns-calc__name">関連項【' + C.esc(r.title) + '】</div>' +
+        '<p class="ns-qa-answer__lead">' + highlight(r.text, q).replace(/\n/g, '<br>') + '</p>' +
+      '</div></div>';
+  }
+  function refsHtml(e) {
+    if (!e.a || !e.a.refs || !e.a.refs.length) return '';
+    return e.a.refs.map(function (r) { return refBubble(r, e.q); }).join('');
+  }
   // follow-up bubbles for one answered question (empty unless the question hooks
   // into the calc registry). Formulas first (式名＋式＋記号説明), then tables (表形式).
   function extrasHtml(q) {
@@ -182,7 +198,7 @@
   function logHtml() {
     if (!state.history.length) return welcomeHtml();
     return state.history.map(function (e) {
-      var extras = (e.a && !e.a.weak && !e.error) ? extrasHtml(e.q) : '';
+      var extras = (e.a && !e.a.weak && !e.error) ? (refsHtml(e) + extrasHtml(e.q)) : '';
       return userBubble(e.q) + botBubble(e) + extras;
     }).join('');
   }
