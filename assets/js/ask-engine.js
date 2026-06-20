@@ -1194,7 +1194,9 @@
   // detect 「N・N・N項で解説/述べる/示す/参照」 in the answer and resolve to section content
   function resolveSectionRefs(question, text, index, exclude) {
     if (!text || !index || !index.meta) return Promise.resolve([]);
-    var re = /([0-9０-９]+(?:[・.．][0-9０-９]+)+)\s*項?(?:で|に|を|については)?\s*(?:解説|説明|述べ|示し|示す|詳述|詳しく|参照)/g;
+    // 「N・N・N項で解説/述べる/示す/参照」のみ。「項」を必須にして 図/表 参照
+    // （表2・20に示す・図3・46）を誤検出しないようにする。
+    var re = /([0-9０-９]+(?:[・.．][0-9０-９]+)+)\s*項(?:[でにを]|については)?\s*(?:解説|説明|述べ|示し|示す|詳述|詳しく|参照|よる)/g;
     var m, seen = {}, secs = [];
     while ((m = re.exec(text))) { var s = normSec(m[1]); if (!seen[s]) { seen[s] = 1; secs.push(s); } }
     if (!secs.length) return Promise.resolve([]);
