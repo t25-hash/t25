@@ -99,20 +99,30 @@
       return '<p class="ns-empty__hint">関連する知識が見つかりませんでした。上の「知識ベース」で資料を学習させてください。</p>';
     }
     if (a.weak) {
+      // 本文一致は弱くても、式・表レジストリ（NSCode.calc）に当たるなら直後に式バブルを
+      // 続けるため、案内を「式を示す」旨に差し替えて宙づりを避ける。
+      if (NSCode.calc && NSCode.calc.has(q)) {
+        return '<p class="ns-empty__hint">本文の説明は十分に見つかりませんでしたが、関連する式を示します。</p>' +
+          citeDetails(q, a.hits, '検索で近かった候補');
+      }
       return '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p>' +
         citeDetails(q, a.hits, '検索で近かった候補');
     }
+    // 抽出回答は grammar agent の正規化文を優先表示（複文は normalize 側で原文保持）。
+    // 表示直前に tidy で PDF 由来ノイズ（表のローマ数字連・重複・先頭断片）を除去。
+    var shown = a.normalized || a.text;
+    if (shown && NSCode.grammar && NSCode.grammar.tidy) shown = NSCode.grammar.tidy(shown);
     var html;
     if (a.gentext) {   // abstractive answer (in-browser LLM), grounded on the same hits
       html = '<p class="ns-qa-answer__lead">' + highlight(a.gentext, q).replace(/\n/g, '<br>') +
         ' <span class="ns-msg__learned ns-msg__gen">生成</span>' + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
-      if (a.text) html += '<details class="ns-chat__cite"><summary>抽出（参考）</summary><p class="ns-hit__text">' + highlight(a.text, q).replace(/\n/g, '<br>') + '</p></details>';
+      if (shown) html += '<details class="ns-chat__cite"><summary>抽出（参考）</summary><p class="ns-hit__text">' + highlight(shown, q).replace(/\n/g, '<br>') + '</p></details>';
     } else if (a.genPending) {
       html = '<p class="ns-empty__hint ns-msg__thinking">抽象生成中…（ブラウザ内LLM）</p>' +
-        '<p class="ns-qa-answer__lead">' + highlight(a.text || '', q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
+        '<p class="ns-qa-answer__lead">' + highlight(shown || '', q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>';
     } else {
-      html = (a.text
-        ? '<p class="ns-qa-answer__lead">' + highlight(a.text, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
+      html = (shown
+        ? '<p class="ns-qa-answer__lead">' + highlight(shown, q).replace(/\n/g, '<br>') + (a.learned ? ' <span class="ns-msg__learned">学習済み</span>' : '') + '</p>'
         : '<p class="ns-empty__hint">回答を構成できませんでした。</p>');
     }
     if (a.genNote) html += '<p class="ns-empty__hint">' + C.esc(a.genNote) + '</p>';
@@ -151,6 +161,20 @@
         '<div class="ns-calc__name">【表】' + C.esc(t.name) + '</div>' +
         C.Table(t.headers, t.rows) +
       '</div></div>';
+  }
+  // 連投: 回答が「…は2・2・5項で解説する」のように別の項を参照しているとき、その参照先
+  // セクションの内容をフォローアップ・バブルとして続けて表示する。
+  function refBubble(r, q) {
+    return '<div class="ns-msg ns-msg--bot ns-msg--ref">' +
+      '<div class="ns-msg__avatar">📎</div>' +
+      '<div class="ns-msg__body">' +
+        '<div class="ns-calc__name">関連項【' + C.esc(r.title) + '】</div>' +
+        '<p class="ns-qa-answer__lead">' + highlight(r.text, q).replace(/\n/g, '<br>') + '</p>' +
+      '</div></div>';
+  }
+  function refsHtml(e) {
+    if (!e.a || !e.a.refs || !e.a.refs.length) return '';
+    return e.a.refs.map(function (r) { return refBubble(r, e.q); }).join('');
   }
   // follow-up bubbles for one answered question (empty unless the question hooks
   // into the calc registry). Formulas first (式名＋式＋記号説明), then tables (表形式).
@@ -212,8 +236,10 @@
   function logHtml() {
     if (!state.history.length) return welcomeHtml();
     return state.history.map(function (e) {
-      if (e.doc) return userBubble(e.q) + docBubble(e);
-      var extras = (e.a && !e.a.weak && !e.error) ? extrasHtml(e.q) : '';
+      if (e.doc) return userBubble(e.q) + docBubble(e);   // マップ選択：Md全文 / 式・表
+      // 項参照フォローアップ（refsHtml）は実回答の refs 由来なので !weak を維持。
+      // 式・表（extrasHtml）は決定論的な別ソースなので weak でも出す（lookup 不一致なら空）。
+      var extras = (e.a && !e.error) ? ((!e.a.weak ? refsHtml(e) : '') + extrasHtml(e.q)) : '';
       return userBubble(e.q) + botBubble(e) + extras;
     }).join('');
   }
@@ -264,12 +290,27 @@
     if (!state.gen || !NSCode.sml || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
     pretrainBaseOnce();   // goal #3: strengthen the base SML once, in the background
     entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
-    var ctx = entry.a.hits.map(function (h) { return h.text; });
+    // Feed the CURATED, on-target content (the same the extractive answer draws on —
+    // selected intent sentence, composed lines, context memo) to generation FIRST,
+    // then the raw retrieved chunks. Otherwise generation is limited to raw chunks
+    // (often mid-sentence fragments) and reads thin/off-target.
+    var seeds = [];
+    if (entry.a.text) seeds.push(entry.a.text);
+    if (entry.a.compose && entry.a.compose.length) seeds = seeds.concat(entry.a.compose);
+    if (entry.a.memo) seeds.push(entry.a.memo);
+    var ctx = seeds.concat(entry.a.hits.map(function (h) { return h.text; }));
     // in-house SML grounded (copy-constrained) generation: on-device, no external
     // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
-    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
+    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature, seeds: seeds }).then(function (txt) {
       entry.a.genPending = false;
-      if (txt) { entry.a.gentext = txt; persist(); }
+      if (txt) {
+        // Grammar Compiler Layer も生成回答に適用（抽出と同じく文法正規化を通す）。
+        // 失敗・未ロード時は生成生文をそのまま使う（破壊しない）。
+        var g = NSCode.grammar ? NSCode.grammar.normalize(txt) : null;
+        entry.a.gentext = (g && g.text) ? g.text : txt;
+        entry.a.gensml = g ? g.sentences : null;   // Lab/デバッグ用に SML 分解を保持
+        persist();
+      }
       else { entry.a.genNote = '※ 生成を構成できなかったため抽出で回答します'; }
       rerenderBubble(botId, entry); scrollBottom();
     }).catch(function (e) {
@@ -337,6 +378,9 @@
         '</div>';
     },
     onMount: function () {
+      // grammar agent を kuromoji 形態素解析で段階的に強化（非ブロッキング・端末内）。
+      // 失敗（vendor 未配置など）時は従来のルール解析にフォールバック。
+      if (NSCode.grammar && NSCode.grammar.initKuromoji) NSCode.grammar.initKuromoji().catch(function () {});
       el('srcSel').addEventListener('change', function () { state.source = el('srcSel').value; persist(); NSCode.renderCurrent(); });
       if (state.source === 'mine') wireMine();
       el('askQ').addEventListener('input', function () { state.query = el('askQ').value; persist(); });
@@ -458,7 +502,8 @@
         node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>';
         // 連投: if the question hooks into the calc registry, post the related
         // formulas (式名＋式＋記号説明) and tables (表形式) as follow-up bubbles.
-        var ex = (entry.a && !entry.a.weak && !entry.error) ? extrasHtml(q) : '';
+        // 式・表は決定論的な別ソース。本文一致が弱くても calc に当たれば続けて出す。
+        var ex = (entry.a && !entry.error) ? extrasHtml(q) : '';
         if (ex) node.insertAdjacentHTML('afterend', ex);
       }
       scrollBottom();

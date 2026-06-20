@@ -533,6 +533,10 @@
     s = s.replace(/[（(]\s*(?:19|20)\d{2}\s*[)）]\s*,?\s*\d*\.?/g, '');   // 文中の文献年「(1991) ,217.」を除去
     s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
     s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
+    // 裸のインライン図表参照（連用修飾）を除去: 「、図3･41に示すように」「表2･20のとおり」
+    // 図表が表示されないチャットUIで宙づりになる span のみ。裸の「図3･41」単独は文を
+    // 断片化しないため残す。
+    s = s.replace(/[、，]?\s*[図表][0-9０-９]+(?:[・･.][0-9０-９]+)*\s*(?:に示すように|に示すとおり|に示す|のように|のとおり|を参照|参照)/g, '');
     s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
     s = s.replace(/[（(]\s*[0-9０-９]{1,2}\s*[）)]/g, '');          // (1)(2) インライン列挙/段組み混線
     s = s.replace(/β\s*\d+\s*[－-]\s*\d+|β\s*\d+\s*編|[一-鿿]\d+\s*編/g, ''); // ページヘッダ/フッタ
@@ -1301,12 +1305,38 @@
     // it and ranks it where it belongs. High precision because titles are topic phrases
     // and we match only specific key terms (generics removed).
     if (index.meta) {
-      var tkeys = keyTerms(query).concat(synTerms(query)).filter(function (t) { return t.length >= 2; });
+      // title-match tokens: key/synonym terms PLUS the query's content segments
+      // (coreQuery split on particles) so a single-kanji topic dropped by keyTerms
+      // (「管」の成形 / 「軸」の強度) still counts toward title overlap. Generics are
+      // already stripped by coreQuery, and counting OVERLAP keeps it precise on the
+      // short titles (the doc matching the most query terms wins).
+      var ttoks = {};
+      keyTerms(query).concat(synTerms(query)).forEach(function (t) { if (t.length >= 2) ttoks[t] = 1; });
+      coreQuery(query).split(/[のはがをにでとへやもからまでよりという、。\s　]+/).forEach(function (seg) {
+        (seg.match(/[一-鿿ァ-ヶー]+/g) || []).forEach(function (t) { if (t) ttoks[t] = 1; });
+      });
+      var tkeys = Object.keys(ttoks);
       if (tkeys.length) {
+        // Intent-aware weight: for definition/list/features the TITLED doc IS the answer,
+        // so boost strongly (recovers exact-topic docs the pruned body index dropped).
+        // For why/purpose/howto the reason lives in a body whose title need not contain
+        // the term — a strong title boost would wrongly pull a generic title-matching doc
+        // (why-bearings-fail → generic 軸受 doc), so keep it weak.
+        var qIntent = classifyIntent(query);
+        var tw = (qIntent === 'why' || qIntent === 'purpose' || qIntent === 'howto') ? 5 : 12;
+        // exact-title match: when the query's topic IS a section title (「管の成形」⇔
+        // 「4・4・3 管の成形」), that doc is THE answer — overcome body-score dominance of
+        // generic 成形/燃料 docs. Precise (won't fire for why-questions whose coreQuery
+        // carries extra words). English glosses / section numbers normalized away.
+        var coreN = coreQuery(query).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
         for (var di = 0; di < index.meta.length; di++) {
           var mt = index.meta[di]; if (!mt) continue;
           var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
-          if (th) score[di] = (score[di] || 0) + th * 5;     // strong, additive — a title hit should win
+          if (th) score[di] = (score[di] || 0) + th * tw;     // strong, additive — a title hit should win
+          if (coreN.length >= 2) {
+            var ttopic = mt.replace(/^[\d０-９]+(?:[・.·][\d０-９]+)*\s*/, '').replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
+            if (ttopic === coreN) score[di] = (score[di] || 0) + 25;   // exact section-title match
+          }
         }
       }
     }
@@ -1318,6 +1348,64 @@
     var pad = ('0000' + (idx + 1)).slice(-4);
     return fetch(KB_DOC_URL + pad + '.md').then(function (r) { return r.ok ? r.text() : ''; })
       .then(function (t) { kbDocCache[idx] = t; return t; });
+  }
+
+  /* ---- Section cross-reference following ------------------------------------
+   * When an answer defers to another section (「…は2・2・5項で解説する」), follow that
+   * reference: find the KB doc whose title is that section, pick its most on-topic
+   * sentence, and surface it as a follow-up so the user actually gets the content. */
+  function zen2han(s) { return String(s).replace(/[０-９]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0xFEE0); }); }
+  function normSec(s) { return zen2han(s).replace(/[.．]/g, '・'); }
+  function sectionTopic(t) { return zen2han(t).replace(/^[0-9・\s　]+/, '').trim(); }   // title minus its section number
+  // KB docs whose title is the referenced section number (numbers repeat across volumes)
+  function findSectionDocs(index, sec) {
+    var out = [];
+    for (var i = 0; i < index.meta.length; i++) {
+      var nt = normSec(index.meta[i]);
+      if (nt.indexOf(sec) === 0) { var nx = nt.charAt(sec.length); if (nx === '' || /[\s　]/.test(nx) || !/[0-9・]/.test(nx)) out.push({ idx: i, title: index.meta[i] }); }
+    }
+    return out;
+  }
+  // best on-topic sentence of a referenced section's doc
+  function sectionSentence(question, docText, title, exclude) {
+    var emb = NSCode.embeddings, topic = sectionTopic(title), qv = emb.embed(question + ' ' + topic, 64);
+    var keys = keyTerms(question).concat(keyTerms(topic)), best = '', bestSc = -1;
+    var G = NSCode.grammar, ex = exclude || '';
+    buildSentences(docText).forEach(function (s) {
+      if (s.length < 16 || s.length > 160 || isJunkSent(s)) return;
+      if (ex && (ex.indexOf(s) >= 0 || s.indexOf(ex) >= 0)) return;            // skip the answer sentence itself (self-reference)
+      var nonfin = G && G.endsFinite && !G.endsFinite(s);                      // prefer finite prose over headings/noun-stops
+      var fig = /[図表][0-9０-９Ⅰ-ⅫA-Za-z]/.test(s) || (s.match(/\d{3,}/g) || []).length >= 2;
+      var sc = emb.cosine(qv, emb.embed(s, 64)) + (keys.some(function (k) { return s.indexOf(k) >= 0; }) ? 0.5 : 0) + (topic && s.indexOf(topic) >= 0 ? 0.3 : 0) - (nonfin ? 0.6 : 0) - (fig ? 0.5 : 0);
+      if (sc > bestSc) { bestSc = sc; best = s; }
+    });
+    if (best && NSCode.grammar) { if (NSCode.grammar.tidy) best = NSCode.grammar.tidy(best); var n = NSCode.grammar.normalize ? NSCode.grammar.normalize(best) : null; if (n && n.text) best = n.text; }
+    return best;
+  }
+  // detect 「N・N・N項で解説/述べる/示す/参照」 in the answer and resolve to section content
+  function resolveSectionRefs(question, text, index, exclude) {
+    if (!text || !index || !index.meta) return Promise.resolve([]);
+    // 「N・N・N項で解説/述べる/示す/参照」のみ。「項」を必須にして 図/表 参照
+    // （表2・20に示す・図3・46）を誤検出しないようにする。
+    var re = /([0-9０-９]+(?:[・.．][0-9０-９]+)+)\s*項(?:[でにを]|については)?\s*(?:解説|説明|述べ|示し|示す|詳述|詳しく|参照|よる)/g;
+    var m, seen = {}, secs = [];
+    while ((m = re.exec(text))) { var s = normSec(m[1]); if (!seen[s]) { seen[s] = 1; secs.push(s); } }
+    if (!secs.length) return Promise.resolve([]);
+    var emb = NSCode.embeddings, qv = emb.embed(question, 64), picks = [];
+    secs.slice(0, 2).forEach(function (sec) {
+      var docs = findSectionDocs(index, sec); if (!docs.length) return;
+      docs.forEach(function (d) { d.sc = emb.cosine(qv, emb.embed(sectionTopic(d.title), 64)); });
+      docs.sort(function (a, b) { return b.sc - a.sc; });
+      picks.push({ sec: sec, doc: docs[0] });
+    });
+    if (!picks.length) return Promise.resolve([]);
+    return Promise.all(picks.map(function (p) {
+      return fetchKBDoc(p.doc.idx).then(function (txt) {
+        var sent = sectionSentence(question, txt, p.doc.title, exclude);
+        if (!sent) return null;
+        return { section: p.sec, title: p.doc.title, text: sent };
+      }).catch(function () { return null; });
+    })).then(function (rs) { return rs.filter(Boolean); });
   }
 
   /* hybrid answer over the prebuilt KB -> Promise<{text,compose,seed,seeds,hits}>.
@@ -1376,8 +1464,11 @@
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
-            return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
+            var result = { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [] };
+            // follow any 「…項で解説する」 cross-reference and attach the section's content
+            if (weak || !concise.text) return result;
+            return resolveSectionRefs(question, concise.text, index, concise.text).then(function (refs) { if (refs.length) result.refs = refs; return result; });
           });
       });
     });
@@ -1389,6 +1480,6 @@
     buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer,
     loadKB: loadKB, searchKB: searchKB, hybridAnswerKB: hybridAnswerKB,
     // internals exposed for the offline eval harness (scripts/ask-eval.cjs)
-    _internal: { keyTerms: keyTerms, classifyIntent: classifyIntent, topicScore: topicScore, isJunkSent: isJunkSent, coreQuery: coreQuery }
+    _internal: { keyTerms: keyTerms, classifyIntent: classifyIntent, topicScore: topicScore, isJunkSent: isJunkSent, coreQuery: coreQuery, sanitizeSent: sanitizeSent }
   };
 })(window.NSCode);
