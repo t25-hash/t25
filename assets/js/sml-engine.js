@@ -188,7 +188,15 @@
     if (intent === 'list' || intent === 'howto') return Promise.resolve('');
     var primCue = GEN_CUE[intent] || GEN_CUE.definition;
     var primTop = pickTop(primCue, null, 3);
-    if (!primTop.length) primTop = pickTop(null, null, 3);
+    // why/purpose: the primary MUST carry a reason/purpose cue, else the synthesis
+    // reads off-intent (a topic fact, not a reason). Defer to the extractive intent
+    // builder (which enforces cues) by returning '' when no cued sentence is on-topic.
+    if (intent === 'why' || intent === 'purpose') {
+      primTop = primTop.filter(function (c) { return primCue.test(c.s); });
+      if (!primTop.length) return Promise.resolve('');
+    } else if (!primTop.length) {
+      primTop = pickTop(null, null, 3);
+    }
     if (!primTop.length) return Promise.resolve('');
     // complementary aspect → richer, multi-faceted content (definition⇄purpose/feature)
     var compCue = (intent === 'definition') ? GEN_CUE.purpose : GEN_CUE.definition;
