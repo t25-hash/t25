@@ -19,7 +19,7 @@
       terms: ['フック', '弾性', 'ひずみ', 'ヤング', '縦弾性'] },
     { id: 'bending', name: '曲げ応力', expr: 'σ = M / Z',
       where: [ { sym: 'σ', desc: '曲げ応力 [Pa]' }, { sym: 'M', desc: '曲げモーメント [N·m]' }, { sym: 'Z', desc: '断面係数 [m³]' } ],
-      terms: ['曲げ', 'はり', '梁', '断面係数', 'たわみ'] },
+      terms: ['曲げ', '梁', '断面係数', 'たわみ'] },
     { id: 'torsion', name: 'ねじり応力', expr: 'τ = T / Z_p',
       where: [ { sym: 'τ', desc: 'せん断応力 [Pa]' }, { sym: 'T', desc: 'ねじりモーメント（トルク） [N·m]' }, { sym: 'Z_p', desc: '極断面係数 [m³]' } ],
       terms: ['ねじり', 'トルク', '軸', '直径', 'せん断'] },
@@ -43,7 +43,7 @@
       terms: ['歯車', '強度', 'ルイス', '歯元', '曲げ強さ'] },
     { id: 'bolt', name: 'ボルトの締付けトルク', expr: 'T = K · d · F',
       where: [ { sym: 'T', desc: '締付けトルク [N·m]' }, { sym: 'K', desc: 'トルク係数（≈0.2） [-]' }, { sym: 'd', desc: 'ねじの呼び径 [m]' }, { sym: 'F', desc: '軸力（初期張力） [N]' } ],
-      terms: ['ねじ', 'ボルト', '締付', '締結', '軸力'] },
+      terms: ['ボルト', '締付', '締結', '軸力'] },
     { id: 'spring', name: 'コイルばねのばね定数', expr: 'k = G · d⁴ / (8 · D³ · n)',
       where: [ { sym: 'k', desc: 'ばね定数 [N/mm]' }, { sym: 'G', desc: '横弾性係数 [Pa]' }, { sym: 'd', desc: '線径 [mm]' }, { sym: 'D', desc: 'コイル平均径 [mm]' }, { sym: 'n', desc: '有効巻数 [-]' } ],
       terms: ['ばね', 'ばね定数', 'コイル'] },
@@ -93,10 +93,14 @@
   var GENERIC = { '応力': 1, '荷重': 1, '軸': 1, '材料': 1, '種類': 1, '強度': 1, '直径': 1 };
   var W_SPECIFIC = 2, W_GENERIC = 1, MIN_SCORE = 2;   // 確定には specific 1語ぶん相当が必要
 
+  // 1文字 term（柱・梁…）は別語の部分文字列に埋もれやすい（円柱・橋梁）。単独確定は危険なので
+  // generic 扱い（補強のみ）にし、「柱の座屈」は座屈と併せて当てる。
+  function termWeight(t) { return (GENERIC[t] || t.length <= 1) ? W_GENERIC : W_SPECIFIC; }
+
   function scoreTerms(terms, q) {
     var s = 0, n = 0;
     for (var i = 0; i < terms.length; i++) {
-      if (q.indexOf(terms[i]) >= 0) { s += GENERIC[terms[i]] ? W_GENERIC : W_SPECIFIC; n++; }
+      if (q.indexOf(terms[i]) >= 0) { s += termWeight(terms[i]); n++; }
     }
     return { s: s, n: n };
   }

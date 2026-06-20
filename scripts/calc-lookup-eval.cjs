@@ -38,13 +38,27 @@ const CASES = [
   { q: '圧入するときのはめあい', cat: 'table', id: 'fit' },
   { q: '降伏点をもとにした安全率', cat: 'formula', id: 'safety' },
   { q: 'ベアリングの基本定格寿命', cat: 'formula', id: 'l10' },
+  // --- 言い換えの正例: 同義・別表記でも recall できる ---
+  { q: 'ヤング率の定義を知りたい', cat: 'formula', id: 'hooke' },
+  { q: '玉軸受の基本定格寿命', cat: 'formula', id: 'l10' },
+  { q: '梁のたわみ量を求める', cat: 'formula', id: 'bending' },
+  { q: '熱伝達率を上げたい', cat: 'formula', id: 'newton' },
+  { q: 'ねじの締結方法', cat: 'formula', id: 'bolt' },
+  { q: '鋼材の引張強さ一覧', cat: 'table', id: 'carbon-steel' },
   // --- ネガティブ: generic語のみでは誤検出させない ---
   { q: '軸とは何か', cat: 'none' },
   { q: '材料について教えて', cat: 'none' },
   { q: '種類を一覧で', cat: 'none' },
   { q: '応力とは', cat: 'none' },
   { q: '荷重の意味', cat: 'none' },
-  { q: '強度とは何か', cat: 'none' }
+  { q: '強度とは何か', cat: 'none' },
+  // --- ネガティブ(高度): 短いtermが別語に埋もれる substring 誤検出を抑止 ---
+  { q: '円柱の体積を求める', cat: 'none' },      // 柱→euler を抑止
+  { q: '支柱の設計', cat: 'none' },              // 柱→euler
+  { q: '角柱の断面', cat: 'none' },              // 柱→euler
+  { q: 'やはり強度が大事だ', cat: 'none' },      // はり→bending を抑止
+  { q: '橋梁の点検', cat: 'none' },              // 梁→bending
+  { q: 'ねじれ角の計算', cat: 'none' }           // ねじ→bolt を抑止
 ];
 
 let pass = 0; const fails = [];
