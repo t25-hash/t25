@@ -533,6 +533,10 @@
     s = s.replace(/[（(]\s*(?:19|20)\d{2}\s*[)）]\s*,?\s*\d*\.?/g, '');   // 文中の文献年「(1991) ,217.」を除去
     s = s.replace(/[（(]\s*(?:図|表|式)[^）)]*[）)]/g, '');        // （図2･32）（表3･21）（式…）
     s = s.replace(/式\s*\([^)]*\)/g, '');                          // 式(Ⅰ-4･62)
+    // 裸のインライン図表参照（連用修飾）を除去: 「、図3･41に示すように」「表2･20のとおり」
+    // 図表が表示されないチャットUIで宙づりになる span のみ。裸の「図3･41」単独は文を
+    // 断片化しないため残す。
+    s = s.replace(/[、，]?\s*[図表][0-9０-９]+(?:[・･.][0-9０-９]+)*\s*(?:に示すように|に示すとおり|に示す|のように|のとおり|を参照|参照)/g, '');
     s = s.replace(/[（(]\s*[ⅰ-ⅹⅠ-Ⅹ]+\s*[）)]/g, '');             // (ⅰ)(ⅱ) 列挙マーカー
     s = s.replace(/[（(]\s*[0-9０-９]{1,2}\s*[）)]/g, '');          // (1)(2) インライン列挙/段組み混線
     s = s.replace(/β\s*\d+\s*[－-]\s*\d+|β\s*\d+\s*編|[一-鿿]\d+\s*編/g, ''); // ページヘッダ/フッタ
@@ -1476,6 +1480,6 @@
     buildChunks: buildChunks, ask: ask, hybridAnswer: hybridAnswer,
     loadKB: loadKB, searchKB: searchKB, hybridAnswerKB: hybridAnswerKB,
     // internals exposed for the offline eval harness (scripts/ask-eval.cjs)
-    _internal: { keyTerms: keyTerms, classifyIntent: classifyIntent, topicScore: topicScore, isJunkSent: isJunkSent, coreQuery: coreQuery }
+    _internal: { keyTerms: keyTerms, classifyIntent: classifyIntent, topicScore: topicScore, isJunkSent: isJunkSent, coreQuery: coreQuery, sanitizeSent: sanitizeSent }
   };
 })(window.NSCode);
