@@ -292,11 +292,11 @@
             '</div>' +
           '</div>' +
           '<aside class="ns-ask-graph" aria-label="ナレッジ／システムマップ">' +
-            '<div class="ns-graph-legend">🗺️ ナレッジ／システムマップ' +
-              '<span><i class="ns-graph-dot" style="background:#6ea8fe"></i>KB</span>' +
+            '<div class="ns-graph-legend">🗺️ ナレッジ／計算式マップ' +
+              '<span><i class="ns-graph-dot" style="background:#6ea8fe"></i>KB知識</span>' +
               '<span><i class="ns-graph-dot" style="background:#c792ea"></i>用語</span>' +
-              '<span><i class="ns-graph-dot" style="background:#f6bd60"></i>JS/Lab</span>' +
-              '<small>ノードをクリック→質問を挿入／Labへ移動</small>' +
+              '<span><i class="ns-graph-dot" style="background:#f6bd60"></i>計算式・表</span>' +
+              '<small>ノードをクリック→質問を挿入</small>' +
             '</div>' +
             '<div id="askGraph" class="ns-graph-host"></div>' +
           '</aside>' +

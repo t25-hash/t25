@@ -12,7 +12,7 @@
 
   var DESKTOP = '(min-width: 1024px)';
   var VW = 100, VH = 140, CX = 50, CY = 66;                 // SVG viewBox + center
-  var PALETTE = { kb: '#6ea8fe', cat: '#5ee0c0', topic: '#8ab4ff', term: '#c792ea', js: '#f6bd60', mod: '#f6bd60' };
+  var PALETTE = { kb: '#6ea8fe', cat: '#5ee0c0', topic: '#8ab4ff', term: '#c792ea', calc: '#f6bd60', formula: '#f6bd60', table: '#f0975a' };
 
   // mechanical-engineering KB topics: clean short labels keyed by DEFAULT_DOCS prefix.
   var TOPIC_LABEL = {
@@ -22,13 +22,6 @@
   };
   // a topic that names a FAMILY of parts → ask for its kinds, otherwise ask "とは".
   var KINDS = { '機械要素': 1, '歯車': 1, '軸受': 1, 'ねじ・ばね': 1 };
-  // JS / platform modules → their Lab route (confirmed in nav.js).
-  var MODULES = [
-    ['Embedding', '#/embedding'], ['RAG', '#/rag'], ['Agent', '#/agent'],
-    ['Memory', '#/memory'], ['MCP', '#/mcp'], ['Neural', '#/neural'],
-    ['Grammar', '#/grammar'], ['Multi-Agent', '#/multi-agent'],
-    ['Tools', '#/tools'], ['Evaluation', '#/evaluation']
-  ];
 
   var GRAPH = null;     // cached settled model { nodes, edges, byId, adj }
   var container = null, raf = 0, hoverId = '', mql = null, mqlHandler = null;
@@ -45,7 +38,7 @@
     function link(a, b, rest) { edges.push([a, b, rest]); }
 
     var kb = add({ id: 'hub-kb', label: 'KB 知識', type: 'kb', vec: emb('機械工学 知識 KB') });
-    var js = add({ id: 'hub-js', label: 'JS システム', type: 'js', vec: emb('JS システム エンジン') });
+    var calc = add({ id: 'hub-calc', label: '計算式・表', type: 'calc', vec: emb('計算式 公式 表 設計計算') });
 
     // KB categories
     var cats = { mech: '機械工学概説', elem: '機械要素・材料', term: '用語' };
@@ -94,10 +87,28 @@
       });
     }
 
-    // JS module nodes
-    MODULES.forEach(function (m, i) {
-      add({ id: 'mod-' + i, label: m[0], type: 'mod', route: m[1], vec: emb(m[0]) });
-      link('hub-js', 'mod-' + i, 18);
+    // 計算式・表(計算式DB Md) ノード: NSCode.calc の式/表レジストリ(意味単位)。各式・表は
+    // その「トリガ語」または埋め込み類似で関連KBトピック/用語へ接続し、知識と計算を webbing する。
+    var CALC = NSCode.calc || { FORMULAS: [], TABLES: [] };
+    var kbNodes = nodes.filter(function (n) { return n.type === 'topic' || n.type === 'term'; });
+    function shortName(s) { return String(s || '').replace(/（[^）]*）|\([^)]*\)/g, '').trim(); }
+    function bestKB(vec, terms) {
+      return kbNodes.map(function (k) {
+        var ov = terms.some(function (t) { return k.label && (k.label.indexOf(t) >= 0 || t.indexOf(k.label) >= 0); }) ? 1 : 0;
+        return { k: k, s: C(vec, k.vec) + 0.4 * ov };
+      }).sort(function (a, b) { return b.s - a.s; }).slice(0, 2).filter(function (o) { return o.s > 0.34; });
+    }
+    (CALC.FORMULAS || []).forEach(function (f) {
+      var lbl = shortName(f.name), tr = f.terms || [];
+      var n = add({ id: 'f-' + f.id, label: lbl, type: 'formula', q: lbl + 'はどう求めますか？', vec: emb(f.name + ' ' + tr.join(' ')) });
+      link('hub-calc', n.id, 18);
+      bestKB(n.vec, tr).forEach(function (o) { link(n.id, o.k.id, 15); });
+    });
+    (CALC.TABLES || []).forEach(function (t) {
+      var lbl = shortName(t.name), tr = t.terms || [];
+      var n = add({ id: 't-' + t.id, label: lbl, type: 'table', q: lbl + 'は？', vec: emb(t.name + ' ' + tr.join(' ')) });
+      link('hub-calc', n.id, 18);
+      bestKB(n.vec, tr).forEach(function (o) { link(n.id, o.k.id, 15); });
     });
 
     // adjacency for hover highlighting
@@ -122,7 +133,7 @@
   }
 
   // anchors keep the KB cluster and JS cluster visually apart (Obsidian feel)
-  var ANCHOR = { 'hub-kb': [34, 78], 'hub-js': [70, 34] };
+  var ANCHOR = { 'hub-kb': [32, 80], 'hub-calc': [70, 36] };
   function step(model) {
     var ns = model.nodes, i, j, a, b, dx, dy, d2, d, f;
     // repulsion
@@ -156,8 +167,8 @@
   }
 
   /* ---- render one SVG from current positions ---- */
-  function radius(n) { return n.type === 'kb' || n.type === 'js' ? 3 : n.type === 'cat' ? 2.2 : n.type === 'mod' ? 1.9 : n.type === 'topic' ? 1.7 : 1.2; }
-  function fontSize(n) { return n.type === 'kb' || n.type === 'js' ? 3.4 : n.type === 'cat' ? 2.9 : n.type === 'term' ? 2.3 : 2.7; }
+  function radius(n) { return n.type === 'kb' || n.type === 'calc' ? 3 : n.type === 'cat' ? 2.2 : n.type === 'term' ? 1.2 : 1.7; }
+  function fontSize(n) { return n.type === 'kb' || n.type === 'calc' ? 3.4 : n.type === 'cat' ? 2.9 : n.type === 'term' ? 2.3 : 2.7; }
   function render() {
     if (!container || !GRAPH) return;
     var hi = hoverId, nb = hi ? GRAPH.adj[hi] : null;
@@ -187,9 +198,8 @@
   }
 
   /* ---- interactions (delegated on the container so they survive re-render) ---- */
-  function seedQuestion(node) {
+  function setQ(q) {
     var inp = document.getElementById('askQ'); if (!inp) return;
-    var q = KINDS[node.label] ? node.label + 'の種類は？' : node.label + 'とは？';
     inp.value = q;
     inp.dispatchEvent(new Event('input', { bubbles: true }));   // lets ask.js sync state.query + persist
     inp.focus();
@@ -197,9 +207,9 @@
   function onClick(e) {
     var g = e.target.closest && e.target.closest('[data-id]'); if (!g || !GRAPH) return;
     var n = GRAPH.byId[g.getAttribute('data-id')]; if (!n) return;
-    if (n.type === 'mod' && n.route) { window.location.hash = n.route; return; }
-    if (n.type === 'kb' || n.type === 'js') { var inp = document.getElementById('askQ'); if (inp) inp.focus(); return; }
-    seedQuestion(n);
+    if (n.type === 'kb' || n.type === 'calc') { var inp = document.getElementById('askQ'); if (inp) inp.focus(); return; }
+    if (n.q) { setQ(n.q); return; }                              // 計算式・表 → 専用の質問
+    setQ(KINDS[n.label] ? n.label + 'の種類は？' : n.label + 'とは？');   // KBトピック/用語
   }
   function onHover(e) {
     var g = e.target.closest && e.target.closest('[data-id]');
