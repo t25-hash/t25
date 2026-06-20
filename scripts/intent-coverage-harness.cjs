@@ -49,7 +49,7 @@ require(path.join(V, 'kuromoji.js')).builder({ dicPath: path.join(V, 'dict') }).
     if (a.memo) seeds.push(a.memo);
     const ctx = seeds.concat((a.hits || []).map(h => h.chunk.text));
     const gen = ctx.length ? await N.sml.groundedAnswer(q, ctx, { steps: 300 }) : '';
-    const ctxText = ctx.join('\n');
+    const ctxText = ctx.join('\n').replace(/[\s　]+/g, '');   // engine gates faithfulness on space-stripped ctx
     const faithful = !gen || runs(gen).every(t => ctxText.indexOf(t) >= 0);
     const sentences = (gen || '').split(/(?<=[。．！？])/).map(s => s.trim()).filter(Boolean);
     const grammatical = !gen || sentences.every(s => N.grammar.endsFinite(s));
