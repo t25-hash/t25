@@ -1320,10 +1320,19 @@
         // (why-bearings-fail → generic 軸受 doc), so keep it weak.
         var qIntent = classifyIntent(query);
         var tw = (qIntent === 'why' || qIntent === 'purpose' || qIntent === 'howto') ? 5 : 12;
+        // exact-title match: when the query's topic IS a section title (「管の成形」⇔
+        // 「4・4・3 管の成形」), that doc is THE answer — overcome body-score dominance of
+        // generic 成形/燃料 docs. Precise (won't fire for why-questions whose coreQuery
+        // carries extra words). English glosses / section numbers normalized away.
+        var coreN = coreQuery(query).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
         for (var di = 0; di < index.meta.length; di++) {
           var mt = index.meta[di]; if (!mt) continue;
           var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
           if (th) score[di] = (score[di] || 0) + th * tw;     // strong, additive — a title hit should win
+          if (coreN.length >= 2) {
+            var ttopic = mt.replace(/^[\d０-９]+(?:[・.·][\d０-９]+)*\s*/, '').replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
+            if (ttopic === coreN) score[di] = (score[di] || 0) + 25;   // exact section-title match
+          }
         }
       }
     }
