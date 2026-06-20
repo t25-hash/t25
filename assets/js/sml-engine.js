@@ -167,6 +167,14 @@
     // keyless queries (単語など): derive soft keys from the question's content runs.
     if (!keys.length) keys = (question.match(/[一-鿿ァ-ヶー]{2,}/g) || []).filter(function (k) { return !GENERIC.test(k); });
     var subj = keys[0] || '';
+    var intent = classifyIntent(question);
+    // for definitions, use the FULL topic phrase from the question as the subject when
+    // keyTerms over-split a compound (「歯車ポンプ」→["歯車","ポンプ"]). This keeps the
+    // subject specific: 歯車ポンプ defers (no off-target ポンプ leak) instead of drifting.
+    if (intent === 'definition') {
+      var topic = question.replace(/(とは.*|って(なに|何).*|について.*|の(意味|定義).*)$/, '').replace(/[\s　]/g, '');
+      if (topic.length >= 2 && topic.length > subj.length && subj && topic.indexOf(subj) >= 0) subj = topic;
+    }
     var qv = EM ? EM.embed(question, 64) : null;
     // curated seeds (the extractive intent answer / composed lines) are the best,
     // on-target content — strongly prefer their sentences as the primary fact.
@@ -220,7 +228,6 @@
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
     }
-    var intent = classifyIntent(question);
     // 構造化が要る intent（種類/分類/列挙=list、手順=howto）は散文合成より、抽出側の
     // 番号付きリスト／手順の方が的確。生成は抑止して構造化抽出回答に委ねる。
     if (intent === 'list' || intent === 'howto') return Promise.resolve('');
