@@ -34,7 +34,7 @@ require(path.join(VENDOR, 'kuromoji.js')).builder({ dicPath: path.join(VENDOR, '
     if (a.memo) seeds.push(a.memo);
     const ctx = seeds.concat((a.hits || []).map(h => h.chunk.text));
     if (!ctx.length) { ok(`[${q}] retrieval`, false); continue; }
-    const gen = await N.sml.groundedAnswer(q, ctx, { steps: 300 });
+    const gen = await N.sml.groundedAnswer(q, ctx, { steps: 300, seeds });
     console.log(`\nQ: ${q}\n   GEN: ${gen || '<empty → extractive fallback>'}`);
     if (!gen) { console.log('   (no generation; extractive used)'); continue; }
     const ctxText = ctx.join('\n');

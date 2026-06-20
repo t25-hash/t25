@@ -143,6 +143,10 @@
     if (!keys.length) keys = (question.match(/[一-鿿ァ-ヶー]{2,}/g) || []).filter(function (k) { return !GENERIC.test(k); });
     var subj = keys[0] || '';
     var qv = EM ? EM.embed(question, 64) : null;
+    // curated seeds (the extractive intent answer / composed lines) are the best,
+    // on-target content — strongly prefer their sentences as the primary fact.
+    var seeds = opts.seeds || [];
+    function inSeed(s) { for (var i = 0; i < seeds.length; i++) { if (seeds[i] && (seeds[i].indexOf(s) >= 0 || s.indexOf(seeds[i]) >= 0)) return true; } return false; }
     // table/numeric junk from PDF extraction (e.g. 「系列Ⅰ系列Ⅱ」「4600MPa…4200MPa…」)
     function tableJunk(s) { return (s.match(/[Ⅰ-Ⅻ]/g) || []).length >= 2 || (s.match(/\d{3,}/g) || []).length >= 3 || /系列[Ⅰ-Ⅻ]/.test(s); }
     // clean, on-topic sentence pool from the retrieved context
@@ -150,7 +154,7 @@
     contexts.forEach(function (ct) {
       String(ct || '').split(/(?<=[。．！？\n])/).forEach(function (s) {
         s = s.replace(/[\s　]+/g, '').replace(/^[、，,]+/, '');
-        if (s.length < 14 || s.length > 180 || seen[s] || isJunk(s)) return;
+        if (s.length < 14 || s.length > 180 || seen[s] || isJunk(s) || tableJunk(s)) return;   // drop PDF-table fragments outright
         seen[s] = 1; cands.push(s);
       });
     });
@@ -182,7 +186,7 @@
           var ki0 = subj ? s.indexOf(subj) : -1;
           var isTopic = topicRe && topicRe.test(s);
           var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s) || /^[0-9０-９「『（(・,，.．/／\-]/.test(s);   // mid-word/chunk-cut/number fragment
-          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (isTopic ? 0.5 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
+          return { s: s, sc: rel(s) + (inSeed(s) ? 0.6 : 0) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (isTopic ? 0.5 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
     }

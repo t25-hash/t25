@@ -232,7 +232,7 @@
     var ctx = seeds.concat(entry.a.hits.map(function (h) { return h.text; }));
     // in-house SML grounded (copy-constrained) generation: on-device, no external
     // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
-    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature }).then(function (txt) {
+    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature, seeds: seeds }).then(function (txt) {
       entry.a.genPending = false;
       if (txt) {
         // Grammar Compiler Layer も生成回答に適用（抽出と同じく文法正規化を通す）。
