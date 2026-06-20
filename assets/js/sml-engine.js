@@ -261,17 +261,11 @@
     var ki = (NSCode.askEngine && NSCode.askEngine._internal) || {};
     var intent = ki.classifyIntent ? ki.classifyIntent(question) : '';
     if (intent === 'list' || intent === 'howto') return Promise.resolve('');
-    // When kuromoji is ready, generation is grammar-ruled grounded recombination only
-    // (natural + on-target); if it can't build a good answer it returns '' and Ask
-    // shows the extractive answer. The experimental free token decode is kept ONLY as
-    // a legacy fallback for when kuromoji isn't loaded.
+    // Generation is grammar-ruled grounded recombination ONLY (natural + on-target).
+    // It requires kuromoji; until that's loaded we return '' so Ask shows the
+    // extractive answer (never the degenerate free-token decode = salad).
     if (G && G.ready && G.ready()) return recombine(question, contexts, opts);
-    return debugAnswer(question, contexts, opts).then(function (r) {
-        if (!r.text || r.text.length < 10) return '';           // too short → let caller fall back
-        // coherence gate: reject token-salad so Ask falls back to the extractive answer.
-        if (G && G.coherence && !G.coherence(r.text).ok) return '';
-        return r.text;
-      });
+    return Promise.resolve('');
   }
 
   NSCode.sml = {
