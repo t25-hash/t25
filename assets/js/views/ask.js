@@ -99,6 +99,12 @@
       return '<p class="ns-empty__hint">関連する知識が見つかりませんでした。上の「知識ベース」で資料を学習させてください。</p>';
     }
     if (a.weak) {
+      // 本文一致は弱くても、式・表レジストリ（NSCode.calc）に当たるなら直後に式バブルを
+      // 続けるため、案内を「式を示す」旨に差し替えて宙づりを避ける。
+      if (NSCode.calc && NSCode.calc.has(q)) {
+        return '<p class="ns-empty__hint">本文の説明は十分に見つかりませんでしたが、関連する式を示します。</p>' +
+          citeDetails(q, a.hits, '検索で近かった候補');
+      }
       return '<p class="ns-empty__hint">ご質問に十分一致する記述が知識ベースに見つかりませんでした。語句を具体的にして、もう一度お試しください。</p>' +
         citeDetails(q, a.hits, '検索で近かった候補');
     }
@@ -198,7 +204,9 @@
   function logHtml() {
     if (!state.history.length) return welcomeHtml();
     return state.history.map(function (e) {
-      var extras = (e.a && !e.a.weak && !e.error) ? (refsHtml(e) + extrasHtml(e.q)) : '';
+      // 項参照フォローアップ（refsHtml）は実回答の refs 由来なので !weak を維持。
+      // 式・表（extrasHtml）は決定論的な別ソースなので weak でも出す（lookup 不一致なら空）。
+      var extras = (e.a && !e.error) ? ((!e.a.weak ? refsHtml(e) : '') + extrasHtml(e.q)) : '';
       return userBubble(e.q) + botBubble(e) + extras;
     }).join('');
   }
@@ -431,7 +439,8 @@
         node.innerHTML = '<div class="ns-msg__avatar">🍼</div><div class="ns-msg__body">' + botBody(entry) + '</div>';
         // 連投: if the question hooks into the calc registry, post the related
         // formulas (式名＋式＋記号説明) and tables (表形式) as follow-up bubbles.
-        var ex = (entry.a && !entry.a.weak && !entry.error) ? extrasHtml(q) : '';
+        // 式・表は決定論的な別ソース。本文一致が弱くても calc に当たれば続けて出す。
+        var ex = (entry.a && !entry.error) ? extrasHtml(q) : '';
         if (ex) node.insertAdjacentHTML('afterend', ex);
       }
       scrollBottom();
