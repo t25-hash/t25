@@ -103,7 +103,9 @@
         citeDetails(q, a.hits, '検索で近かった候補');
     }
     // 抽出回答は grammar agent の正規化文を優先表示（複文は normalize 側で原文保持）。
+    // 表示直前に tidy で PDF 由来ノイズ（表のローマ数字連・重複・先頭断片）を除去。
     var shown = a.normalized || a.text;
+    if (shown && NSCode.grammar && NSCode.grammar.tidy) shown = NSCode.grammar.tidy(shown);
     var html;
     if (a.gentext) {   // abstractive answer (in-browser LLM), grounded on the same hits
       html = '<p class="ns-qa-answer__lead">' + highlight(a.gentext, q).replace(/\n/g, '<br>') +

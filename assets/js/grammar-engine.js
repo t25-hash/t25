@@ -420,6 +420,16 @@
     if (last.pos === '動詞' || last.pos === '形容詞') return last.conjugated_form === '基本形';
     return false;   // 名詞止め・助詞止め・連用形止め → 非終止
   }
+  /* 表示用の軽量クリーンアップ（意味は変えない・破壊しない）。抽出回答にも残る PDF 由来の
+   * ノイズを除去：表の「系列Ⅰ系列Ⅱ…」連、隣接重複チャンク、先頭の数字・記号断片。 */
+  function tidy(s) {
+    if (!s) return s;
+    return String(s)
+      .replace(/(?:系列[Ⅰ-Ⅻ]+\s*)+/g, '')                                  // 表のローマ数字連
+      .replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{4,16}?)\1+/g, '$1')             // 隣接重複チャンク
+      .replace(/^[\s　、，,。．・.0-9０-９/／\-]+/, '')                          // 先頭の断片
+      .trim();
+  }
 
   /* kuromoji による生成文の「コヒーレンス判定」（生成後処理）。極小ニューラル生成器が
    * 出すトークン崩壊文（助詞・記号の羅列／同語の連続／終止述語なし）を形態素的に検出し、
@@ -495,5 +505,5 @@
   NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
     toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface,
     initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, coherence: coherence,
-    analyze: analyze, nouns: nouns, predicate: predicate, endsFinite: endsFinite, _setTokenizer: setTokenizer };
+    analyze: analyze, nouns: nouns, predicate: predicate, endsFinite: endsFinite, tidy: tidy, _setTokenizer: setTokenizer };
 })(window.NSCode);
