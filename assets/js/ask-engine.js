@@ -571,7 +571,9 @@
     // de-interleave splice: an impossible verb conjugation (実現させ-る-た) or an
     // over-long single sentence packed with こと-clauses is a column-merge artifact
     // (two half-sentences glued without punctuation). Reject so it never answers.
-    if (/(せ|れ|す|く|ま)るた[をにはがめ]/.test(s)) return true;
+    // NOTE: 「め」を除外しないと正当な「するため(に)」(す+るた+め)を誤検出するため、
+    // 末尾集合から「め」を外す（「るたを/るたに/るたは/るたが」のみ異常として弾く）。
+    if (/(せ|れ|す|く|ま)るた[をにはが]/.test(s)) return true;
     if (s.length > 95 && (s.match(/こと/g) || []).length >= 3) return true;
     return false;
   }
