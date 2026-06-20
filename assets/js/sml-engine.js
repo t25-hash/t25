@@ -267,9 +267,12 @@
         facts.push(p2); used.push(p2);
       }
       var ans = facts.join('また、');
-      // faithfulness: every content word must come from the retrieved context
+      // faithfulness: every content word must come from the retrieved context. Compare
+      // against a SPACE-STRIPPED context because candidate sentences had spaces removed
+      // (otherwise English/spaced terms like 「solid lubrica-tion」 falsely look invented).
+      var ctxJoin = ctxText.replace(/[\s　]+/g, '');
       var runs = ans.match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || [];
-      if (!runs.length || !runs.every(function (t) { return ctxText.indexOf(t) >= 0; })) return '';
+      if (!runs.length || !runs.every(function (t) { return ctxJoin.indexOf(t) >= 0; })) return '';
       // thin or fragment-leading → bail so the (often curated) extractive answer shows.
       // measure by non-punctuation length (Japanese definitions are hiragana-heavy, so
       // a kanji-only count wrongly rejects good answers like 「歯車は…機械要素です。」).
