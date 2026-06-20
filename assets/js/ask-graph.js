@@ -246,23 +246,31 @@
     render();
     if (!GRAPH.settled && !raf) animate(GRAPH, 0);   // re-visits reuse the settled layout (no re-jiggle)
   }
-  function mount(el) {
+  function onLeave() { if (hoverId) { hoverId = ''; if (!raf) render(); } }
+  function clearLive() {
+    if (raf) { window.cancelAnimationFrame(raf); raf = 0; }
+    if (mql && mqlHandler) { if (mql.removeEventListener) mql.removeEventListener('change', mqlHandler); else if (mql.removeListener) mql.removeListener(mqlHandler); }
+    mqlHandler = null; mql = null;
+    if (container) { container.removeEventListener('click', onClick); container.removeEventListener('mousemove', onHover); container.removeEventListener('mouseleave', onLeave); }
+  }
+  // mount into ANY container. opts.force builds regardless of width (mobile overlay);
+  // otherwise the desktop rail self-gates and defers the build until ≥1024px.
+  function mount(el, opts) {
+    opts = opts || {};
+    clearLive();
     container = el; if (!container || !NSCode.embeddings || !NSCode.askEngine) return;
     container.addEventListener('click', onClick);
     container.addEventListener('mousemove', onHover);
-    container.addEventListener('mouseleave', function () { if (hoverId) { hoverId = ''; if (!raf) render(); } });
+    container.addEventListener('mouseleave', onLeave);
+    if (opts.force) { build(); return; }
     mql = window.matchMedia(DESKTOP);
     if (mql.matches) build();
-    else {                                                  // mobile: defer build until the rail is actually shown
+    else {                                                  // narrow: defer build until the rail is actually shown
       mqlHandler = function (ev) { if ((ev.matches != null ? ev.matches : mql.matches) && container) build(); };
       if (mql.addEventListener) mql.addEventListener('change', mqlHandler); else if (mql.addListener) mql.addListener(mqlHandler);
     }
   }
-  function unmount() {
-    if (raf) { window.cancelAnimationFrame(raf); raf = 0; }
-    if (mql && mqlHandler) { if (mql.removeEventListener) mql.removeEventListener('change', mqlHandler); else if (mql.removeListener) mql.removeListener(mqlHandler); }
-    mqlHandler = null; mql = null; container = null; hoverId = ''; filter = '';
-  }
+  function unmount() { clearLive(); container = null; hoverId = ''; filter = ''; }
 
   NSCode.askGraph = { mount: mount, unmount: unmount, search: search, selectFirst: selectFirst, _build: buildModel };
 })(window.NSCode);

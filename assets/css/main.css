@@ -480,9 +480,25 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
 .cc-ctx__row--sum { background: var(--accent-weak); color: var(--accent); }
 
 /* ---- Ask knowledge/system map (desktop right rail) ---- */
-/* Defaults: single-column flow, graph hidden — identical to before on mobile. */
+/* Defaults: single-column flow, rail hidden — identical to before on mobile. */
 .ns-ask-2pane { display: block; }
 .ns-ask-graph { display: none; }
+
+/* generic graph element styles — shared by the desktop rail AND the mobile overlay */
+.ns-graph-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  font-size: 12px; font-weight: 600; color: var(--text-dim);
+  padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.ns-graph-legend span { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; }
+.ns-graph-legend small { flex-basis: 100%; font-weight: 400; opacity: .8; }
+.ns-graph-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.ns-graph-host { flex: 1 1 auto; min-height: 0; }
+.ns-graph-svg { width: 100%; height: 100%; display: block; }
+.ns-graph-node { cursor: pointer; transition: opacity .12s ease; }
+.ns-graph-node text { pointer-events: none; user-select: none; }
+.ns-graph-search { flex: 0 0 auto; margin-top: 8px; }
+.ns-graph-search .ns-input { width: 100%; font-size: 13px; padding: 7px 10px; }
 
 @media (min-width: 1024px) {
   /* widen the Ask container only (other views keep the 1100px cap) so the empty
@@ -500,21 +516,25 @@ mark { background: var(--accent-weak); color: var(--accent); padding: 0 2px; bor
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 10px 12px; overflow: hidden;
   }
-  .ns-graph-legend {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
-    font-size: 12px; font-weight: 600; color: var(--text-dim);
-    padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border);
-  }
-  .ns-graph-legend span { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; }
-  .ns-graph-legend small { flex-basis: 100%; font-weight: 400; opacity: .8; }
-  .ns-graph-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-  .ns-graph-host { flex: 1 1 auto; min-height: 0; }
-  .ns-graph-svg { width: 100%; height: 100%; display: block; }
-  .ns-graph-node { cursor: pointer; transition: opacity .12s ease; }
-  .ns-graph-node text { pointer-events: none; user-select: none; }
-  .ns-graph-search { flex: 0 0 auto; margin-top: 8px; }
-  .ns-graph-search .ns-input { width: 100%; font-size: 13px; padding: 7px 10px; }
+  .ns-map-fab, .ns-map-overlay { display: none !important; }   /* desktop uses the rail */
 }
+
+/* ---- mobile map entry: 🗺️ FAB + full-screen overlay (hidden ≥1024px) ---- */
+.ns-map-fab {
+  position: fixed; right: 16px; bottom: 132px; z-index: 60;
+  width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--accent); color: #fff; font-size: 22px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center;
+}
+.ns-map-overlay { display: none; position: fixed; inset: 0; z-index: 80; background: var(--bg);
+  flex-direction: column; padding: 12px 14px calc(env(safe-area-inset-bottom, 0px) + 12px); }
+.ns-map-overlay.is-open { display: flex; }
+.ns-map-overlay__bar { display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 15px; }
+.ns-map-overlay__close { background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; width: 38px; height: 34px; font-size: 16px; cursor: pointer; }
+.ns-map-overlay .ns-graph-host { min-height: 0; }
+body.map-open { overflow: hidden; }
 
 /* map-selected document bubble (full Md / 用語定義 shown as an answer) */
 .ns-msg--doc .ns-doc__p { font-size: 13.5px; line-height: 1.75; margin: 6px 0; color: var(--text); }

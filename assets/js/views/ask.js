@@ -219,6 +219,18 @@
         (d.source ? '<div class="ns-qa-answer__src">出典: <span class="ns-tag">' + C.esc(d.source) + '</span></div>' : '') +
       '</div></div>';
   }
+  // mobile full-screen map overlay (the 🗺️ FAB entry point; desktop uses the rail)
+  function openMapOverlay() {
+    var ov = el('mapOverlay'); if (!ov) return;
+    ov.classList.add('is-open'); document.body.classList.add('map-open');
+    if (NSCode.askGraph) NSCode.askGraph.mount(el('askGraphM'), { force: true });   // build regardless of width
+  }
+  function closeMapOverlay() {
+    var ov = el('mapOverlay'); if (!ov || !ov.classList.contains('is-open')) return;
+    ov.classList.remove('is-open'); document.body.classList.remove('map-open');
+    if (NSCode.askGraph) NSCode.askGraph.unmount();
+  }
+
   // post a map-selected node's full content as an answer (called by ask-graph)
   function showNode(payload) {
     if (!payload) return;
@@ -229,6 +241,7 @@
       var w = log.querySelector('.ns-chat__welcome'); if (w) log.innerHTML = '';
       log.insertAdjacentHTML('beforeend', userBubble(entry.q) + docBubble(entry));
     }
+    closeMapOverlay();   // on mobile: close the map so the answer is visible in the chat
     scrollBottom();
   }
   NSCode.askChat = { showNode: showNode };
@@ -375,6 +388,21 @@
             '<div id="askGraph" class="ns-graph-host"></div>' +
             '<div class="ns-graph-search"><input id="graphSearch" class="ns-input" placeholder="🔍 ノードを検索（例：歯車 / 安全率）→ Enterで全文表示"></div>' +
           '</aside>' +
+        '</div>' +
+        // mobile entry point: a 🗺️ button (hidden on desktop, where the rail is shown)
+        // opens the map + search as a full-screen overlay.
+        '<button id="mapFab" class="ns-map-fab" aria-label="ナレッジ／計算式マップを開く" title="ナレッジ／計算式マップ">🗺️</button>' +
+        '<div id="mapOverlay" class="ns-map-overlay" role="dialog" aria-modal="true" aria-label="ナレッジ／計算式マップ">' +
+          '<div class="ns-map-overlay__bar"><b>🗺️ ナレッジ／計算式マップ</b>' +
+            '<button id="mapClose" class="ns-map-overlay__close" aria-label="閉じる">✕</button></div>' +
+          '<div class="ns-graph-legend">' +
+            '<span><i class="ns-graph-dot" style="background:#6ea8fe"></i>KB知識</span>' +
+            '<span><i class="ns-graph-dot" style="background:#c792ea"></i>用語</span>' +
+            '<span><i class="ns-graph-dot" style="background:#f6bd60"></i>計算式・表</span>' +
+            '<small>ノードを選択→全文を回答表示</small>' +
+          '</div>' +
+          '<div id="askGraphM" class="ns-graph-host"></div>' +
+          '<div class="ns-graph-search"><input id="graphSearchM" class="ns-input" placeholder="🔍 ノードを検索 → Enterで全文表示"></div>' +
         '</div>';
     },
     onMount: function () {
@@ -419,13 +447,21 @@
         gs.addEventListener('input', function () { NSCode.askGraph.search(gs.value); });
         gs.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); NSCode.askGraph.selectFirst(gs.value); } });
       }
+      // mobile 🗺️ overlay: open / close / its own search
+      var fab = el('mapFab'), mc = el('mapClose'), gsm = el('graphSearchM');
+      if (fab) fab.addEventListener('click', openMapOverlay);
+      if (mc) mc.addEventListener('click', closeMapOverlay);
+      if (gsm && NSCode.askGraph) {
+        gsm.addEventListener('input', function () { NSCode.askGraph.search(gsm.value); });
+        gsm.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); NSCode.askGraph.selectFirst(gsm.value); } });
+      }
     }
   });
 
   // leaving Ask → drop the widened layout and stop the graph's animation loop
   window.addEventListener('nscode:navigated', function (e) {
     if (!e.detail || !e.detail.view || e.detail.view.module !== 'ask') {
-      document.body.classList.remove('is-ask');
+      document.body.classList.remove('is-ask', 'map-open');
       if (NSCode.askGraph) NSCode.askGraph.unmount();
     }
   });
