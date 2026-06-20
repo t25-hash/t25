@@ -414,7 +414,10 @@
     while (tk.length && tk[tk.length - 1].pos === '記号') tk.pop();
     if (!tk.length) return false;
     var last = tk[tk.length - 1];
-    if (last.pos === '動詞' || last.pos === '形容詞' || last.pos === '助動詞') return last.conjugated_form === '基本形';
+    // kuromoji mislabels listing/final particles (や・か・ね・よ…) as 助動詞 基本形;
+    // these are NOT valid sentence-final predicates, so reject them.
+    if (last.pos === '助動詞') return last.conjugated_form === '基本形' && !/^(や|か|かな|ね|よ|わ|さ|ぞ|な|の|っけ|かしら)$/.test(last.surface_form);
+    if (last.pos === '動詞' || last.pos === '形容詞') return last.conjugated_form === '基本形';
     return false;   // 名詞止め・助詞止め・連用形止め → 非終止
   }
 
