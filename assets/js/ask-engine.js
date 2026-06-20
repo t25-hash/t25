@@ -938,7 +938,7 @@
       features: n(/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/g),
       // howto: strong step cues count fully; bare 方法/どのように/どう〜する only
       // weakly (0.4–0.5) so they don't outrank a real definition/why question.
-      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g) + 0.5 * n(/どう(設計|決|求|選|計算|配置|使)/g),
+      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g) + 0.5 * n(/どう(設計|決|求|選|計算|配置|使)/g) + 0.6 * n(/[るぐすつくうぶむ]には[\s。？?]*$/g),
       // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
       // とは only counts as DEFINITIONAL at clause end / before 何ど (「熱伝達率とは」),
       // not mid-phrase 「平歯車とはすば歯車」 where it is just と+は (≈ "A and B").
@@ -1096,6 +1096,18 @@
       if (blk && blk.length >= 3) steps = blk.filter(function (s) {
         return s.length >= 12 && s.length <= 120 && !isJunkSent(s) && p.hasKey(s);
       });
+    }
+    if (steps.length < 2) {
+      // prose method list: when there are no numbered steps, a clean on-topic sentence
+      // that enumerates ≥2 measures with ・ separators and a countermeasure cue
+      // (対策/緩和/防ぐ…) genuinely answers a 「どう防ぐ/対策」how-to.
+      var METHOD = /(対策|緩和|防ぐ|防止|抑え|低減|軽減|改善|向上|高める)/;
+      for (var mi = 0; mi < p.cands.length; mi++) {
+        var mc = p.cands[mi];
+        if ((mc.s.match(/・/g) || []).length >= 2 && METHOD.test(mc.s) && p.hasKey(mc.s)) {
+          return { text: mc.s, source: mc.src };
+        }
+      }
     }
     if (steps.length < 2) return null;
     if (steps.length > 8) steps = steps.slice(0, 8);
