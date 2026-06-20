@@ -159,8 +159,17 @@
     var isJunk = ki.isJunkSent || function () { return false; };
     var topicScore = ki.topicScore || function () { return 0; };
     var ctxText = contexts.join('\n');
-    var keys = keyTerms(question), subj = keys[0] || '';
+    // drop generic question/intent words (理由・目的・種類…) from the content keys, so
+    // the on-target gate requires a REAL topic term and not a word like 「理由」 that
+    // matches unrelated docs (e.g. 特許「拒絶理由通知書」for 「軸受が必要な理由」).
+    var GENERIC = /^(理由|原因|目的|役割|用途|機能|特徴|利点|欠点|長所|短所|種類|分類|方法|手順|違い|差|比較|意味|定義|必要|使い方|やり方|仕組み|働き|性質|メリット|デメリット|もの|こと|ため)$/;
+    var keys = keyTerms(question).filter(function (k) { return !GENERIC.test(k); });
+    // keyless queries (単語など): derive soft keys from the question's content runs.
+    if (!keys.length) keys = (question.match(/[一-鿿ァ-ヶー]{2,}/g) || []).filter(function (k) { return !GENERIC.test(k); });
+    var subj = keys[0] || '';
     var qv = EM ? EM.embed(question, 64) : null;
+    // table/numeric junk from PDF extraction (e.g. 「系列Ⅰ系列Ⅱ」「4600MPa…4200MPa…」)
+    function tableJunk(s) { return (s.match(/[Ⅰ-Ⅻ]/g) || []).length >= 2 || (s.match(/\d{3,}/g) || []).length >= 3 || /系列[Ⅰ-Ⅻ]/.test(s); }
     // clean, on-topic sentence pool from the retrieved context
     var seen = {}, cands = [];
     contexts.forEach(function (ct) {
@@ -186,11 +195,15 @@
       return true;
     }
     function pickTop(cueRe, exclude, n) {
-      return cands.filter(function (s) { return s !== exclude && (!keys.length || hasKey(s)); })
+      var base = cands.filter(function (s) { return s !== exclude; });
+      // require the MAIN topic to appear in every fact (on-target); fall back to any key
+      var pool = subj ? base.filter(function (s) { return s.indexOf(subj) >= 0; }) : [];
+      if (!pool.length) pool = base.filter(function (s) { return !keys.length || hasKey(s); });
+      return pool
         .map(function (s) {
           var ki0 = subj ? s.indexOf(subj) : -1;
-          var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s);   // mid-word/chunk-cut fragment
-          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - 0.004 * Math.max(0, s.length - 80) };
+          var frag = /^[ぁ-ん]{1,3}[はがをにでとへもや]/.test(s) || /^[ーぁ-ん]/.test(s) || /^[0-9０-９「『（(・,，.．/／\-]/.test(s);   // mid-word/chunk-cut/number fragment
+          return { s: s, sc: rel(s) + (cueRe && cueRe.test(s) ? 0.8 : 0) + (ki0 >= 0 && ki0 <= 8 ? 0.35 : 0) - (frag ? 0.7 : 0) - (tableJunk(s) ? 0.8 : 0) - 0.004 * Math.max(0, s.length - 80) };
         })
         .sort(function (a, b) { return b.sc - a.sc; }).slice(0, n || 3);
     }
@@ -200,7 +213,15 @@
     if (intent === 'list' || intent === 'howto') return Promise.resolve('');
     var primCue = GEN_CUE[intent] || GEN_CUE.definition;
     var primTop = pickTop(primCue, null, 3);
-    if (!primTop.length) primTop = pickTop(null, null, 3);
+    // why/purpose: the primary MUST carry a reason/purpose cue, else the synthesis
+    // reads off-intent (a topic fact, not a reason). Defer to the extractive intent
+    // builder (which enforces cues) by returning '' when no cued sentence is on-topic.
+    if (intent === 'why' || intent === 'purpose') {
+      primTop = primTop.filter(function (c) { return primCue.test(c.s); });
+      if (!primTop.length) return Promise.resolve('');
+    } else if (!primTop.length) {
+      primTop = pickTop(null, null, 3);
+    }
     if (!primTop.length) return Promise.resolve('');
     // complementary aspect → richer, multi-faceted content (definition⇄purpose/feature)
     var compCue = (intent === 'definition') ? GEN_CUE.purpose : GEN_CUE.definition;
@@ -215,10 +236,14 @@
         .sort(function (a, b) { return b.sc - a.sc; });
       // compress one source sentence to a concise, grammatical clause set on the topic
       function norm(x) { return G.normalize ? (G.normalize(x).text || x) : x; }
-      function finite(x) { return !G.coherence || G.coherence(x).finite; }
+      // a usable fact must END on a finite predicate (no noun-stop / 連用中止 / 助詞止め)
+      function finite(x) { return G.endsFinite ? G.endsFinite(x) : (!G.coherence || G.coherence(x).finite); }
       function condense(s, maxLen) {
-        s = s.replace(/^[、，,\s　]+/, '');
+        // strip leading punctuation/digits/dots and stray connectives
+        // (avoids 「また、.…」「また、したがって」「0003「…」 number fragments)
+        s = s.replace(/^[、，,。．・.\s　0-9０-９/／\-]+/, '').replace(/^(また|さらに|したがって|なお|ただし|一方|つまり|すなわち|そして|そのため|よって)[、，,]?/, '');
         s = s.replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{3,12}?)\1+/g, '$1');   // collapse repeated table/junk chunks
+        s = s.replace(/系列[Ⅰ-Ⅻ]+/g, '').replace(/(?:[一-鿿ァ-ヶー]*\d{3,}\s?(?:MPa|mm|kg|°C)?){2,}/g, '');   // strip table/number runs
         if (s.length > maxLen) {
           var cl = s.split(/(?<=[、，])/), o = '';
           for (var i = 0; i < cl.length; i++) { if (o && (o + cl[i]).length > maxLen) break; o += cl[i]; }
@@ -270,17 +295,11 @@
     var ki = (NSCode.askEngine && NSCode.askEngine._internal) || {};
     var intent = ki.classifyIntent ? ki.classifyIntent(question) : '';
     if (intent === 'list' || intent === 'howto') return Promise.resolve('');
-    // When kuromoji is ready, generation is grammar-ruled grounded recombination only
-    // (natural + on-target); if it can't build a good answer it returns '' and Ask
-    // shows the extractive answer. The experimental free token decode is kept ONLY as
-    // a legacy fallback for when kuromoji isn't loaded.
+    // Generation is grammar-ruled grounded recombination ONLY (natural + on-target).
+    // It requires kuromoji; until that's loaded we return '' so Ask shows the
+    // extractive answer (never the degenerate free-token decode = salad).
     if (G && G.ready && G.ready()) return recombine(question, contexts, opts);
-    return debugAnswer(question, contexts, opts).then(function (r) {
-        if (!r.text || r.text.length < 10) return '';           // too short → let caller fall back
-        // coherence gate: reject token-salad so Ask falls back to the extractive answer.
-        if (G && G.coherence && !G.coherence(r.text).ok) return '';
-        return r.text;
-      });
+    return Promise.resolve('');
   }
 
   NSCode.sml = {

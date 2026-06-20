@@ -405,6 +405,18 @@
     });
     return { dict: dict, isAdj: isAdj, tense: past ? 'past' : 'present', polite: polite, negative: negative, finite: pred[pred.length - 1].conjugated_form === '基本形' };
   }
+  /* 文末が「終止述語」で終わっているか（名詞止め・連用中止・助詞止めを弾く）。
+   * coherence.finite は「文中に終止述語が1つでもあるか」なので、文末保証には弱い。
+   * これは最終トークンが 動詞/形容詞/助動詞 の基本形であることを要求する。 */
+  function endsFinite(s) {
+    if (!_tokenizer) return true;
+    var tk; try { tk = _tokenizer.tokenize(String(s || '')); } catch (e) { return true; }
+    while (tk.length && tk[tk.length - 1].pos === '記号') tk.pop();
+    if (!tk.length) return false;
+    var last = tk[tk.length - 1];
+    if (last.pos === '動詞' || last.pos === '形容詞' || last.pos === '助動詞') return last.conjugated_form === '基本形';
+    return false;   // 名詞止め・助詞止め・連用形止め → 非終止
+  }
 
   /* kuromoji による生成文の「コヒーレンス判定」（生成後処理）。極小ニューラル生成器が
    * 出すトークン崩壊文（助詞・記号の羅列／同語の連続／終止述語なし）を形態素的に検出し、
@@ -480,5 +492,5 @@
   NSCode.grammar = { compile: compile, conjVerb: conjVerb, conjAdj: conjAdj, vclass: vclass,
     toSML: toSML, normalize: normalize, dictFromSurface: dictFromSurface,
     initKuromoji: initKuromoji, setTokenizer: setTokenizer, ready: ready, toSMLk: toSMLk, coherence: coherence,
-    analyze: analyze, nouns: nouns, predicate: predicate, _setTokenizer: setTokenizer };
+    analyze: analyze, nouns: nouns, predicate: predicate, endsFinite: endsFinite, _setTokenizer: setTokenizer };
 })(window.NSCode);
