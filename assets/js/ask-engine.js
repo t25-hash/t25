@@ -1175,7 +1175,12 @@
     // prefer the highest-scored GENUINE definition over a higher-rel non-definition
     // mention of a polysemous key (モジュール間通信… must not bury モジュールの定義).
     for (var di = 0; di < p.cands.length; di++) {
-      if (isDef(p.cands[di].s) && (!key || p.cands[di].s.indexOf(key) >= 0)) { top = p.cands[di]; break; }
+      var cd = p.cands[di];
+      // a curated def is authoritative only for the FULL query topic — never let the
+      // 「歯車」definition win 「歯車ポンプとは」(coreT not in it) just because keyTerms
+      // reduced the topic to 歯車.
+      if (/\.md$/.test(cd.src || '') && coreT.length >= 2 && cd.s.indexOf(coreT) < 0) continue;
+      if (isDef(cd.s) && (!key || cd.s.indexOf(key) >= 0)) { top = cd; break; }
     }
     if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
     // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
