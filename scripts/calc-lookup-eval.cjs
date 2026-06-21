@@ -38,13 +38,37 @@ const CASES = [
   { q: '圧入するときのはめあい', cat: 'table', id: 'fit' },
   { q: '降伏点をもとにした安全率', cat: 'formula', id: 'safety' },
   { q: 'ベアリングの基本定格寿命', cat: 'formula', id: 'l10' },
+  // --- 言い換えの正例: 同義・別表記でも recall できる ---
+  { q: 'ヤング率の定義を知りたい', cat: 'formula', id: 'hooke' },
+  { q: '玉軸受の基本定格寿命', cat: 'formula', id: 'l10' },
+  { q: '梁のたわみ量を求める', cat: 'formula', id: 'bending' },
+  { q: '熱伝達率を上げたい', cat: 'formula', id: 'newton' },
+  { q: 'ねじの締結方法', cat: 'formula', id: 'bolt' },
+  { q: '鋼材の引張強さ一覧', cat: 'table', id: 'carbon-steel' },
   // --- ネガティブ: generic語のみでは誤検出させない ---
   { q: '軸とは何か', cat: 'none' },
   { q: '材料について教えて', cat: 'none' },
   { q: '種類を一覧で', cat: 'none' },
   { q: '応力とは', cat: 'none' },
   { q: '荷重の意味', cat: 'none' },
-  { q: '強度とは何か', cat: 'none' }
+  { q: '強度とは何か', cat: 'none' },
+  // --- ネガティブ(高度): 短いtermが別語に埋もれる substring 誤検出を抑止 ---
+  { q: '円柱の体積を求める', cat: 'none' },      // 柱→euler を抑止
+  { q: '支柱の設計', cat: 'none' },              // 柱→euler
+  { q: '角柱の断面', cat: 'none' },              // 柱→euler
+  { q: 'やはり強度が大事だ', cat: 'none' },      // はり→bending を抑止
+  { q: '橋梁の点検', cat: 'none' },              // 梁→bending
+  { q: 'ねじれ角の計算', cat: 'none' },           // ねじ→bolt を抑止
+  // --- v3: generic化した曖昧語の過検出抑止＋同義語のrecall ---
+  { q: '製品の寿命を延ばす', cat: 'none' },        // 寿命→l10 を抑止
+  { q: '疲労寿命の評価', cat: 'none' },            // 寿命→l10
+  { q: '冷却ファンの選定', cat: 'none' },          // 冷却→newton を抑止
+  { q: '横弾性係数とは', cat: 'none' },            // 弾性→hooke を抑止(横弾性はGでhooke対象外)
+  { q: '安全係数を求めたい', cat: 'formula', id: 'safety' },     // 安全率の同義語 recall
+  { q: 'ニュートンの冷却則とは', cat: 'formula', id: 'newton' }, // 冷却則 で recall 維持
+  // --- v4: 実在の recall ギャップ補完 ---
+  { q: '動等価荷重から軸受寿命を計算', cat: 'formula', id: 'l10' },  // 等価荷重
+  { q: '中間ばめとは', cat: 'table', id: 'fit' }                  // 中間ばめ
 ];
 
 let pass = 0; const fails = [];
@@ -64,5 +88,36 @@ CASES.forEach(function (c, i) {
 
 console.log('=== calc-lookup-eval ===');
 fails.forEach(function (f) { console.log('  ✗ #' + f.i + ' ' + f.q + '  期待:' + f.want + ' / 実際:' + f.got); });
-console.log('==== CALC LOOKUP SCORE: ' + pass + ' / ' + CASES.length + ' ====');
-process.exit(pass === CASES.length ? 0 : 1);
+console.log('---- ケース採点: ' + pass + ' / ' + CASES.length);
+
+// 恒久ガードA: 全エントリが「自分の名前」で先頭ヒットする（recall coverage）
+let covPass = 0, covTotal = 0; const covFail = [];
+[['formula', calc.FORMULAS], ['table', calc.TABLES]].forEach(function (pair) {
+  pair[1].forEach(function (e) {
+    covTotal++;
+    const list = calc.lookup(e.name)[pair[0] === 'formula' ? 'formulas' : 'tables'];
+    if (list[0] && list[0].id === e.id) covPass++; else covFail.push('name "' + e.name + '" -> ' + (list[0] ? list[0].id : '(なし)') + ' (期待 ' + e.id + ')');
+  });
+});
+covFail.forEach(function (m) { console.log('  ✗ [coverage] ' + m); });
+console.log('---- 名前coverage: ' + covPass + ' / ' + covTotal);
+
+// 恒久ガードB: 全 specific term が自エントリに到達する（dead term 検出）
+const GEN = { '応力': 1, '荷重': 1, '軸': 1, '材料': 1, '種類': 1, '強度': 1, '直径': 1, '寿命': 1, '冷却': 1, '弾性': 1 };
+let termPass = 0, termTotal = 0; const termFail = [];
+[['formula', calc.FORMULAS], ['table', calc.TABLES]].forEach(function (pair) {
+  pair[1].forEach(function (e) {
+    e.terms.forEach(function (t) {
+      if (GEN[t] || t.length <= 1) return;   // specific のみ
+      termTotal++;
+      const ids = calc.lookup(t)[pair[0] === 'formula' ? 'formulas' : 'tables'].map(function (x) { return x.id; });
+      if (ids.indexOf(e.id) >= 0) termPass++; else termFail.push('term "' + t + '" -> ' + e.id + ' 未到達');
+    });
+  });
+});
+termFail.forEach(function (m) { console.log('  ✗ [term] ' + m); });
+console.log('---- specific term到達: ' + termPass + ' / ' + termTotal);
+
+const total = CASES.length + covTotal + termTotal, allPass = pass + covPass + termPass;
+console.log('==== CALC LOOKUP SCORE: ' + allPass + ' / ' + total + ' ====');
+process.exit(allPass === total ? 0 : 1);

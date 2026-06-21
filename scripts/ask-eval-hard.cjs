@@ -138,7 +138,12 @@ function intentHallmark(intent, a) {
 function clean(a) {
   if (!a) return false;
   const sents = NSCode.research.splitSentences(a.replace(/\n/g, ' '));
-  for (const s of sents) if (s.replace(/[\s①-⑳]/g, '').length >= 10 && IN.isJunkSent(s)) return false;
+  // 手順マーカー(①②③)は書式であり content ではない（長さ判定でも除去している）。
+  // junk 判定でも先頭マーカーを外してから評価し、正当な「① 〜する。」を断片扱いしない。
+  for (const s of sents) {
+    const core = s.replace(/^[\s①-⑳]+/, '');
+    if (core.replace(/[\s①-⑳]/g, '').length >= 10 && IN.isJunkSent(core)) return false;
+  }
   return true;
 }
 function onTopic(q, a) {

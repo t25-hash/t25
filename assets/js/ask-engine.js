@@ -107,6 +107,7 @@
     { name: '26-材料力学の基礎.md', text:
       '材料力学は、部材に外力が働いたときの応力・ひずみ・変形を扱い、壊れない寸法を決めるための基礎理論です。\n\n' +
       '基本的な荷重には、引張・圧縮・せん断・曲げ・ねじりがあります。応力は単位面積あたりの内力、ひずみは変形の割合で、弾性域では両者がフックの法則で比例します（比例定数が縦弾性係数）。\n\n' +
+      'ヤング率（縦弾性係数）とは、弾性範囲で応力をひずみで割った比例定数である。値が大きいほど同じ応力で変形しにくく、材料の硬さ（変形しにくさ）の指標となる。\n\n' +
       'はりの曲げでは、断面に生じる曲げ応力は断面係数に反比例し、たわみは断面二次モーメントと材料の剛性で決まります。中立軸から遠いほど曲げ応力が大きくなります。\n\n' +
       '細長い柱は、圧縮で座屈する恐れがあり、オイラーの式で座屈荷重を見積もります。繰り返し荷重では、静的強度より低い応力でも疲労破壊が起こるため、応力振幅と繰り返し数で評価します。' },
     { name: '27-公差とはめあい.md', text:
@@ -115,7 +116,7 @@
       '軸受や歯車をはめる軸では、用途に応じてはめあいを選びます。回転して荷重方向が変わる輪にはしまりばめ、静止輪にはすきまばめ、というように荷重条件で使い分けます。\n\n' +
       '寸法公差に加え、形状・姿勢・位置・振れを規定する幾何公差（GD&T）を併用すると、機能を満たしつつ過剰品質を避けた設計ができます。' },
     { name: '28-強度評価とトラブル.md', text:
-      '機械の信頼性設計では、想定される荷重・環境に対し、強度・剛性・寿命を評価し、安全率を見込んで余裕を持たせます。\n\n' +
+      '機械の信頼性設計では、想定される荷重・環境に対し、強度・剛性・寿命を評価し、安全率を見込んで余裕を持たせます。安全率を設けるのは、材料強度や荷重のばらつき、想定外の使用条件、経年劣化といった不確実性に備え、破損を防ぐ余裕を確保するためです。\n\n' +
       '代表的な破損形態には、過大荷重による延性破壊・脆性破壊、繰り返し荷重による疲労破壊、高温長時間でのクリープ、座屈、摩耗、腐食、応力腐食割れがあります。\n\n' +
       '疲労破壊は、応力集中部（切欠き・溝・きずなど）を起点に進展することが多く、フィレットの付与・表面仕上げの改善・表面硬化処理（ショットピーニングなど）で寿命を延ばせます。\n\n' +
       'いずれも、応力集中の緩和・適切な材料と熱処理・潤滑とシール・点検による予兆把握が基本対策です。過去のトラブル事例は不具合履歴として蓄積し、再発防止に活用します。' },
@@ -155,6 +156,7 @@
       '鋳造は、溶かした金属を鋳型に流し込み、凝固させて目的の形状の製品を作る加工法である。\n\n' +
       '鍛造は、金属を打撃・加圧して塑性変形させ、形状を作るとともに内部組織を緻密にする加工法である。\n\n' +
       '熱処理は、金属材料を加熱・冷却して、硬さ・強さ・粘り強さなどの性質を改善する操作である。\n\n' +
+      '熱処理の代表的なものに、焼入れ・焼戻し・焼なまし・焼ならしがある。表面を硬化する浸炭・窒化・高周波焼入れなどもある。\n\n' +
       '焼入れは、鋼を高温に加熱してから急冷し、硬さを高める熱処理である。\n\n' +
       '焼戻しは、焼入れした鋼を再加熱して粘り強さを与え、内部応力を除く熱処理である。\n\n' +
       '潤滑は、接触して運動する面の間に潤滑剤を介在させ、摩擦と摩耗を低減する処置である。\n\n' +
@@ -266,7 +268,8 @@
    'これ それ あれ どれ この その どの どんな どう どのよう なに なん ください おしえ おしえて です ます ' +
    'ですか でしょ でしょう である から ので のに まで より など ばかり だけ しか こそ さえ ' +
    'する した します して しない しよう なる なっ なり ある あっ いる いっ れる られ せる させ できる ' +
-   'ない なく まし ました ましょ ますか とは には では をは など')
+   'ない なく まし ました ましょ ますか とは には では をは など ' +
+   'どういう どういっ どうやっ どうし いずれ なぜ あるい もしく')
     .split(' ').forEach(function (t) { HIRA_STOP[t] = 1; });
   var HIRA_PARTICLE = /[はがをにでとへものやか]/;       // delimiter chars inside a hiragana run
 
@@ -284,6 +287,7 @@
         // its trailing particles stripped (ねじ「の」→ねじ).
         r.split(/[とや]/).forEach(function (seg) {
           seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
+          seg = seg.replace(/^[がをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ）。は/も は語頭になり得るので除外
           if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
           if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
           if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
@@ -299,6 +303,9 @@
     (coreQuery(q).match(/[ぁ-ゖ]{2,3}[一-鿿]{2,}/g) || []).forEach(function (w) {
       var hira = w.match(/^[ぁ-ゖ]+/)[0];
       if (HIRA_PARTICLE.test(hira.slice(-1)) || HIRA_STOP[hira]) return;
+      // 漢字末尾が generic（現象・処理・条件…）の複合は口語片（ういう現象・くする処理）なので捨てる
+      var tail = (w.match(/[一-鿿]+$/) || [''])[0];
+      if (GENERIC_TERM[tail] || /(する|くする|なる|できる|られる)$/.test(hira)) return;
       if (!seen[w]) { seen[w] = 1; out.push(w); }
     });
     // single-kanji topic noun (弁・軸・梁) — LAST RESORT only, when no multi-char key
@@ -550,7 +557,9 @@
     if (GARBAGE.test(s)) return true;             // unmapped-font mojibake (PUA/Hangul/…)
     if (!ENDER.test(s)) return true;
     if (s.replace(/[\s、，]/g, '').length < 14) return true;
-    if (/^[をはがのにへともでてやゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
+    // 先頭の助詞断片は棄却。ただし と/も/や は「ところで・もちろん・やはり」等 正当な
+    // 接続詞/副詞の語頭にもなり誤棄却するため除外（残りの を/は/が/の/に/へ/で/て は断片）。
+    if (/^[をはがのにへでてゝ々、，。・ー）)】」』＞ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎｧｨｩｪｫｬｭｮｯ]/.test(s)) return true;
     if (/^\s*(?:表|図|式|付表|付図|第\s*[0-9０-９]+\s*[章節項表図])/.test(s)) return true;
     if (/^\s*(?:[（(]?\s*[0-9０-９a-zａ-ｚ]+\s*[)）.\．、]|[①-⑳]|[・･\-*▪◦])/.test(s)) return true;
     if ((s.match(/：/g) || []).length >= 2) return true;
@@ -571,7 +580,9 @@
     // de-interleave splice: an impossible verb conjugation (実現させ-る-た) or an
     // over-long single sentence packed with こと-clauses is a column-merge artifact
     // (two half-sentences glued without punctuation). Reject so it never answers.
-    if (/(せ|れ|す|く|ま)るた[をにはがめ]/.test(s)) return true;
+    // NOTE: 「め」を除外しないと正当な「するため(に)」(す+るた+め)を誤検出するため、
+    // 末尾集合から「め」を外す（「るたを/るたに/るたは/るたが」のみ異常として弾く）。
+    if (/(せ|れ|す|く|ま)るた[をにはが]/.test(s)) return true;
     if (s.length > 95 && (s.match(/こと/g) || []).length >= 3) return true;
     return false;
   }
@@ -753,6 +764,29 @@
       if (reX) { reX.lastIndex = 0; while ((m = reX.exec(t))) { var w2 = m[1]; c++; if (!seen[w2]) { seen[w2] = 1; items.push(w2); } } }
       srcCount[d.name] = c;
     });
+    // CURATED enumerations first: the hand-written glossary is clean & authoritative,
+    // so a 「…の代表的なものに A・B・C がある」 list there should pre-empt the noisy
+    // head-noun compounds the handbook yields (熱処理→焼入れ・焼戻し… must beat X熱処理).
+    if (items.length < 4) {
+      var LEADc = /(?:代表的なもの|主なもの|おもなもの|主要なもの|基本的なもの)(?:に|として)[はとして、：:]*([^。]*?)(?:が(?:あり|ある)|などが|である)/;
+      getDocs().forEach(function (cd) {
+        if ((cd.text || '').indexOf(key) < 0) return;
+        buildSentences(cd.text).forEach(function (psen) {
+          if (items.length >= 12) return;
+          var lm = psen.match(LEADc); if (!lm) return;
+          // key は列挙の SUBJECT（lead-in より前に出現）であること。列挙の MEMBER に
+          // すぎない文（「機械要素には…軸受…がある」で key=軸受）は除外する。
+          var kp = psen.indexOf(key); if (kp < 0 || kp >= lm.index) return;
+          lm[1].split(/[・･、，]/).forEach(function (it) {
+            it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
+            if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
+            if (!(it.length >= 2 || /^[一-鿿]$/.test(it))) return;
+            if (it.length > 8 || /^[をはがのにへとでもやよ]/.test(it)) return;
+            seen[it] = 1; items.push(it); srcCount[cd.name] = (srcCount[cd.name] || 0) + 1;
+          });
+        });
+      });
+    }
     // HEAD-NOUN hyponyms: when the corpus has no English-glossed taxonomy table
     // (gloss pass thin), enumerate compound nouns ENDING in the key noun, read as
     // defined subjects — 炭素鋼・合金鋼・ステンレス鋼 for 鋼, 絞り弁・安全弁 for 弁. The
@@ -934,7 +968,7 @@
       features: n(/特徴|利点|長所|短所|メリット|デメリット|性質|強み|弱み/g),
       // howto: strong step cues count fully; bare 方法/どのように/どう〜する only
       // weakly (0.4–0.5) so they don't outrank a real definition/why question.
-      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g) + 0.5 * n(/どう(設計|決|求|選|計算|配置|使)/g),
+      howto: n(/手順|やり方|どうやって|流れ|ステップ|進め方|作り方|設計手順/g) + 0.4 * n(/方法|どのように/g) + 0.5 * n(/どう(設計|決|求|選|計算|配置|使)/g) + 0.6 * n(/[るぐすつくうぶむ]には[\s。？?]*$/g),
       // 何ですか is weak (it co-occurs with 目的/役割 etc.); 「とは/定義」 are strong.
       // とは only counts as DEFINITIONAL at clause end / before 何ど (「熱伝達率とは」),
       // not mid-phrase 「平歯車とはすば歯車」 where it is just と+は (≈ "A and B").
@@ -1092,6 +1126,18 @@
       if (blk && blk.length >= 3) steps = blk.filter(function (s) {
         return s.length >= 12 && s.length <= 120 && !isJunkSent(s) && p.hasKey(s);
       });
+    }
+    if (steps.length < 2) {
+      // prose method list: when there are no numbered steps, a clean on-topic sentence
+      // that enumerates ≥2 measures with ・ separators and a countermeasure cue
+      // (対策/緩和/防ぐ…) genuinely answers a 「どう防ぐ/対策」how-to.
+      var METHOD = /(対策|緩和|防ぐ|防止|抑え|低減|軽減|改善|向上|高める)/;
+      for (var mi = 0; mi < p.cands.length; mi++) {
+        var mc = p.cands[mi];
+        if ((mc.s.match(/・/g) || []).length >= 2 && METHOD.test(mc.s) && p.hasKey(mc.s)) {
+          return { text: mc.s, source: mc.src };
+        }
+      }
     }
     if (steps.length < 2) return null;
     if (steps.length > 8) steps = steps.slice(0, 8);
@@ -1330,13 +1376,33 @@
         // generic 成形/燃料 docs. Precise (won't fire for why-questions whose coreQuery
         // carries extra words). English glosses / section numbers normalized away.
         var coreN = coreQuery(query).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
+        // coreN は coreQuery 由来で generic 接尾辞（種類/設計…）を落とすため、兄弟セクション
+        // を exact-match で区別できない。raw 質問から boilerplate（とは/何ですか/について…）
+        // だけを外した coreRaw でも exact 判定し、「リベット継手の種類」を当てる。
+        var coreRaw = String(query == null ? '' : query)
+          .replace(/[?？]+$/, '')
+          .replace(/(とは(何(です)?か?)?|って何(です)?か?|について(教えて|知りたい)?|の意味|を(教えて|説明して?)|を教えて|ですか|でしょうか)$/, '')
+          .replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
+        // aspect tokens: raw-query content tokens NOT already a key token — usually a
+        // generic aspect (種類/設計/方法…) dropped by coreQuery. A small bonus, gated on a
+        // real key-token title hit (th>0), breaks sibling-section ties toward the matching
+        // title (「リベット継手の種類」beats「リベット継手の設計」) without boosting
+        // unrelated generic-titled docs.
+        var aspects = [];
+        (query.match(/[一-鿿ァ-ヶー]{2,}/g) || []).forEach(function (t) { if (!ttoks[t]) aspects.push(t); });
         for (var di = 0; di < index.meta.length; di++) {
           var mt = index.meta[di]; if (!mt) continue;
           var th = 0; for (var ki = 0; ki < tkeys.length; ki++) if (mt.indexOf(tkeys[ki]) >= 0) th++;
-          if (th) score[di] = (score[di] || 0) + th * tw;     // strong, additive — a title hit should win
+          if (th) {
+            score[di] = (score[di] || 0) + th * tw;     // strong, additive — a title hit should win
+            for (var ai = 0; ai < aspects.length; ai++) if (mt.indexOf(aspects[ai]) >= 0) score[di] += 3; // aspect tie-break
+          }
           if (coreN.length >= 2) {
             var ttopic = mt.replace(/^[\d０-９]+(?:[・.·][\d０-９]+)*\s*/, '').replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
-            if (ttopic === coreN) score[di] = (score[di] || 0) + 25;   // exact section-title match
+            // exact section-title match is the strongest signal (the query IS a section
+            // title), so make it dominate body scores — even a near-identical sibling
+            // (固定点の「ある」/「ない」) must not outrank the exactly-titled doc on body.
+            if (ttopic === coreN || (coreRaw.length >= 2 && ttopic === coreRaw)) score[di] = (score[di] || 0) + 100;
           }
         }
       }
