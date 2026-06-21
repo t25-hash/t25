@@ -96,13 +96,16 @@
       '軸継手は二つの軸を接続する要素で、心ずれを許容するたわみ軸継手や、過負荷時に切り離す安全継手などがあります。' },
     { name: '24-軸受-転がりとすべり.md', text:
       '軸受（ベアリング）は、回転する軸を支持し、摩擦を小さく保ちながら荷重を受ける機械要素です。大きく転がり軸受とすべり軸受に分けられます。\n\n' +
+      '軸受の役割は、回転する軸を支持し、摩擦を抑えながら荷重を確実に受けて、軸の回転を滑らかに保つことである。\n\n' +
       '転がり軸受は、内輪・外輪の間に玉やころ（転動体）を挟み、転がり接触で摩擦を低減します。深溝玉軸受はラジアル荷重に、円すいころ軸受やアンギュラ玉軸受はラジアルとアキシアルの複合荷重に適します。\n\n' +
       'すべり軸受は、軸と軸受の間に油膜を形成して面で支持する方式で、高荷重・高速・低騒音に向きます。流体潤滑では油膜が両者を完全に隔て、金属接触を防ぎます。\n\n' +
       '転がり軸受の寿命は、転動疲労による剥離（フレーキング）で定まり、基本定格寿命（L10）として荷重と回転数から推定します。適切な潤滑とシールが寿命を左右します。' },
     { name: '25-ねじ・ばね・ベルト.md', text:
       'ねじは、らせん状のねじ山によって締結や運動変換を行う機械要素です。締結用には三角ねじ、運動・力の伝達には角ねじや台形ねじが使われます。\n\n' +
+      'ねじの役割は、部品どうしを締結して固定すること、および回転運動を直線運動に変換することにある。\n\n' +
       'ボルト締結では、適切な締付けトルクで初期張力（軸力）を与え、ゆるみと疲労を防ぎます。ばね座金やダブルナットなどのゆるみ止めも併用します。\n\n' +
       'ばねは、弾性変形によってエネルギーを蓄え、力を緩衝・保持する要素です。コイルばね・板ばね・皿ばねなどがあり、ばね定数で変形と荷重の関係を表します。\n\n' +
+      'ばねの特徴は、荷重に応じて弾性変形し、エネルギーの蓄積・衝撃の吸収・力の保持ができることである。\n\n' +
       'ベルトとチェーンは、離れた軸の間で動力を伝える巻き掛け伝動要素です。ベルトは静粛で衝撃吸収に優れ、チェーンはすべりがなく大きな力を確実に伝えます。' },
     { name: '26-材料力学の基礎.md', text:
       '材料力学は、部材に外力が働いたときの応力・ひずみ・変形を扱い、壊れない寸法を決めるための基礎理論です。\n\n' +
@@ -1028,7 +1031,22 @@
   // best sentence carrying an intent cue (+ optional follow-on); null if none good
   function topByCue(question, hits, docs, cueRe, bonus, need, requireCue) {
     var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
-    p.cands.forEach(function (c) { c.sc = c.rel + (cueRe.test(c.s) ? bonus : 0); });
+    // a CUED curated sentence (hand-written clean prose that also carries the intent
+    // cue) is the ideal purpose/feature/why answer — boost it so it beats a garbled
+    // handbook fragment. Gated on the cue so it still passes the intent hallmark.
+    // Also align the ANSWER's cue with the QUESTION's cue (「役割」質問→「役割」を含む文)
+    // so 「軸受の役割」picks the 役割 sentence, not a 低減 one.
+    var qCues = question.match(new RegExp(cueRe.source, 'g')) || [];
+    var key0 = p.keys[0] || '';
+    p.cands.forEach(function (c) {
+      var cued = cueRe.test(c.s);
+      // curated bonus only when the key is the SUBJECT (near the start), so a curated
+      // LIST sentence merely mentioning the key as a member (機械要素…カム…) does NOT
+      // hijack 「カムの役割」.
+      var subj = key0 && c.s.indexOf(key0) >= 0 && c.s.indexOf(key0) <= 8;
+      c.sc = c.rel + (cued ? bonus : 0) + (cued && subj && /\.md$/.test(c.src || '') ? CURATED_BONUS : 0) +
+        (qCues.some(function (qc) { return c.s.indexOf(qc) >= 0; }) ? 0.5 : 0);
+    });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
     if (!top || top.sc < need || (p.keys.length && !p.hasKey(top.s))) return null;
