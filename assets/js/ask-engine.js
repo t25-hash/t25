@@ -1074,7 +1074,15 @@
     // drifting off-topic); curated (*.md) continuations are clean & on-topic by
     // construction, so allow them even without the key — richer covered-concept answers.
     var curated = /\.md$/.test((top.g && top.g.src) || top.src || '');
-    if (nx && !isJunkSent(nx) && text.length < 90 && (text.length + nx.length) <= (maxTotal || 170) && (hasKey(nx) || curated)) text += nx;
+    // the lead is already on-topic (it was selected for the key); its in-passage
+    // continuation usually elaborates the same topic, so append it for a complete
+    // 2-sentence answer. Require the continuation itself not drift to a NEW figure/section.
+    var onTopicLead = hasKey(top.s);
+    // the continuation must ELABORATE the topic, not start a NEW concept's definition
+    // (curated docs pack several 「Xとは…」 defs; never glue 旋盤 onto 切削加工).
+    var newDef = /^[一-鿿ぁ-ヶーA-Za-z]{1,12}(?:とは|は[、，])/.test(nx || '');
+    var nxOk = nx && !isJunkSent(nx) && !newDef && !/^[（(]?(?:図|表|式|第[0-9０-９])/.test(nx) && nx.length >= 10;
+    if (nxOk && text.length < 90 && (text.length + nx.length) <= (maxTotal || 170) && (hasKey(nx) || curated || onTopicLead)) text += nx;
     return text;
   }
   // best sentence carrying an intent cue (+ optional follow-on); null if none good
