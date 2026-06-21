@@ -155,6 +155,15 @@
       '黄銅とは、銅と亜鉛を主成分とする合金である。しんちゅうとも呼ばれ、加工性・耐食性に優れる。\n\n' +
       '青銅とは、銅とすずを主成分とする合金である。耐摩耗性・鋳造性に優れ、軸受や鋳物に使われる。\n\n' +
       'リンク機構とは、複数の剛体（リンク）を対偶で連結し、運動や力を伝達・変換する機構である。' },
+    { name: '36-基礎の物理量と振動.md', text:
+      'トルクとは、物体を回転させようとする力の働きで、力と回転軸までの距離の積で表される量である。\n\n' +
+      '応力とは、外力を受けた物体の内部に生じる、単位面積あたりの内力である。\n\n' +
+      '粘度とは、流体の流れにくさ（内部摩擦の大きさ）を表す量である。\n\n' +
+      '熱力学とは、熱と仕事・エネルギーの関係およびその変換を扱う物理学の分野である。\n\n' +
+      '熱効率とは、機関に与えた熱エネルギーのうち、有効な仕事に変換された割合である。\n\n' +
+      '共振とは、外力の振動数が系の固有振動数に一致して振幅が著しく大きくなる現象である。\n\n' +
+      '固有振動数とは、系が外力なしに自由振動するときの、その系に固有の振動数である。\n\n' +
+      '電動機とは、電気エネルギーを回転などの機械的な力に変換する機械である。モータともいう。' },
     { name: '31-機械設計の基礎.md', text:
       '設計とは、求められる機能を満たすものを構想し、形状・寸法・材料・公差として具体化する行為です。要求仕様の明確化に始まり、概念設計 → 基本設計 → 詳細設計と段階的に詳細化します。\n\n' +
       '設計では、強度・剛性・安全率、製造のしやすさ、コスト、保全性、安全性などを総合的に満たすよう、トレードオフを取りながら最適化します。\n\n' +
@@ -1111,8 +1120,11 @@
       // definitions are concise genus–differentia statements: reward the definitional
       // predicate and the key up front, and gently prefer a short clean line over a
       // long enumerating/classification sentence that merely shares the term.
-      // the definition's SUBJECT should BE the key: 「焼入れは…」beats 「焼戻しは…焼入れした…」
-      var curated = /\.md$/.test(c.src || '') && coreT.length >= 2 && c.s.indexOf(coreT) >= 0;
+      // the definition's SUBJECT should BE the topic: the curated bonus needs coreT in
+      // SUBJECT position (near the start), so 「軸は…動力（トルク）を伝える…」does NOT win
+      // 「トルクとは」just because it mentions トルク mid-sentence.
+      var cp = coreT.length >= 2 ? c.s.indexOf(coreT) : -1;
+      var curated = /\.md$/.test(c.src || '') && cp >= 0 && cp <= 8;
       c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) + (ki === 0 ? 0.5 : 0) - 0.005 * Math.max(0, c.s.length - 70) + (curated ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
