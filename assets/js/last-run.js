@@ -22,7 +22,7 @@
     return '<div>' + (run.hits || []).slice(0, n || 4).map(function (h, i) {
       var t = h.text || '';
       return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + esc(h.source) + '</span>' +
-        '<span class="ns-hit__score">cos ' + (h.score != null ? h.score.toFixed(3) : '—') + '</span></div>' +
+        '<span class="ns-hit__score">score ' + (h.score != null ? h.score.toFixed(2) : '—') + '</span></div>' +
         '<p class="ns-hit__text">' + esc(t.slice(0, 160)) + (t.length > 160 ? '…' : '') + '</p></div>';
     }).join('') + '</div>';
   }
@@ -94,8 +94,8 @@
       var sc = (run.hits || []).map(function (h) { return h.score || 0; });
       var top = sc.length ? Math.max.apply(null, sc) : 0;
       var mean = sc.length ? sc.reduce(function (a, b) { return a + b; }, 0) / sc.length : 0;
-      return '<p class="ns-empty__hint">直近検索の品質指標（「' + esc(run.query) + '」）:</p>' +
-        NSCode.C.Table(['指標', '値'], [['ヒット数', String(sc.length)], ['最高 cos', top.toFixed(3)], ['平均 cos', mean.toFixed(3)]]);
+      return '<p class="ns-empty__hint">直近検索の品質指標（「' + esc(run.query) + '」・BM25スコア）:</p>' +
+        NSCode.C.Table(['指標', '値'], [['ヒット数', String(sc.length)], ['最高 score', top.toFixed(2)], ['平均 score', mean.toFixed(2)]]);
     }
   };
   function generic(run) {
