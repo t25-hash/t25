@@ -1069,7 +1069,12 @@
    * and clean — so the reply reads as a complete 1–2 sentence answer, not a stub. */
   function withFollowUp(top, hasKey, maxTotal) {
     var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
-    if (nx && !isJunkSent(nx) && text.length < 70 && (text.length + nx.length) <= (maxTotal || 165) && hasKey(nx)) text += nx;
+    // append the following sentence for a complete, Claude-like 2-sentence answer
+    // (definition + elaboration). Handbook continuations must share the key (avoid
+    // drifting off-topic); curated (*.md) continuations are clean & on-topic by
+    // construction, so allow them even without the key — richer covered-concept answers.
+    var curated = /\.md$/.test((top.g && top.g.src) || top.src || '');
+    if (nx && !isJunkSent(nx) && text.length < 90 && (text.length + nx.length) <= (maxTotal || 170) && (hasKey(nx) || curated)) text += nx;
     return text;
   }
   // best sentence carrying an intent cue (+ optional follow-on); null if none good
