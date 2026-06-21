@@ -242,7 +242,7 @@
   var GENERIC_TERM = {};
   ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
-   '原因 理由 要因 違い 差異 比較 影響 ' +
+   '原因 理由 要因 違い 差異 比較 影響 同士 相互 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
   /* bigrams contributed by generic words — demoted in KB doc-selection so a
@@ -287,13 +287,14 @@
         // its trailing particles stripped (ねじ「の」→ねじ).
         r.split(/[とや]/).forEach(function (seg) {
           seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
-          seg = seg.replace(/^[がをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ）。は/も は語頭になり得るので除外
+          seg = seg.replace(/^[のがをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ・のかみ→かみ）。は/も は語頭になり得るので除外
           if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
           if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
           if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
         });
         return;
       }
+      r = r.replace(/(同士|どうし)$/, '');   // 相互の意の接尾辞を除去（歯車同士→歯車）。これが無いと「同士」が微粒子同士などを誤ヒット
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
     // compound pass: mixed ひらがな+漢字 terms (はすば歯車・かさ歯車) where the
