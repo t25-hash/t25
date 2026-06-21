@@ -19,24 +19,20 @@ LLM → Transformer → Embedding → Prompt Engineering → RAG → Tool Callin
 > 生成系（LLM 応答 etc.）は外部プロバイダ（Claude / OpenAI 等）の API を呼ばず、同梱の
 > ブラウザ内エンジン（SML＋RAG＋小規模ニューラル）だけで完結します。API キーは不要です。
 >
-> | Lab | 実装内容 |
-> | --- | --- |
-> | **Ask (RAG)** ⭐ | 自分の文書を追加（貼付 / .txt・.md・.pdf）→ 質問 → **その文書に基づく回答＋出典**。検索=**BM25（Okapi・実物）**＋同義語展開/多義語デブースト/意図分類。回答=抽出＋**🧠 抽象生成（自前SML・接地制約・既定ON）**＋👍/👎で学習。WebGPU対応端末＋自前重み配置時はブラウザ内LLMも利用可（[`assets/models/`](assets/models/)・外部API不使用）。トップ常設 |
-> | **Doc 生成** ⭐ | プロンプト → **Excel(.xlsx) / Word(.doc) / Markdown(.md) / CSV** を生成・DL。表（列・行）/ 見出し / 箇条書きを解釈。Excel は同梱 [SheetJS](https://sheetjs.com)（Apache-2.0）で実 .xlsx |
-> | **Academy** | 全トピックに解説テキスト + 関連 Lab リンク |
-> | **Playground** | LLM: 実トークン数 + リクエスト構造 + モデル別コスト試算（応答は擬似）/ Prompt: 6観点ヒューリスティック評価 + 改善案 |
-> | **Embedding Lab** | Token 可視化 / 埋め込み(hashing trick) / 類似度(cos·euclid·dot) / PCA 2D 散布図 |
-> | **RAG Lab** | Chunk → Retrieval(TF-IDF) → ReRank(MMR) → Context → Hallucination の5段連動 |
-> | **Tool Calling Lab** | ツールレジストリ / 選択理由ランキング / 決定論的な実行ログ |
-> | **MCP Lab** | 接続図 / サーバービルダー(config 生成) / JSON-RPC ハンドシェイク(模擬) |
-> | **Agent Lab** | ReAct ループ可視化 / 計画生成 / リフレクション / リトライ(指数バックオフ) |
-> | **Memory Lab** | 4種メモリ / 圧縮 / 要約 / 想起(コサイン類似度) |
-> | **Multi-Agent Lab** | 役割別チャット / タスク分配 / 合意形成(投票) |
-> | **Claude Code Explorer** | アーキ図(AI 1.6% vs infra 98.4%) / while-loop 実行ステップ / 権限ゲート / セッション / メモリ / **Mini Harness**（[`examples/minimal_claude_code.py`](examples/minimal_claude_code.py) の JS 実行版） |
-> | **AI Coding Lab** | ツール比較マトリクス(編集可・参考) |
-> | **Build Lab** | RAG/Agent/MultiAgent/MCP/Workflow を JSON/YAML/Python/LangGraph 生成（コピーして利用） |
-> | **Evaluation Lab** | ラベル付きデータで Precision@k/Recall@k を実測（他は推定明示） |
-> | **Research Lab** | PDF 解析（同梱 [pdf.js](https://github.com/mozilla/pdf.js) Apache-2.0）/ 図解 / TextRank 要約 / TF-IDF キーワード / **抽出型 QA**（RAG連携）/ 文書内検索 |
+> サイドバーは **Ask とその処理の可視化** に集約しています（静的な解説・テンプレ生成・Ask 非経路のデモは撤去）。
+>
+> | Lab | 役割（Ask 処理のどの段か） | 実装内容 |
+> | --- | --- | --- |
+> | **Ask (RAG)** ⭐ | 本体 | 文書追加（貼付 / .txt・.md・.pdf）→ 質問 → **根拠に基づく回答＋出典**。検索=**BM25（Okapi・実物）**＋同義語/多義語デブースト/意図分類。回答=抽出＋**🧠 抽象生成（自前SML・既定ON）**＋👍/👎学習。PC では右に **🗺️ ナレッジ／計算式マップ**（ノード選択で Md 全文・式・表を回答表示／スマホは🗺️ボタンで全画面）。外部API不使用 |
+> | **RAG Lab** | 検索 | Chunk → Retrieval(BM25/TF-IDF) → ReRank(MMR) → Context → Hallucination の5段連動 |
+> | **Embedding Lab** | ベクトル化 | Token 可視化 / 埋め込み(hashing trick) / 類似度(cos·euclid·dot) / PCA 2D 散布図 |
+> | **Neural Lab** | 学習・重み | Ask と同じ極小ニューラル（埋め込み→tanh→softmax）を勾配降下学習・観察（loss/重み/次トークン確率） |
+> | **Memory Lab** | 想起・要約 | 4種メモリ / 圧縮 / 要約 / 想起(コサイン類似度)。Ask の要約メモリと同じ処理 |
+> | **Grammar-agent** | 文法整形 | 抽出回答を意味単位(SML)へ分解→自然文へ再構成（Ask の回答整形そのもの） |
+> | **Agent Lab** | エージェントのループ | 検索を「調べる行動」とみなす ReAct ループ可視化 / 計画 / リフレクション / リトライ |
+> | **PDF抽出** | 取り込み | PDF→本文抽出・クレンジング（NFKC・ヘッダ/フッタ除去）→ **Ask に学習**。外部送信なし |
+> | **Research Lab** | 取り込み | PDF 解析（同梱 [pdf.js](https://github.com/mozilla/pdf.js) Apache-2.0）/ TextRank 要約 / TF-IDF キーワード / **抽出型 QA（RAG連携）** / 文書内検索 |
+> | **Evaluation Lab** | 評価 | ラベル付きデータで Ask の**検索品質を実測**（Precision@k / Recall@k） |
 
 | 種別 | 場所 | 内容 |
 | --- | --- | --- |
