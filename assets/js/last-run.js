@@ -56,14 +56,14 @@
     rag: function (run) {
       var docs = (run.topDocs && run.topDocs.length)
         ? '<p class="ns-empty__hint">① 索引から関連<b>文書を選定</b>（BM25＋タイトル一致）:</p><p class="ns-empty__hint">' + chips(run.topDocs) + '</p>' : '';
-      return docs + '<p class="ns-empty__hint">② <b>チャンクを検索</b>（類似度順）:</p>' + hitList(run, 4) +
+      return docs + '<p class="ns-empty__hint">② <b>チャンクを検索</b>（BM25スコア順）:</p>' + hitList(run, 4) +
         '<p class="ns-empty__hint">→ この文脈を根拠に回答を構成します。</p>';
     },
     embedding: function (run) {
       var v = (run.qvec || []).slice(0, 12).map(function (x) { return Number(x).toFixed(2); }).join(', ');
       return '<p class="ns-empty__hint">クエリ「' + esc(run.query) + '」を<b>ベクトル化</b>（先頭12次元）:</p>' +
         '<pre class="ns-code">[' + v + ' …]</pre>' +
-        '<p class="ns-empty__hint">このベクトルと各チャンクの<b>コサイン類似度</b>で検索順位を決めます ↓</p>' + hitList(run, 3);
+        '<p class="ns-empty__hint">一次検索は語彙ベースの <b>BM25</b>。この埋め込みの<b>コサイン類似度</b>は再ランクと関連度判定（弱一致の足切り）に使われます ↓</p>' + hitList(run, 3);
     },
     neural: function (run) {
       return '<p class="ns-empty__hint">検索した文脈だけを<b>極小ニューラルが学習</b>' +
