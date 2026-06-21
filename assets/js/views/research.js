@@ -96,8 +96,7 @@
         body: '<div class="ns-grid" style="--cols:4">' + metrics +
             C.Metric({ label: '文数', value: st.sentences }) + '</div>' +
           '<div class="ns-actions"><button id="saveBtn" class="ns-btn">保存</button>' +
-          '<button id="exportBtn" class="ns-btn ns-btn--ghost">要約をMarkdownで保存</button>' +
-          '<a class="ns-btn ns-btn--ghost" href="#/build">再現実験 (Build Lab)</a></div>' }) +
+          '<button id="exportBtn" class="ns-btn ns-btn--ghost">要約をMarkdownで保存</button></div>' }) +
       C.Panel({ title: 'この論文に質問（抽出型 QA）', hint: 'RAGエンジンで関連箇所を検索し、該当文を抜粋（生成はしません）',
         body: '<div class="ns-qa-bar"><input id="qaInput" class="ns-input" placeholder="例: この手法の利点は？ / What is the main contribution?">' +
           '<button id="qaBtn" class="ns-btn">質問</button></div>' +
