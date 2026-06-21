@@ -24,6 +24,7 @@
             '<textarea id="gmIn" class="ns-input" rows="8" spellcheck="false">' + C.esc(EX1) + '</textarea>' +
             '<div class="ns-actions">' +
               '<button id="gmRun" class="ns-btn">日本語へ変換</button>' +
+              '<button id="gmAsk" class="ns-btn ns-btn--ghost">🔗 直近Askの回答を変換</button>' +
               '<button id="gmEx1" class="ns-btn ns-btn--ghost">例: 動詞</button>' +
               '<button id="gmEx2" class="ns-btn ns-btn--ghost">例: 形容詞</button>' +
               '<button id="gmEx3" class="ns-btn ns-btn--ghost">例: ラベル列</button>' +
@@ -35,6 +36,14 @@
       el('gmEx1').addEventListener('click', function () { el('gmIn').value = EX1; run(); });
       el('gmEx2').addEventListener('click', function () { el('gmIn').value = EX2; run(); });
       el('gmEx3').addEventListener('click', function () { el('gmIn').value = EX3; run(); });
+      // 🔗 連動: 直近 Ask の回答の SML（意味スロット）を入力に流し込んで実際に変換
+      el('gmAsk').addEventListener('click', function () {
+        var r = NSCode.lastRun && NSCode.lastRun.get();
+        var s = r && r.sml && r.sml.length ? r.sml[0].sml : null;
+        if (!s) { el('gmOut').innerHTML = '<p class="ns-empty__hint">直近の Ask 回答がありません。<a href="#/ask">Ask</a> か <a href="#/howto">How To</a> で質問してください。</p>'; return; }
+        var lines = Object.keys(s).filter(function (k) { return s[k]; }).map(function (k) { return k + ': ' + s[k]; }).join('\n');
+        el('gmIn').value = lines || (r.normalized || r.generated || ''); run();
+      });
       run();
     }
   });

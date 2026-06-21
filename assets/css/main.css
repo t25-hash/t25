@@ -540,6 +540,21 @@ body.map-open { overflow: hidden; }
 .ns-msg--doc .ns-doc__p { font-size: 13.5px; line-height: 1.75; margin: 6px 0; color: var(--text); }
 .ns-msg--doc .ns-msg__body { max-height: 60vh; overflow: auto; }
 
+/* ---- How-To: Ask answer-generation flow (stepper + per-stage cards + nav) ---- */
+.ns-flowsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 14px; }
+.ns-flowstep { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text-dim); font-size: 12.5px; }
+.ns-flowstep:hover { border-color: var(--accent); color: var(--text); }
+.ns-flowstep.is-on { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+.ns-flowstep__n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); font-size: 11px; }
+.ns-flowstep__ic { font-size: 14px; }
+.ns-flowstep__arr { color: var(--text-dim); }
+.ns-howto-ask { display: flex; gap: 8px; margin-bottom: 8px; }
+.ns-howto-ask .ns-input { flex: 1; }
+.ns-howto-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.ns-howto-card { border-left: 3px solid var(--accent); }
+.ns-flownav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12.5px; }
+.ns-flownav a { color: var(--accent); }
+
 /* ---- Responsive ---- */
 .ns-hide-sm { display: inline; }
 

@@ -1306,6 +1306,7 @@
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
           answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+          keyTerms: keyTerms(question), loss: m.loss, learned: learned, weak: weak,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
         return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
@@ -1528,6 +1529,7 @@
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+              keyTerms: keyTerms(question), topDocs: top.slice(0, 6).map(function (t) { return t.title; }), loss: m.loss, learned: learned, weak: weak,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
             var result = { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,

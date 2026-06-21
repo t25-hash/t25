@@ -6,6 +6,7 @@
   'use strict';
   NSCode.nav = [
     { group: 'Ask',          label: 'Ask (RAG)',       route: '#/ask' },
+    { group: 'Ask',          label: 'How To（処理の流れ）', route: '#/howto' },
 
     { group: 'Ask の処理',    label: 'RAG Lab',         route: '#/rag' },
     { group: 'Ask の処理',    label: 'Embedding Lab',   route: '#/embedding' },
