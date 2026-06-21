@@ -1099,13 +1099,18 @@
     // AND the key is the topic, so a plain classification still reads as a definition.
     var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
+    // curated bonus only when the candidate is about the FULL query topic, not a shorter
+    // concept it merely contains: 「ねじ切りとは」(coreT=ねじ切り) must NOT get the curated
+    // 「ねじ」definition just because keyTerms reduced it to ねじ.
+    var coreT = coreQuery(question).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
       // definitions are concise genus–differentia statements: reward the definitional
       // predicate and the key up front, and gently prefer a short clean line over a
       // long enumerating/classification sentence that merely shares the term.
       // the definition's SUBJECT should BE the key: 「焼入れは…」beats 「焼戻しは…焼入れした…」
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) + (ki === 0 ? 0.5 : 0) - 0.005 * Math.max(0, c.s.length - 70) + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0);
+      var curated = /\.md$/.test(c.src || '') && coreT.length >= 2 && c.s.indexOf(coreT) >= 0;
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) + (ki === 0 ? 0.5 : 0) - 0.005 * Math.max(0, c.s.length - 70) + (curated ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
