@@ -244,7 +244,15 @@
     closeMapOverlay();   // on mobile: close the map so the answer is visible in the chat
     scrollBottom();
   }
-  NSCode.askChat = { showNode: showNode };
+  // a non-document node (hub/category) seeds a question into the input AND closes the
+  // overlay, so a tap on mobile always produces a visible result (never a silent no-op).
+  function seedQuestionFromMap(q) {
+    var inp = el('askQ');
+    if (inp && q) { inp.value = q; inp.dispatchEvent(new Event('input', { bubbles: true })); }   // empty q = don't clobber
+    closeMapOverlay();
+    if (inp) inp.focus();
+  }
+  NSCode.askChat = { showNode: showNode, seedQuestion: seedQuestionFromMap };
 
   function logHtml() {
     if (!state.history.length) return welcomeHtml();

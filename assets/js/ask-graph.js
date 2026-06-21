@@ -212,12 +212,15 @@
     inp.dispatchEvent(new Event('input', { bubbles: true }));   // lets ask.js sync state.query + persist
     inp.focus();
   }
-  // selecting a node OUTPUTS its source as an answer in the chat (Md全文 / 式・表).
+  // selecting a node OUTPUTS its source as an answer in the chat (Md全文 / 式・表). A
+  // non-document hub/category closes the map (+ category seeds a question) so a tap is
+  // never a silent no-op on mobile.
   function open(n) {
     if (!n) return;
     if (n.doc && NSCode.askChat && NSCode.askChat.showNode) { NSCode.askChat.showNode(n.doc); return; }
-    if (n.type === 'kb' || n.type === 'calc') { var inp = document.getElementById('askQ'); if (inp) inp.focus(); return; }
-    setQ(KINDS[n.label] ? n.label + 'の種類は？' : n.label + 'とは？');   // category fallback → seed a question
+    var q = (n.type === 'kb' || n.type === 'calc') ? '' : (KINDS[n.label] ? n.label + 'の種類は？' : n.label + 'とは？');
+    if (NSCode.askChat && NSCode.askChat.seedQuestion) { NSCode.askChat.seedQuestion(q); return; }
+    if (q) setQ(q); else { var inp = document.getElementById('askQ'); if (inp) inp.focus(); }
   }
   function onClick(e) {
     var g = e.target.closest && e.target.closest('[data-id]'); if (!g || !GRAPH) return;
