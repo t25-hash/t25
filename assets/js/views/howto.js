@@ -46,6 +46,7 @@
     return C.PageHeader({ title: '🗺️ How To Answer（Ask 処理の流れ）',
       purpose: 'Ask が回答を作るまでの流れを、実際の質問でたどるサマリー。各段の詳細は対応する Lab で確認できます。' }) +
       stepper() +
+      '<p class="ns-empty__hint">前段（取り込み）: <a href="#/pdf">PDF抽出</a> / <a href="#/research">Research Lab</a> で取り込んだ文書が、検索の対象になります。</p>' +
       '<div class="ns-howto-ask">' +
         '<input id="htQ" class="ns-input" placeholder="質問を入力して流れを見る…（例：歯車の種類は？）" value="' + C.esc(run && run.query || '') + '">' +
         '<button id="htBtn" class="ns-btn">流れを見る</button></div>' +

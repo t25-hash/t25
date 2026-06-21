@@ -104,6 +104,21 @@
   /* body for one stage key (used by both the card and the How-To summary) */
   function stageBody(key, run) { run = run || current; if (!run) return ''; return (STAGE[key] || generic)(run); }
 
+  /* INGESTION stage (PDF / Research): not a per-query step, but the upstream that
+   * builds the corpus Ask searches. Connect it to the flow so every sidebar Lab is
+   * traceable. */
+  var INGEST = {
+    pdf: '抽出',
+    research: '解析'
+  };
+  function ingestBody(key, run) {
+    var verb = INGEST[key] || '取り込み';
+    return '<p class="ns-empty__hint">これは回答生成の<b>前段（取り込み）</b>です。ここで' + verb +
+      'した文書は <b>Ask の知識</b>に加わり、質問時に <b>検索（RAG）の対象</b>になります。</p>' +
+      '<p class="ns-empty__hint">直近の質問「' + esc(run.query) + '」の流れ → ' +
+      '<a href="#/rag">🔎 検索（RAG）</a> ／ <a href="#/howto">🗺️ 全体の流れ（How To）</a></p>';
+  }
+
   /* small prev/next flow nav so the user can trace the pipeline Lab-to-Lab */
   function flowNav(key) {
     var i = flowIndex(key); if (i < 0) return '';
@@ -117,8 +132,10 @@
   function card(moduleKey) {
     var run = get();
     if (!run || !run.query || moduleKey === 'ask') return '';
-    if (flowIndex(moduleKey) < 0) return '';   // only the flow Labs get the linked view
-    var body = stageBody(moduleKey, run) + flowNav(moduleKey);
+    var body;
+    if (flowIndex(moduleKey) >= 0) body = stageBody(moduleKey, run) + flowNav(moduleKey);   // per-query flow stage
+    else if (INGEST[moduleKey]) body = ingestBody(moduleKey, run);                           // 取り込み（前段）
+    else return '';
     return NSCode.C.Panel({ title: '🔗 Ask 連動ビュー（この段の実データ）', hint: '同じ質問「' + esc(run.query) + '」をこの Lab の観点で表示（Ask が更新元）', body: body });
   }
 
