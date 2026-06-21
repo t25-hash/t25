@@ -63,8 +63,11 @@ kuromoji.builder({ dicPath: path.join(VENDOR, 'dict') }).build(function (err, to
     const r = G.normalize(s);
     const f = faithful(s, r.text);
     ok(`finite faithful: ${s} → ${r.text}`, f.kept && f.invented.length === 0);
+    // normalize must either apply a faithful transformation OR leave an already-correct
+    // sentence unchanged — never corrupt it. (A broken recompile is now rejected and the
+    // original kept, which is the correct outcome; faithfulness is asserted above.)
     const applied = (r.sentences[0].clauses || []).some((c) => c.applied);
-    ok(`finite normalized (applied): ${s}`, applied);
+    ok(`finite normalized or preserved: ${s}`, applied || r.text === s);
   });
 
   // 2) connective (連用中止 / て形) clauses must be left intact — never "finished"

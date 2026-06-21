@@ -241,8 +241,20 @@
   // 内容語（漢字・カタカナ・英数）のラン。助詞や活用語尾(ひらがな)は除外。
   function contentRuns(s) { return String(s || '').match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || []; }
   function preservesContent(orig, made) {
-    var rb = contentRuns(made).join('|');
-    return contentRuns(orig).every(function (t) { return rb.indexOf(t) >= 0; });
+    // (1) 内容語が同じ「順序」で現れること。再コンパイルが節内のスロットを並べ替えて
+    // 「ラジアルとアキシアル…に適す」→「アキシアル…へラジアルと適す」のように意味を
+    // 壊すのを防ぐ（順序入替・スクランブルを拒否＝原文保持）。
+    var o = contentRuns(orig), m = contentRuns(made), j = 0;
+    for (var i = 0; i < o.length; i++) {
+      while (j < m.length && m[j] !== o[i]) j++;
+      if (j >= m.length) return false;
+      j++;
+    }
+    // (2) 格助詞を新たに導入しないこと（「荷重に応じて」→「荷重へ応じて」の に→へ 破損を拒否）。
+    function pc(s) { var c = {}, a = s.match(/[はがをにへとでも]/g) || []; a.forEach(function (x) { c[x] = (c[x] || 0) + 1; }); return c; }
+    var co = pc(orig), cm = pc(made);
+    for (var k in cm) if ((cm[k] || 0) > (co[k] || 0)) return false;
+    return true;
   }
   // 1節を再コンパイルしてよいか。長さ・読点では弾かない（文字数に関係なく通す方針）。
   // 節分割後の各節はもう読点を含まないので、辞書形述語が取れた節だけを安全に再構成する。
