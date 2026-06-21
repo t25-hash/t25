@@ -1123,7 +1123,7 @@
     var CUE = /(一方|に対して|に対し|と比べ|に比べ|より|異な|違い|の差|どちら|に比較)/;
     p.cands.forEach(function (c) {
       var mention = 0; subs.forEach(function (k) { if (c.s.indexOf(k) >= 0) mention++; });
-      c.sc = c.rel + (CUE.test(c.s) ? 0.6 : 0) + mention * 0.4;
+      c.sc = c.rel + (CUE.test(c.s) ? 0.6 : 0) + mention * 0.4 + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
@@ -1139,8 +1139,9 @@
     // that also mentions A — 合金鋼の定義 mentions 炭素鋼 — would otherwise dup the
     // first pick and collapse the synthesis), and never reuses the first sentence.
     function bestFor(k, other, avoidS) {
+      function cscore(c) { return c.rel + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0); }   // prefer clean curated prose
       var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110 && c.s !== avoidS; })
-        .sort(function (a, b) { return b.rel - a.rel; });
+        .sort(function (a, b) { return cscore(b) - cscore(a); });
       if (other) { var only = cs.filter(function (c) { return c.s.indexOf(other) < 0; }); if (only.length) return only[0]; }
       return cs[0];
     }
