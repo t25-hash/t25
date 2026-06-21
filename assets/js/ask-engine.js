@@ -773,7 +773,10 @@
         if ((cd.text || '').indexOf(key) < 0) return;
         buildSentences(cd.text).forEach(function (psen) {
           if (items.length >= 12) return;
-          var lm = psen.match(LEADc); if (!lm || psen.indexOf(key) < 0) return;
+          var lm = psen.match(LEADc); if (!lm) return;
+          // key は列挙の SUBJECT（lead-in より前に出現）であること。列挙の MEMBER に
+          // すぎない文（「機械要素には…軸受…がある」で key=軸受）は除外する。
+          var kp = psen.indexOf(key); if (kp < 0 || kp >= lm.index) return;
           lm[1].split(/[・･、，]/).forEach(function (it) {
             it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
             if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
