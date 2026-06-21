@@ -330,6 +330,12 @@
       var cm = coreQuery(q).match(/[一-鿿]/);
       if (cm && !SINGLE_STOP[cm[0]] && !GENERIC_TERM[cm[0]]) out.push(cm[0]);
     }
+    // drop a short hiragana FRAGMENT that is a substring of a longer, more specific key
+    // (「せん断応力」→ junk「せん」which else matches「らせん」). Keeps the compound only.
+    out = out.filter(function (k) {
+      if (!/^[ぁ-ゖ]{1,2}$/.test(k)) return true;
+      return !out.some(function (o) { return o !== k && o.indexOf(k) >= 0; });
+    });
     return out;
   }
 
