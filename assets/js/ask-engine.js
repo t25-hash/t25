@@ -1167,8 +1167,18 @@
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
+    // a hand-written curated definition OF THE EXACT topic (starts with coreT, is a real
+    // definition) is authoritative & clean — always use it, even when a keyword-dense
+    // handbook sentence scores higher (シミュレーション/表面粗さ…).
+    if (coreT.length >= 2) {
+      for (var ci = 0; ci < p.cands.length; ci++) {
+        var cc = p.cands[ci];
+        if (/\.md$/.test(cc.src || '') && cc.s.indexOf(coreT) === 0 && isDef(cc.s)) { top = cc; break; }
+      }
+    }
     // prefer the highest-scored GENUINE definition over a higher-rel non-definition
     // mention of a polysemous key (モジュール間通信… must not bury モジュールの定義).
+    if (!(/\.md$/.test(top.src || '') && top.s.indexOf(coreT) === 0 && isDef(top.s)))
     for (var di = 0; di < p.cands.length; di++) {
       var cd = p.cands[di];
       // a curated def is authoritative only for the FULL query topic — never let the
