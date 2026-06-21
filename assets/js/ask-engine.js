@@ -155,6 +155,7 @@
       '鋳造は、溶かした金属を鋳型に流し込み、凝固させて目的の形状の製品を作る加工法である。\n\n' +
       '鍛造は、金属を打撃・加圧して塑性変形させ、形状を作るとともに内部組織を緻密にする加工法である。\n\n' +
       '熱処理は、金属材料を加熱・冷却して、硬さ・強さ・粘り強さなどの性質を改善する操作である。\n\n' +
+      '熱処理の代表的なものに、焼入れ・焼戻し・焼なまし・焼ならしがある。表面を硬化する浸炭・窒化・高周波焼入れなどもある。\n\n' +
       '焼入れは、鋼を高温に加熱してから急冷し、硬さを高める熱処理である。\n\n' +
       '焼戻しは、焼入れした鋼を再加熱して粘り強さを与え、内部応力を除く熱処理である。\n\n' +
       '潤滑は、接触して運動する面の間に潤滑剤を介在させ、摩擦と摩耗を低減する処置である。\n\n' +
@@ -757,6 +758,26 @@
       if (reX) { reX.lastIndex = 0; while ((m = reX.exec(t))) { var w2 = m[1]; c++; if (!seen[w2]) { seen[w2] = 1; items.push(w2); } } }
       srcCount[d.name] = c;
     });
+    // CURATED enumerations first: the hand-written glossary is clean & authoritative,
+    // so a 「…の代表的なものに A・B・C がある」 list there should pre-empt the noisy
+    // head-noun compounds the handbook yields (熱処理→焼入れ・焼戻し… must beat X熱処理).
+    if (items.length < 4) {
+      var LEADc = /(?:代表的なもの|主なもの|おもなもの|主要なもの|基本的なもの)(?:に|として)[はとして、：:]*([^。]*?)(?:が(?:あり|ある)|などが|である)/;
+      getDocs().forEach(function (cd) {
+        if ((cd.text || '').indexOf(key) < 0) return;
+        buildSentences(cd.text).forEach(function (psen) {
+          if (items.length >= 12) return;
+          var lm = psen.match(LEADc); if (!lm || psen.indexOf(key) < 0) return;
+          lm[1].split(/[・･、，]/).forEach(function (it) {
+            it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
+            if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
+            if (!(it.length >= 2 || /^[一-鿿]$/.test(it))) return;
+            if (it.length > 8 || /^[をはがのにへとでもやよ]/.test(it)) return;
+            seen[it] = 1; items.push(it); srcCount[cd.name] = (srcCount[cd.name] || 0) + 1;
+          });
+        });
+      });
+    }
     // HEAD-NOUN hyponyms: when the corpus has no English-glossed taxonomy table
     // (gloss pass thin), enumerate compound nouns ENDING in the key noun, read as
     // defined subjects — 炭素鋼・合金鋼・ステンレス鋼 for 鋼, 絞り弁・安全弁 for 弁. The
