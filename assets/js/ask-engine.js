@@ -273,6 +273,9 @@
    'どういう どういっ どうやっ どうし いずれ なぜ あるい もしく')
     .split(' ').forEach(function (t) { HIRA_STOP[t] = 1; });
   var HIRA_PARTICLE = /[はがをにでとへものやか]/;       // delimiter chars inside a hiragana run
+  // hand-written glossary (DEFAULT_DOCS, *.md) is clean, complete prose — give its
+  // sentences a relevance bonus so covered concepts answer fluently (赤ちゃん→読みやすさ↑).
+  var CURATED_BONUS = 0.9;
 
   function keyTerms(q) {
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
@@ -1062,14 +1065,15 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
       // definitions are concise genus–differentia statements: reward the definitional
       // predicate and the key up front, and gently prefer a short clean line over a
       // long enumerating/classification sentence that merely shares the term.
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
+      // the definition's SUBJECT should BE the key: 「焼入れは…」beats 「焼戻しは…焼入れした…」
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) + (ki === 0 ? 0.5 : 0) - 0.005 * Math.max(0, c.s.length - 70) + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
