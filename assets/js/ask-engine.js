@@ -286,6 +286,10 @@
   // hand-written glossary (DEFAULT_DOCS, *.md) is clean, complete prose — give its
   // sentences a relevance bonus so covered concepts answer fluently (赤ちゃん→読みやすさ↑).
   var CURATED_BONUS = 0.9;
+  // a sentence that OPENS with a back-reference (前者/これ/その/上記…) needs prior context
+  // to make sense, so it reads poorly as a stand-alone answer lead — demote it so a
+  // self-contained sentence is preferred (broadly lifts long-tail answer quality).
+  var DEICTIC_LEAD = /^(?:これ|それ|その|この|あの|同|当該|前者|後者|上記|下記|前述|後述|こう|そう|かかる|これら|それら|こうした|そうした|このような|そのような|いずれ|両者)/;
 
   function keyTerms(q) {
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
@@ -483,7 +487,7 @@
     function score(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     units.forEach(function (u) { u.score = score(u.s); });
     units.sort(function (a, b) { return b.score - a.score; });
@@ -911,7 +915,7 @@
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
       // strongly prefer sentences that actually contain a SPECIFIC question term —
       // a sentence merely sharing 変化/伴う must not outrank one about 相変化伝熱/促進.
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     cands.forEach(function (c) { c.rel = rel(c.s); });
     cands.sort(function (a, b) { return b.rel - a.rel; });
@@ -1018,7 +1022,7 @@
     function rel(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     var groups = keys.length
       ? (docs || []).filter(function (d) { return hasKey(d.text || ''); }).map(function (d) { return { src: d.name, arr: buildSentences(d.text) }; })
