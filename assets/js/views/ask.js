@@ -86,7 +86,7 @@
     if (!hits || !hits.length) return '';
     var items = hits.map(function (h, i) {
       return '<div class="ns-hit"><div class="ns-hit__head"><span>#' + (i + 1) + ' · ' + C.esc(h.source) + '</span>' +
-        '<span class="ns-hit__score">cos ' + (h.score != null ? h.score.toFixed(3) : '—') + '</span></div>' +
+        '<span class="ns-hit__score">score ' + (h.score != null ? h.score.toFixed(2) : '—') + '</span></div>' +
         '<p class="ns-hit__text">' + highlight(h.text, q) + (h.more ? '…' : '') + '</p></div>';
     }).join('');
     return '<details class="ns-chat__cite"><summary>' + (label || '根拠を表示') + '（' + hits.length + '件）</summary>' + items + '</details>';

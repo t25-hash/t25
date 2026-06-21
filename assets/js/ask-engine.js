@@ -243,6 +243,7 @@
   ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
    '原因 理由 要因 違い 差異 比較 影響 同士 相互 ' +
+   '場合 一覧 注意点 以上 以下 以外 以内 程度 自体 全体 同様 前後 双方 両者 観点 範囲 状況 詳細 内容 様子 各種 各位 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
   /* bigrams contributed by generic words — demoted in KB doc-selection so a
@@ -282,19 +283,33 @@
     runs.forEach(function (r) {
       if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word(s)
         // a coordinated run (すきまばめ「と」しまりばめ) carries multiple topics: split on
-        // the coordinating particles と/や only (NOT case particles は/が/を, so a word that
-        // STARTS with such a kana — はめあい — stays whole), then keep each segment with
-        // its trailing particles stripped (ねじ「の」→ねじ).
-        r.split(/[とや]/).forEach(function (seg) {
+        // coordinating と/や AND strong case particles が/を/に/へ/で (never word-initial in
+        // our topics, unlike は/も/の), so 「ねじがうまく」→ねじ／「ねじにおける」→ねじ. A word
+        // STARTING with は/も/の (はめあい) stays whole. Each segment keeps its topic and
+        // drops trailing particles / collective suffixes.
+        r.split(/[とやがをにへで]/).forEach(function (seg) {
           seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
+          seg = seg.replace(/(など|なら|ほか|ばかり|だけ)$/, '');   // 集合/限定の接尾辞（ねじなど→ねじ）
           seg = seg.replace(/^[のがをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ・のかみ→かみ）。は/も は語頭になり得るので除外
-          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
+          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう|うまく|よく)/.test(seg)) return;
           if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
           if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
         });
         return;
       }
-      r = r.replace(/(同士|どうし)$/, '');   // 相互の意の接尾辞を除去（歯車同士→歯車）。これが無いと「同士」が微粒子同士などを誤ヒット
+      // strip a trailing NOUN-SUFFIX that is never a topic itself, so the head noun
+      // survives (歯車同士→歯車 / 鋼自体→鋼 / 軸受以上→軸受 / 応力程度→応力). Without this
+      // the suffix gram (同士/以上/程度…) hijacks retrieval toward unrelated docs.
+      r = r.replace(/^(各|全|両|諸)(?=[一-鿿]{2})/, '');   // 先頭の数量詞（全歯車→歯車・各軸受→軸受）。残りが2字以上の時のみ
+      var stripped = r.replace(/(同士|どうし|同様|自体|自身|全体|以上|以下|以外|以内|程度|前後|双方|両者|一同|各位|など|等)$/, '');
+      // a single-kanji head noun left after the suffix strip (軸同士→軸 / 鋼自体→鋼 / 弁以上→弁)
+      // must be kept — otherwise it falls through to the particle fallback and grabs a
+      // suffix fragment (士/体) instead.
+      if (stripped !== r && stripped.length === 1 && /^[一-鿿]$/.test(stripped) && !SINGLE_STOP[stripped] && !GENERIC_TERM[stripped]) {
+        if (!seen[stripped]) { seen[stripped] = 1; out.push(stripped); }
+        return;
+      }
+      r = stripped;
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
     // compound pass: mixed ひらがな+漢字 terms (はすば歯車・かさ歯車) where the
@@ -321,8 +336,10 @@
     // its trailing 「の種類」 — so 「鋼の種類」→coreQuery「鋼」 still keys off 鋼 instead of
     // returning no key (which let an unrelated doc hijack the answer). Last resort only.
     if (!out.length) {
-      var cm = coreQuery(q).match(/[一-鿿]/);
-      if (cm && !SINGLE_STOP[cm[0]] && !GENERIC_TERM[cm[0]]) out.push(cm[0]);
+      // scan for the FIRST content kanji, skipping structural/generic ones, so a topic
+      // preceded by a stop kanji is still found (各種の「鋼」→鋼, not given up at 各).
+      var cks = coreQuery(q).match(/[一-鿿]/g) || [];
+      for (var ci = 0; ci < cks.length; ci++) { if (!SINGLE_STOP[cks[ci]] && !GENERIC_TERM[cks[ci]]) { out.push(cks[ci]); break; } }
     }
     return out;
   }
