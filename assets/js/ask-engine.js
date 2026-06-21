@@ -340,7 +340,7 @@
   // a sentence that OPENS with a back-reference (前者/これ/その/上記…) needs prior context
   // to make sense, so it reads poorly as a stand-alone answer lead — demote it so a
   // self-contained sentence is preferred (broadly lifts long-tail answer quality).
-  var DEICTIC_LEAD = /^(?:これ|それ|その|この|あの|同|当該|前者|後者|上記|下記|前述|後述|こう|そう|かかる|これら|それら|こうした|そうした|このような|そのような|いずれ|両者)/;
+  var DEICTIC_LEAD = /^(?:これ|それ|その|この|あの|同|当該|前者|後者|上記|下記|前述|後述|ここで|ここに|そこで|こう|そう|かかる|これら|それら|こうした|そうした|このような|そのような|いずれ|両者)/;
 
   function keyTerms(q) {
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
