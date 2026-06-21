@@ -267,7 +267,8 @@
    'これ それ あれ どれ この その どの どんな どう どのよう なに なん ください おしえ おしえて です ます ' +
    'ですか でしょ でしょう である から ので のに まで より など ばかり だけ しか こそ さえ ' +
    'する した します して しない しよう なる なっ なり ある あっ いる いっ れる られ せる させ できる ' +
-   'ない なく まし ました ましょ ますか とは には では をは など')
+   'ない なく まし ました ましょ ますか とは には では をは など ' +
+   'どういう どういっ どうやっ どうし いずれ なぜ あるい もしく')
     .split(' ').forEach(function (t) { HIRA_STOP[t] = 1; });
   var HIRA_PARTICLE = /[はがをにでとへものやか]/;       // delimiter chars inside a hiragana run
 
@@ -285,6 +286,7 @@
         // its trailing particles stripped (ねじ「の」→ねじ).
         r.split(/[とや]/).forEach(function (seg) {
           seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
+          seg = seg.replace(/^[がをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ）。は/も は語頭になり得るので除外
           if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
           if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
           if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
@@ -300,6 +302,9 @@
     (coreQuery(q).match(/[ぁ-ゖ]{2,3}[一-鿿]{2,}/g) || []).forEach(function (w) {
       var hira = w.match(/^[ぁ-ゖ]+/)[0];
       if (HIRA_PARTICLE.test(hira.slice(-1)) || HIRA_STOP[hira]) return;
+      // 漢字末尾が generic（現象・処理・条件…）の複合は口語片（ういう現象・くする処理）なので捨てる
+      var tail = (w.match(/[一-鿿]+$/) || [''])[0];
+      if (GENERIC_TERM[tail] || /(する|くする|なる|できる|られる)$/.test(hira)) return;
       if (!seen[w]) { seen[w] = 1; out.push(w); }
     });
     // single-kanji topic noun (弁・軸・梁) — LAST RESORT only, when no multi-char key
