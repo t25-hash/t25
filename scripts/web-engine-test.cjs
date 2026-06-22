@@ -30,6 +30,15 @@ function check(name, cond) { checks.push([name, !!cond]); }
   // 1) 検索語抽出（boilerplate除去）
   check('term strips boilerplate', W.term('歯車とは何ですか') === '歯車');
 
+  // 1b) 明示的な Web 検索依頼の検知
+  check('wantsWeb: Webで調べて', W.wantsWeb('歯車をWebで調べて') === true);
+  check('wantsWeb: ググって', W.wantsWeb('歯車についてググって') === true);
+  check('wantsWeb: ネットで検索して', W.wantsWeb('歯車をネットで検索して') === true);
+  check('wantsWeb: 通常Qは対象外', W.wantsWeb('歯車とは何ですか') === false);
+  // 1c) 指示句を落として話題語を取り出す
+  check('term: 歯車をWebで調べて→歯車', W.term('歯車をWebで調べて') === '歯車');
+  check('term: 軸受をネットで検索して→軸受', W.term('軸受をネットで検索して') === '軸受');
+
   // 2) 正常系: 要約から回答生成＋出典
   W._setFetch(okFetch);
   const a = await W.answer('歯車とは');

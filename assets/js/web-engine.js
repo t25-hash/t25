@@ -24,13 +24,31 @@
     return f(url, opts).then(function (r) { if (timer) clearTimeout(timer); if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
   }
 
-  // 質問文から検索語を作る（boilerplate を落とす）。askEngine.coreQuery があれば使う。
+  // 「Webで調べて」「ググって」「ネットで検索して」等の明示的な Web 検索指示か判定。
+  function wantsWeb(query) {
+    var s = String(query == null ? '' : query);
+    return /(web|ウェブ|wikipedia|ウィキペディア|ウィキ|ネット|ねっと|オンライン)\s*(で|に|から)/i.test(s)
+      || /(ググ|ぐぐ)(って|っで|り|る|れ|ろ)/.test(s)
+      || /(検索|サーチ)\s*(して|し直して|してください|して下さい)/.test(s)
+      || /(web|ネット)\s*検索/i.test(s);
+  }
+
+  // 質問文から検索語を作る（指示句・boilerplate を落とす）。askEngine.coreQuery があれば使う。
+  // 指示句のみ（"Webで調べて" 単体）の場合は '' を返す（呼び出し側が話題語を補う）。
   function term(query) {
-    var q = String(query == null ? '' : query).trim();
+    // 明示的な「Webで/ググって/検索して/調べて」等の指示句を落として話題語を取り出す
+    var q = String(query == null ? '' : query).trim()
+      .replace(/(web|ウェブ|wikipedia|ウィキペディア|ウィキ|ネット|ねっと|オンライン)\s*(で|に|から|を)?/ig, '')
+      .replace(/(ググ|ぐぐ)(って|っで|り|る|れ|ろ)/g, '')
+      .replace(/(で)?\s*(検索|サーチ)(して|し直して|してください|して下さい)/g, '')
+      .replace(/(を|について)?\s*(調べ|探し|教え)(て(ください|下さい)?|る|たい)/g, '')
+      .replace(/[をはがにでへとのもや]$/, '')
+      .replace(/^[\s、。　]+|[\s、。　]+$/g, '');
+    if (!q) return '';
     if (NSCode.askEngine && NSCode.askEngine._internal && NSCode.askEngine._internal.coreQuery) {
       var c = NSCode.askEngine._internal.coreQuery(q); if (c) q = c;
     }
-    return q.replace(/(とは(何(です)?か)?|について(教えて|知りたい)?|の意味|を(教えて|説明して?)|ですか|でしょうか|なに|何)[?？]*$/, '').replace(/[?？]+$/, '').trim() || q;
+    return q.replace(/(とは(何(です)?か)?|について(教えて|知りたい)?|の意味|を(教えて|説明して?)|ですか|でしょうか|なに|何)[?？]*$/, '').replace(/[?？]+$/, '').trim();
   }
 
   /* Wikipedia 検索 → 要約。 returns Promise<{title, extract, url, source} | null>。 */
@@ -62,5 +80,5 @@
     });
   }
 
-  NSCode.web = { search: search, answer: answer, available: available, term: term, config: CFG, _setFetch: function (f) { _override = f; } };
+  NSCode.web = { search: search, answer: answer, available: available, term: term, wantsWeb: wantsWeb, config: CFG, _setFetch: function (f) { _override = f; } };
 })(typeof window !== 'undefined' ? (window.NSCode = window.NSCode || {}) : (global.NSCode = global.NSCode || {}));
