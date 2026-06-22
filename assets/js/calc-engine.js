@@ -107,6 +107,25 @@
   };
   FORMULAS.forEach(function (f) { if (CALC[f.id]) f.calc = CALC[f.id]; });
 
+  /* Excel 数式テンプレート（R1C1 記法・「=」は呼び出し側が付与）。r(sym) は入力値セルの参照。
+   * これを結果セルに ss:Formula として埋め込むと、Excel 上で入力を変えると再計算される。 */
+  var XLS = {
+    tensile: function (r) { return r('P') + '/' + r('A'); },
+    hooke: function (r) { return r('E') + '*' + r('ε'); },
+    bending: function (r) { return r('M') + '/' + r('Z'); },
+    torsion: function (r) { return r('T') + '/' + r('Z_p'); },
+    euler: function (r) { return 'PI()^2*' + r('E') + '*' + r('I') + '/' + r('l_k') + '^2'; },
+    l10: function (r) { return '(' + r('C') + '/' + r('P') + ')^' + r('p'); },
+    newton: function (r) { return r('h') + '*' + r('A') + '*' + r('ΔT'); },
+    fourier: function (r) { return r('λ') + '*' + r('A') + '*' + r('ΔT') + '/' + r('L'); },
+    module: function (r) { return r('d') + '/' + r('z'); },
+    lewis: function (r) { return r('F_t') + '/(' + r('b') + '*' + r('m') + '*' + r('Y') + ')'; },
+    bolt: function (r) { return r('K') + '*' + r('d') + '*' + r('F'); },
+    spring: function (r) { return r('G') + '*' + r('d') + '^4/(8*' + r('D') + '^3*' + r('n') + ')'; },
+    safety: function (r) { return r('σ_s') + '/' + r('S'); }
+  };
+  FORMULAS.forEach(function (f) { if (f.calc && XLS[f.id]) f.calc.xls = XLS[f.id]; });
+
   /* 単位 → [SI係数, 次元タグ]。同次元のみ換算する。 */
   var UNIT = {
     'm': [1, 'L'], 'cm': [1e-2, 'L'], 'mm': [1e-3, 'L'], 'μm': [1e-6, 'L'],
