@@ -256,6 +256,13 @@
     for (var k in cm) if ((cm[k] || 0) > (co[k] || 0)) return false;
     return true;
   }
+  // compile reorders case phrases to canonical SOV (place で → companion と → object を).
+  // That's right for the Grammar Lab's scrambled label input, but when NORMALIZING
+  // already-natural KB prose it can SCRAMBLE a fine sentence (「応力振幅と繰り返し数で
+  // 評価」→「繰り返し数で応力振幅と評価」). So normalize accepts a recompiled clause only
+  // when the CONTENT-WORD ORDER is unchanged — conjugation/particles may change, order
+  // may not. (compile is used directly by the Lab and is unaffected.)
+  function preservesOrder(orig, made) { return contentRuns(orig).join('') === contentRuns(made).join(''); }
   // 1節を再コンパイルしてよいか。長さ・読点では弾かない（文字数に関係なく通す方針）。
   // 節分割後の各節はもう読点を含まないので、辞書形述語が取れた節だけを安全に再構成する。
   // 述語が辞書形に逆変換できない節（連用中止・て形などの actionSurface）は原文保持。
@@ -437,11 +444,12 @@
   function tidy(s) {
     if (!s) return s;
     return String(s)
+      .replace(/^([一-鿿ぁ-ヿァ-ヶー]{2,12})[（(]\s*[A-Za-z][A-Za-z .\-]*[）)]\s*(?=\1)/, '')  // 見出し+英訳の接ぎ木「すべり軸受(sliding bearing)すべり軸受は…」→本文のみ（同語反復時のみ）
       .replace(/(?:系列[Ⅰ-Ⅻ]+\s*)+/g, '')                                  // 表のローマ数字連
       .replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{4,16}?)\1+/g, '$1')             // 隣接重複チャンク
       .replace(/([一-鿿ぁ-ヶー]{2,})([（(][^）)]{0,30}[）)])\1/g, '$1$2')       // 用語(gloss)用語→用語(gloss)（すべり軸受(sliding bearing)すべり軸受）
       .replace(/^([一-鿿ァ-ヶー]{2,4})\1/, '$1')                              // 先頭の重複語（ねじねじ山→ねじ山）
-      .replace(/^(?:また|さらに|しかし|そして|なお|ただし|一方|つまり|すなわち|そのため|したがって|よって|これに対して)[、，]/, '')  // 先頭の接続詞
+      .replace(/^(?:また|さらに|および|ならびに|かつ|しかし|だが|そして|なお|ただし|一方|つまり|すなわち|そのため|したがって|よって|さて|ところで|ところが|それゆえ|ゆえに|これに対して)[、，]/, '')  // 先頭の接続詞
       .replace(/^(?:これ|それ|これら|それら)(?:は|が)[、，]?/, '')                  // 先頭の指示語主語（これは…→…）
       .replace(/^(?:このように(?:して)?|そのように(?:して)?|こうして|そうして|このため|そのため|このとき|その際|それゆえ|ゆえに|ここでいう|ここで(?:は)?|そこで)[、，]?/, '')  // 先頭の指示副詞（このように/ここでいう…→…）
       .replace(/^(?:このような|そのような|こうした|そうした|これらの|それらの|この|その)(?![他点])/, '')  // 先頭の連体指示詞（この設備は→設備は）
@@ -502,7 +510,7 @@
           if (opts.politeness) sml.politeness = opts.politeness;
           if (canRecompile(core, sml)) {
             var r = compile(sml);
-            if (r.sentence && preservesContent(core, r.sentence)) {
+            if (r.sentence && preservesContent(core, r.sentence) && preservesOrder(core, r.sentence)) {
               // compile は句点を付けるが、節（末尾以外）には不要なので外す
               normalized = r.sentence.replace(/[。．！？]+$/, ''); changes = r.changes; applied = true;
             }

@@ -304,7 +304,8 @@
   var GENERIC_TERM = {};
   ('基礎 基本 分類 概要 定義 特徴 種類 方法 手法 仕組 構成 構造 応用 利用 評価 設計 解析 技術 装置 ' +
    'システム モデル 理論 原理 供給 管理 問題 影響 関係 性質 目的 効果 対策 動向 歴史 意義 概念 ' +
-   '原因 理由 要因 違い 差異 比較 影響 ' +
+   '原因 理由 要因 違い 差異 比較 影響 同士 相互 ' +
+   '場合 一覧 注意点 以上 以下 以外 以内 程度 自体 全体 同様 前後 双方 両者 観点 範囲 状況 詳細 内容 様子 各種 各位 ' +
    'プロセス データ 方式 機能 種別 一般 概論 重要 ポイント 全般 事項 役割 課題 現状 動作 種々 処理 現象 状態 アルゴリズム')
     .split(' ').forEach(function (t) { GENERIC_TERM[t] = 1; });
   /* bigrams contributed by generic words — demoted in KB doc-selection so a
@@ -351,18 +352,33 @@
     runs.forEach(function (r) {
       if (/^[ぁ-ゖ]+$/.test(r)) {                          // hiragana run → topic word(s)
         // a coordinated run (すきまばめ「と」しまりばめ) carries multiple topics: split on
-        // the coordinating particles と/や only (NOT case particles は/が/を, so a word that
-        // STARTS with such a kana — はめあい — stays whole), then keep each segment with
-        // its trailing particles stripped (ねじ「の」→ねじ).
-        r.split(/[とや]/).forEach(function (seg) {
+        // coordinating と/や AND strong case particles が/を/に/へ/で (never word-initial in
+        // our topics, unlike は/も/の), so 「ねじがうまく」→ねじ／「ねじにおける」→ねじ. A word
+        // STARTING with は/も/の (はめあい) stays whole. Each segment keeps its topic and
+        // drops trailing particles / collective suffixes.
+        r.split(/[とやがをにへで]/).forEach(function (seg) {
           seg = seg.replace(/[はがをにでとへものやかよ]+$/, '');
-          seg = seg.replace(/^[がをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ）。は/も は語頭になり得るので除外
-          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう)/.test(seg)) return;
+          seg = seg.replace(/(など|なら|ほか|ばかり|だけ)$/, '');   // 集合/限定の接尾辞（ねじなど→ねじ）
+          seg = seg.replace(/^[のがをにでへ]/, '');   // 先頭の格助詞断片（がかみ→かみ・のかみ→かみ）。は/も は語頭になり得るので除外
+          if (!seg || seg.length < 2 || seg.length > 6 || HIRA_STOP[seg] || /(ます|まし|です|ない|でき|あり|する|した|なる|なっ|くださ|ある|いる|そう|うまく|よく)/.test(seg)) return;
           if (/^[はもがを]/.test(seg) && HIRA_STOP[seg.slice(1)]) return;   // particle splice (はどう→どう)
           if (!GENERIC_TERM[seg] && !seen[seg]) { seen[seg] = 1; out.push(seg); }
         });
         return;
       }
+      // strip a trailing NOUN-SUFFIX that is never a topic itself, so the head noun
+      // survives (歯車同士→歯車 / 鋼自体→鋼 / 軸受以上→軸受 / 応力程度→応力). Without this
+      // the suffix gram (同士/以上/程度…) hijacks retrieval toward unrelated docs.
+      r = r.replace(/^(各|全|両|諸)(?=[一-鿿]{2})/, '');   // 先頭の数量詞（全歯車→歯車・各軸受→軸受）。残りが2字以上の時のみ
+      var stripped = r.replace(/(同士|どうし|同様|自体|自身|全体|以上|以下|以外|以内|程度|前後|双方|両者|一同|各位|など|等)$/, '');
+      // a single-kanji head noun left after the suffix strip (軸同士→軸 / 鋼自体→鋼 / 弁以上→弁)
+      // must be kept — otherwise it falls through to the particle fallback and grabs a
+      // suffix fragment (士/体) instead.
+      if (stripped !== r && stripped.length === 1 && /^[一-鿿]$/.test(stripped) && !SINGLE_STOP[stripped] && !GENERIC_TERM[stripped]) {
+        if (!seen[stripped]) { seen[stripped] = 1; out.push(stripped); }
+        return;
+      }
+      r = stripped;
       if (r.length >= 2 && !GENERIC_TERM[r] && !seen[r]) { seen[r] = 1; out.push(r); }
     });
     // compound pass: mixed ひらがな+漢字 terms (はすば歯車・かさ歯車) where the
@@ -389,8 +405,10 @@
     // its trailing 「の種類」 — so 「鋼の種類」→coreQuery「鋼」 still keys off 鋼 instead of
     // returning no key (which let an unrelated doc hijack the answer). Last resort only.
     if (!out.length) {
-      var cm = coreQuery(q).match(/[一-鿿]/);
-      if (cm && !SINGLE_STOP[cm[0]] && !GENERIC_TERM[cm[0]]) out.push(cm[0]);
+      // scan for the FIRST content kanji, skipping structural/generic ones, so a topic
+      // preceded by a stop kanji is still found (各種の「鋼」→鋼, not given up at 各).
+      var cks = coreQuery(q).match(/[一-鿿]/g) || [];
+      for (var ci = 0; ci < cks.length; ci++) { if (!SINGLE_STOP[cks[ci]] && !GENERIC_TERM[cks[ci]]) { out.push(cks[ci]); break; } }
     }
     // drop a short hiragana FRAGMENT that is a substring of a longer, more specific key
     // (「せん断応力」→ junk「せん」which else matches「らせん」). Keeps the compound only.
@@ -641,6 +659,12 @@
     if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;
     if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;
     if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;
+    // embedded figure/table-caption splice (two-column PDF interleave artifact): a
+    // page-figure tag (「7―83図3・135」) or ≥2 figure refs glued together with caption
+    // text between (「図3・135 磁気軸受の原理図3・136 弾性ヒンジの例」). These read as noise
+    // in a figure-less chat answer; rejecting lets a cleaner on-topic sentence answer.
+    if (/[0-9０-９]+\s*[―－]\s*[0-9０-９]+\s*[図表][0-9０-９]/.test(s)) return true;
+    if (/[図表][0-9０-９][0-9０-９・･.]*[^。．！？]{0,24}[図表][0-9０-９][0-9０-９・･.]*/.test(s)) return true;
     // two-column PDF merge: Japanese text gets stray spaces after 、，or between
     // CJK chars (e.g.「， は荷重， は試験前」). ≥2 such gaps ⇒ interleaved garbage.
     if ((s.match(/[、，][ 　\t]/g) || []).length >= 2) return true;
@@ -899,7 +923,13 @@
         var psents = buildSentences(pd.text);
         for (var ps = 0; ps < psents.length && items.length < 12; ps++) {
           var psen = psents[ps]; var lm = psen.match(LEAD); if (!lm) continue;
-          if (psen.indexOf(key) < 0 && !(ps > 0 && psents[ps - 1].indexOf(key) >= 0)) continue;   // on-topic only
+          // key must be the列挙のSUBJECT — appear BEFORE the lead-in phrase (or be the
+          // subject of the previous sentence) — NOT merely a sibling MEMBER inside the
+          // listed items. Without this, 「ばねの種類」 hijacks 「機械要素の代表的なものに、
+          // ねじ・軸・軸受・歯車・ベルト・ばね…がある」 and wrongly lists ねじ・軸・歯車…
+          // (mirrors the curated LEADc pass's subject guard above).
+          var kp = psen.indexOf(key);
+          if (!((kp >= 0 && kp < lm.index) || (ps > 0 && psents[ps - 1].indexOf(key) >= 0))) continue;
           lm[1].split(/[・･、，]/).forEach(function (it) {
             it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
             if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
@@ -912,10 +942,63 @@
     }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
+    // ---- morphological cleanup of each TYPE name ------------------------------
+    // The prose head-noun passes can splice clause material onto a real type name
+    // (「平歯車は軸」「必要なボルト」「古くから駆動電動機」「つシャトル弁」) or leave an
+    // unrecoverable katakana truncation (「ィフューザポンプ」←ディフューザ). A Haiku-class
+    // answer never lists such fragments. When kuromoji is loaded (the Ask view warms
+    // it up), tokenize the candidate and, on a high-confidence SPLICE signal — a
+    // case/binding particle, any 助動詞, a 1-char hiragana 動詞 lead, or a leading
+    // filler adverb — keep only the maximal trailing 名詞/接頭詞 compound (the real
+    // type name). These triggers are chosen NOT to fire on valid reading-kana
+    // compounds whose kana kuromoji mis-tags (はすば歯車=はす/動詞+ば/接続助詞, すぐばかさ
+    // 歯車=すぐ/副詞) — those carry no case particle/助動詞 so they pass through intact.
+    // Without kuromoji, only the cheap, false-positive-free guards apply.
+    var bareHead = {}; sufs.forEach(function (s) { bareHead[s] = 1; }); bareHead[key] = 1;
+    var CASE_P = { 'は':1,'が':1,'を':1,'に':1,'へ':1,'と':1,'から':1,'より':1,'まで':1,'だけ':1,'での':1,'のの':1 };
+    var FILLER = ['例えば','たとえば','いわゆる','主に','おもに','特に','一般に','通常','単に','なお'];
+    var SMALL_LEAD = /^[ァィゥェォャュョッ・ー]/;     // katakana never starts with these → truncation
+    function nounish(t) { return t.pos === '名詞' || t.pos === '接頭詞' || (t.pos === '記号' && /[A-Za-z0-9ー・]/.test(t.surface_form)); }
+    function cleanTypeItem(w) {
+      if (!w) return '';
+      w = w.replace(/^[・,，、\s]+/, '');
+      if (SMALL_LEAD.test(w)) return '';                       // unrecoverable katakana fragment
+      var G = NSCode.grammar;
+      if (G && G.ready && G.ready() && G.analyze) {
+        var tk = G.analyze(w);
+        if (tk && tk.length) {
+          while (tk.length > 1 && FILLER.indexOf(tk[0].surface_form) >= 0) tk = tk.slice(1);   // drop textbook filler lead
+          // maximal trailing 名詞/接頭詞 run = the candidate clean type name
+          var k = tk.length - 1; while (k >= 0 && nounish(tk[k])) k--;
+          var rs = k + 1, prefix = tk.slice(0, rs);
+          // a SPLICE only when the prefix (material BEFORE that noun-run) binds a
+          // following noun via a case/binding 助詞 or 助動詞, or is a 1-char hiragana
+          // 動詞 (「み式…」←ねじ込み式). A trailing 助動詞 with no noun after it is the
+          // term's OWN morphology (焼なまし=焼/な/まし, 焼ならし) → keep whole; likewise
+          // a pure-kana reading prefix with only 接続助詞 (はすば歯車) → keep whole.
+          var splice = prefix.some(function (t) { return t.pos === '助動詞' || (t.pos === '助詞' && CASE_P[t.surface_form]); })
+            || (prefix.length && prefix[0].pos === '動詞' && prefix[0].surface_form.length === 1);
+          if (rs > 0 && rs < tk.length && splice) {
+            var run = tk.slice(rs);
+            while (run.length > 1 && run[0].pos_detail_1 === '接尾') run.shift();                // a compound can't START with 式/性/製
+            w = run.map(function (t) { return t.surface_form; }).join('');
+          } else {
+            w = tk.map(function (t) { return t.surface_form; }).join('');
+          }
+        }
+      } else {
+        var mh = w.match(/^[ぁ-ん]{1,2}([ァ-ヶ][ァ-ヶー]+.*)$/); if (mh) w = mh[1];              // つシャトル弁→シャトル弁
+        for (var fi = 0; fi < FILLER.length; fi++) if (w.indexOf(FILLER[fi]) === 0 && w.length > FILLER[fi].length + 1) { w = w.slice(FILLER[fi].length); break; }
+      }
+      if (SMALL_LEAD.test(w) || !w || bareHead[w]) return '';
+      if (!(w.length >= 2 || /^[一-鿿]$/.test(w))) return '';
+      return w;
+    }
     var out2 = [], s2 = {};
     items.forEach(function (w) {
       if (/^[をがのにでともやよ]/.test(w) && w.length >= 5 && sufTail.test(w.slice(1))) w = w.slice(1);
-      if (!s2[w]) { s2[w] = 1; out2.push(w); }
+      w = cleanTypeItem(w);
+      if (w && !s2[w]) { s2[w] = 1; out2.push(w); }
     });
     items = out2;
     if (items.length < 4) return null;
@@ -1147,7 +1230,7 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工|破壊)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     // curated bonus only when the candidate is about the FULL query topic, not a shorter
     // concept it merely contains: 「ねじ切りとは」(coreT=ねじ切り) must NOT get the curated
@@ -1434,6 +1517,7 @@
           qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
           hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
           answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+          keyTerms: keyTerms(question), loss: m.loss, learned: learned, weak: weak,
           normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
         });
         return { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
@@ -1649,6 +1733,14 @@
             var learned = false;
             if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
+            // Display/seed cleanup at the engine boundary (was display-only): strip the
+            // dangling lead connective / heading+gloss splice / dup chunks from the final
+            // answer so result.text, the normalized text, AND the abstractive generation
+            // seed (entry.a.text) are all clean — not just the rendered bubble.
+            if (!weak && concise.text && NSCode.grammar && NSCode.grammar.tidy) {
+              var _t = NSCode.grammar.tidy(concise.text);
+              if (_t) concise = { text: _t, source: concise.source, intent: concise.intent };
+            }
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
             if (NSCode.lastRun) NSCode.lastRun.set({
@@ -1656,6 +1748,7 @@
               qvec: Array.prototype.slice.call(NSCode.embeddings.embed(question, 64)).slice(0, 16),
               hits: res.hits.map(function (h) { return { source: h.chunk.source, score: h.score, text: h.chunk.text }; }),
               answer: weak ? [] : compose, generated: concise.text, source: concise.source, seed: concise.source, memo: memo, intent: concise.intent,
+              keyTerms: keyTerms(question), topDocs: top.slice(0, 6).map(function (t) { return t.title; }), loss: m.loss, learned: learned, weak: weak,
               normalized: norm ? norm.text : '', sml: norm ? norm.sentences : [], ts: Date.now()
             });
             var result = { text: concise.text, source: concise.source, intent: concise.intent, weak: weak, learned: learned, memo: memo, compose: weak ? [] : compose, hits: res.hits, loss: m.loss,
