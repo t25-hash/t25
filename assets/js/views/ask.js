@@ -16,7 +16,7 @@
   var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
   var MAX_HISTORY = 20;
 
-  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: true, web: false, history: [] },
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: true, history: [] },
     NSCode.api.labState('#/ask') || {});
   if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
@@ -95,6 +95,8 @@
   function botBody(entry) {
     var q = entry.q, a = entry.a;
     if (entry.error) return '<p class="ns-empty__hint">エラー: ' + C.esc(entry.error) + '</p>';
+    // KB外で Web に頼って答えた回答（履歴の再描画用）
+    if (a && a.web) return webAnswerHtml(a.web, q) + citeDetails(q, a.hits, '検索で近かった候補（KB内）');
     if (!a || !a.hits || !a.hits.length) {
       return '<p class="ns-empty__hint">関連する知識が見つかりませんでした。上の「知識ベース」で資料を学習させてください。</p>';
     }
@@ -442,30 +444,33 @@
     });
   }
 
-  /* 🌐 Web follow-up bubble (Wikipedia 要約からの生成回答＋出典リンク). */
-  function webBubble(w) {
-    return '<div class="ns-msg ns-msg--bot ns-msg--web">' +
-      '<div class="ns-msg__avatar">🌐</div>' +
-      '<div class="ns-msg__body">' +
-        '<div class="ns-calc__name">Web（' + C.esc(w.source) + '）</div>' +
-        '<p class="ns-qa-answer__lead">' + highlight(w.text, w.q || '').replace(/\n/g, '<br>') + '</p>' +
-        '<div class="ns-qa-answer__src">出典: <a href="' + C.esc(w.url) + '" target="_blank" rel="noopener noreferrer">' + C.esc(w.title) + ' — ' + C.esc(w.source) + '</a></div>' +
-      '</div></div>';
+  /* 🌐 Web 回答（Wikipedia 要約からの生成回答＋出典）。KB外フォールバック時に
+   * 既存の赤ちゃんバブル内へインライン表示する（別バブルの連投はしない）。 */
+  function webAnswerHtml(w, q) {
+    return '<div class="ns-qa-answer__web">🌐 KB外のため Web（' + C.esc(w.source) + '）から回答</div>' +
+      '<p class="ns-qa-answer__lead">' + highlight(w.text, q || '').replace(/\n/g, '<br>') + '</p>' +
+      '<div class="ns-qa-answer__src">出典: <a href="' + C.esc(w.url) + '" target="_blank" rel="noopener noreferrer">' + C.esc(w.title) + ' — ' + C.esc(w.source) + '</a></div>';
   }
-  /* gated by state.web: search the web (Wikipedia) and post a 🌐 answer as a follow-up.
-   * graceful: offline / blocked / not-found → silently skip (KB answer stays). */
+  /* KB外（本文一致が弱い／該当なし）のときだけ自動で Web に頼る。良いKB回答があれば何もしない。
+   * graceful: オフライン/ブロック/未発見/失敗は元の表示のまま。トグルなし（常時自動）。 */
   function maybeWeb(entry, botId) {
-    if (!state.web || !NSCode.web || !NSCode.web.available() || !entry || entry.error) return;
+    if (!entry || entry.error || !entry.a || entry.a.web) return;
+    var kbOut = entry.a.weak || !entry.a.hits || !entry.a.hits.length;   // KB外か
+    if (!kbOut || !NSCode.web || !NSCode.web.available()) return;
     var node = el(botId); if (!node) return;
-    var pid = botId + 'web';
-    node.insertAdjacentHTML('afterend', '<div class="ns-msg ns-msg--bot" id="' + pid + '"><div class="ns-msg__avatar">🌐</div><div class="ns-msg__body"><p class="ns-empty__hint ns-msg__thinking">Web を検索しています…</p></div></div>');
-    scrollBottom();
+    var body = node.querySelector('.ns-msg__body'); if (!body) return;
+    var note = document.createElement('p');
+    note.className = 'ns-empty__hint ns-msg__thinking';
+    note.textContent = 'KB に十分な記述がないため Web を調べています…';
+    body.insertBefore(note, body.firstChild); scrollBottom();
     NSCode.web.answer(entry.q).then(function (w) {
-      var p = el(pid); if (!p) return;
-      if (w && w.text) { w.q = entry.q; p.outerHTML = webBubble(w); }
-      else p.remove();   // 見つからない/失敗時はKB回答だけ残す
+      var n = el(botId); if (!n) return; var b = n.querySelector('.ns-msg__body'); if (!b) return;
+      if (w && w.text) {
+        entry.a.web = { text: w.text, title: w.title, url: w.url, source: w.source }; persist();
+        b.innerHTML = webAnswerHtml(entry.a.web, entry.q) + citeDetails(entry.q, entry.a.hits, '検索で近かった候補（KB内）');
+      } else { var t = b.querySelector('.ns-msg__thinking'); if (t) t.remove(); }   // 見つからない → 元の表示
       scrollBottom();
-    }).catch(function () { var p = el(pid); if (p) p.remove(); });
+    }).catch(function () { var n = el(botId); if (n) { var t = n.querySelector('.ns-msg__thinking'); if (t) t.remove(); } });
   }
 
   /* a 👍/👎 click: persist the grade, update the row, and on 👎 auto-regenerate */
@@ -500,10 +505,7 @@
             (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・既定）</b>' : '<b>📑 抽出のみ</b>') +
             '</label>' }]) +
           '<p class="ns-empty__hint">ON（既定）＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。OFF＝<b>根拠の実文を抽出</b>のみ。<b>※実験：</b>幻覚はしません（根拠語のみ）。使うほど（学習・👍/👎）改善します。</p>' +
-          C.Controls([{ label: 'Web 検索', control:
-            '<label class="ns-switch"><input id="askWeb" type="checkbox"' + (state.web ? ' checked' : '') + '> ' +
-            '<b>🌐 Web（Wikipedia）も使う</b></label>' }]) +
-          '<p class="ns-empty__hint">ON＝KB に無い語も <b>Wikipedia（CORS・APIキー不要）</b> を検索し、要約から回答を生成して 🌐 で連投します（外部AI APIは不使用）。オフライン/取得失敗時は静かにスキップ（KB回答はそのまま）。</p>' +
+          '<p class="ns-empty__hint">🌐 <b>KB外フォールバック</b>：KBに十分な記述が無い質問は、自動で <b>Wikipedia（CORS・APIキー不要・外部AI API不使用）</b> を調べ、要約から回答を生成して同じ回答内に出典つきで示します（KBで答えられる質問では使いません。オフライン/取得失敗時は何もしません）。</p>' +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
         '<div class="ns-ask-2pane">' +
@@ -555,8 +557,6 @@
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       var gen = el('askGen');
       if (gen) gen.addEventListener('change', function () { state.gen = gen.checked; persist(); });
-      var web = el('askWeb');
-      if (web) web.addEventListener('change', function () { state.web = web.checked; persist(); });
       el('askBtn').addEventListener('click', function () { runAsk(); });
       // 🧠 生成モードトグル（コンポーザ）: 設定パネルの抽出/生成スイッチ(state.gen)と同じ状態。
       // 「別の回答」は👎フィードバックと役割が重複するため廃止し、ここに置いた。
@@ -692,7 +692,7 @@
       }
       scrollBottom();
       maybeGenerate(entry, botId);   // optional in-browser abstractive rewrite (gated)
-      maybeWeb(entry, botId);        // optional Web (Wikipedia) follow-up (gated by state.web)
+      maybeWeb(entry, botId);        // KB外のときだけ自動で Web(Wikipedia) に頼る（トグルなし）
     }).catch(function (e) {
       var entry = { q: q, error: (e && e.message) ? e.message : String(e) };
       commit(entry);
