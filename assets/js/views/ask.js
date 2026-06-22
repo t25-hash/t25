@@ -16,7 +16,7 @@
   var CHIPS = ['歯車の種類は？', '軸受の選び方は？', '公差とはめあいとは？', 'ねじの緩み止めは？'];
   var MAX_HISTORY = 20;
 
-  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: true, history: [] },
+  var state = Object.assign({ source: 'kb', query: '', temperature: 0.45, gen: true, web: false, history: [] },
     NSCode.api.labState('#/ask') || {});
   if (!Array.isArray(state.history)) state.history = [];
   function persist() { NSCode.api.labState('#/ask', state); }
@@ -388,6 +388,32 @@
     });
   }
 
+  /* 🌐 Web follow-up bubble (Wikipedia 要約からの生成回答＋出典リンク). */
+  function webBubble(w) {
+    return '<div class="ns-msg ns-msg--bot ns-msg--web">' +
+      '<div class="ns-msg__avatar">🌐</div>' +
+      '<div class="ns-msg__body">' +
+        '<div class="ns-calc__name">Web（' + C.esc(w.source) + '）</div>' +
+        '<p class="ns-qa-answer__lead">' + highlight(w.text, w.q || '').replace(/\n/g, '<br>') + '</p>' +
+        '<div class="ns-qa-answer__src">出典: <a href="' + C.esc(w.url) + '" target="_blank" rel="noopener noreferrer">' + C.esc(w.title) + ' — ' + C.esc(w.source) + '</a></div>' +
+      '</div></div>';
+  }
+  /* gated by state.web: search the web (Wikipedia) and post a 🌐 answer as a follow-up.
+   * graceful: offline / blocked / not-found → silently skip (KB answer stays). */
+  function maybeWeb(entry, botId) {
+    if (!state.web || !NSCode.web || !NSCode.web.available() || !entry || entry.error) return;
+    var node = el(botId); if (!node) return;
+    var pid = botId + 'web';
+    node.insertAdjacentHTML('afterend', '<div class="ns-msg ns-msg--bot" id="' + pid + '"><div class="ns-msg__avatar">🌐</div><div class="ns-msg__body"><p class="ns-empty__hint ns-msg__thinking">Web を検索しています…</p></div></div>');
+    scrollBottom();
+    NSCode.web.answer(entry.q).then(function (w) {
+      var p = el(pid); if (!p) return;
+      if (w && w.text) { w.q = entry.q; p.outerHTML = webBubble(w); }
+      else p.remove();   // 見つからない/失敗時はKB回答だけ残す
+      scrollBottom();
+    }).catch(function () { var p = el(pid); if (p) p.remove(); });
+  }
+
   /* a 👍/👎 click: persist the grade, update the row, and on 👎 auto-regenerate */
   function onFeedback(btn) {
     if (!NSCode.feedback) return;
@@ -420,6 +446,10 @@
             (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・既定）</b>' : '<b>📑 抽出のみ</b>') +
             '</label>' }]) +
           '<p class="ns-empty__hint">ON（既定）＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。OFF＝<b>根拠の実文を抽出</b>のみ。<b>※実験：</b>幻覚はしません（根拠語のみ）。使うほど（学習・👍/👎）改善します。</p>' +
+          C.Controls([{ label: 'Web 検索', control:
+            '<label class="ns-switch"><input id="askWeb" type="checkbox"' + (state.web ? ' checked' : '') + '> ' +
+            '<b>🌐 Web（Wikipedia）も使う</b></label>' }]) +
+          '<p class="ns-empty__hint">ON＝KB に無い語も <b>Wikipedia（CORS・APIキー不要）</b> を検索し、要約から回答を生成して 🌐 で連投します（外部AI APIは不使用）。オフライン/取得失敗時は静かにスキップ（KB回答はそのまま）。</p>' +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
         trainPanel() +
@@ -442,6 +472,8 @@
       el('askT').addEventListener('input', function () { state.temperature = +el('askT').value; el('askTv').textContent = state.temperature; persist(); });
       var gen = el('askGen');
       if (gen) gen.addEventListener('change', function () { state.gen = gen.checked; persist(); });
+      var web = el('askWeb');
+      if (web) web.addEventListener('change', function () { state.web = web.checked; persist(); });
       el('askBtn').addEventListener('click', function () { runAsk(); });
       // 🧠 生成モードトグル（コンポーザ）: 設定パネルの抽出/生成スイッチ(state.gen)と同じ状態。
       // 「別の回答」は👎フィードバックと役割が重複するため廃止し、ここに置いた。
@@ -553,6 +585,7 @@
       }
       scrollBottom();
       maybeGenerate(entry, botId);   // optional in-browser abstractive rewrite (gated)
+      maybeWeb(entry, botId);        // optional Web (Wikipedia) follow-up (gated by state.web)
     }).catch(function (e) {
       var entry = { q: q, error: (e && e.message) ? e.message : String(e) };
       commit(entry);
