@@ -855,10 +855,63 @@
     }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
+    // ---- morphological cleanup of each TYPE name ------------------------------
+    // The prose head-noun passes can splice clause material onto a real type name
+    // (「平歯車は軸」「必要なボルト」「古くから駆動電動機」「つシャトル弁」) or leave an
+    // unrecoverable katakana truncation (「ィフューザポンプ」←ディフューザ). A Haiku-class
+    // answer never lists such fragments. When kuromoji is loaded (the Ask view warms
+    // it up), tokenize the candidate and, on a high-confidence SPLICE signal — a
+    // case/binding particle, any 助動詞, a 1-char hiragana 動詞 lead, or a leading
+    // filler adverb — keep only the maximal trailing 名詞/接頭詞 compound (the real
+    // type name). These triggers are chosen NOT to fire on valid reading-kana
+    // compounds whose kana kuromoji mis-tags (はすば歯車=はす/動詞+ば/接続助詞, すぐばかさ
+    // 歯車=すぐ/副詞) — those carry no case particle/助動詞 so they pass through intact.
+    // Without kuromoji, only the cheap, false-positive-free guards apply.
+    var bareHead = {}; sufs.forEach(function (s) { bareHead[s] = 1; }); bareHead[key] = 1;
+    var CASE_P = { 'は':1,'が':1,'を':1,'に':1,'へ':1,'と':1,'から':1,'より':1,'まで':1,'だけ':1,'での':1,'のの':1 };
+    var FILLER = ['例えば','たとえば','いわゆる','主に','おもに','特に','一般に','通常','単に','なお'];
+    var SMALL_LEAD = /^[ァィゥェォャュョッ・ー]/;     // katakana never starts with these → truncation
+    function nounish(t) { return t.pos === '名詞' || t.pos === '接頭詞' || (t.pos === '記号' && /[A-Za-z0-9ー・]/.test(t.surface_form)); }
+    function cleanTypeItem(w) {
+      if (!w) return '';
+      w = w.replace(/^[・,，、\s]+/, '');
+      if (SMALL_LEAD.test(w)) return '';                       // unrecoverable katakana fragment
+      var G = NSCode.grammar;
+      if (G && G.ready && G.ready() && G.analyze) {
+        var tk = G.analyze(w);
+        if (tk && tk.length) {
+          while (tk.length > 1 && FILLER.indexOf(tk[0].surface_form) >= 0) tk = tk.slice(1);   // drop textbook filler lead
+          // maximal trailing 名詞/接頭詞 run = the candidate clean type name
+          var k = tk.length - 1; while (k >= 0 && nounish(tk[k])) k--;
+          var rs = k + 1, prefix = tk.slice(0, rs);
+          // a SPLICE only when the prefix (material BEFORE that noun-run) binds a
+          // following noun via a case/binding 助詞 or 助動詞, or is a 1-char hiragana
+          // 動詞 (「み式…」←ねじ込み式). A trailing 助動詞 with no noun after it is the
+          // term's OWN morphology (焼なまし=焼/な/まし, 焼ならし) → keep whole; likewise
+          // a pure-kana reading prefix with only 接続助詞 (はすば歯車) → keep whole.
+          var splice = prefix.some(function (t) { return t.pos === '助動詞' || (t.pos === '助詞' && CASE_P[t.surface_form]); })
+            || (prefix.length && prefix[0].pos === '動詞' && prefix[0].surface_form.length === 1);
+          if (rs > 0 && rs < tk.length && splice) {
+            var run = tk.slice(rs);
+            while (run.length > 1 && run[0].pos_detail_1 === '接尾') run.shift();                // a compound can't START with 式/性/製
+            w = run.map(function (t) { return t.surface_form; }).join('');
+          } else {
+            w = tk.map(function (t) { return t.surface_form; }).join('');
+          }
+        }
+      } else {
+        var mh = w.match(/^[ぁ-ん]{1,2}([ァ-ヶ][ァ-ヶー]+.*)$/); if (mh) w = mh[1];              // つシャトル弁→シャトル弁
+        for (var fi = 0; fi < FILLER.length; fi++) if (w.indexOf(FILLER[fi]) === 0 && w.length > FILLER[fi].length + 1) { w = w.slice(FILLER[fi].length); break; }
+      }
+      if (SMALL_LEAD.test(w) || !w || bareHead[w]) return '';
+      if (!(w.length >= 2 || /^[一-鿿]$/.test(w))) return '';
+      return w;
+    }
     var out2 = [], s2 = {};
     items.forEach(function (w) {
       if (/^[をがのにでともやよ]/.test(w) && w.length >= 5 && sufTail.test(w.slice(1))) w = w.slice(1);
-      if (!s2[w]) { s2[w] = 1; out2.push(w); }
+      w = cleanTypeItem(w);
+      if (w && !s2[w]) { s2[w] = 1; out2.push(w); }
     });
     items = out2;
     if (items.length < 4) return null;
