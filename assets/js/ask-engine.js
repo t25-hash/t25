@@ -584,6 +584,12 @@
     if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;
     if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;
     if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;
+    // embedded figure/table-caption splice (two-column PDF interleave artifact): a
+    // page-figure tag (「7―83図3・135」) or ≥2 figure refs glued together with caption
+    // text between (「図3・135 磁気軸受の原理図3・136 弾性ヒンジの例」). These read as noise
+    // in a figure-less chat answer; rejecting lets a cleaner on-topic sentence answer.
+    if (/[0-9０-９]+\s*[―－]\s*[0-9０-９]+\s*[図表][0-9０-９]/.test(s)) return true;
+    if (/[図表][0-9０-９][0-9０-９・･.]*[^。．！？]{0,24}[図表][0-9０-９][0-9０-９・･.]*/.test(s)) return true;
     // two-column PDF merge: Japanese text gets stray spaces after 、，or between
     // CJK chars (e.g.「， は荷重， は試験前」). ≥2 such gaps ⇒ interleaved garbage.
     if ((s.match(/[、，][ 　\t]/g) || []).length >= 2) return true;
