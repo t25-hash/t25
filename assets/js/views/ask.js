@@ -185,14 +185,22 @@
         '<div class="ns-calc__actions"><button class="ns-calc__xls-table" type="button" data-table-id="' + C.esc(t.id) + '" title="この表をExcelに出力">Excel出力</button></div>' +
       '</div></div>';
   }
-  /* download rows (array of arrays) as an .xls Excel sheet — offline, no library
-   * (an HTML table with the ms-excel MIME; Excel opens it as a worksheet). */
-  function exportExcel(filename, rows) {
-    var esc = function (c) { return String(c == null ? '' : c).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
-    var body = rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('');
-    var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">' +
-      '<head><meta charset="UTF-8"></head><body><table border="1">' + body + '</table></body></html>';
-    var blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+  /* download rows as a SpreadsheetML (.xls) workbook — offline, no library. A cell is a
+   * string/number, or { f:'R5C2/R6C2', v:cachedValue } for a LIVE Excel formula (R1C1)
+   * that recalculates in Excel when inputs change. */
+  function exportExcel(filename, sheetName, rows) {
+    var x = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+    function cell(c) {
+      if (c && typeof c === 'object' && c.f != null) return '<Cell ss:Formula="=' + x(c.f) + '"><Data ss:Type="Number">' + (isFinite(c.v) ? c.v : 0) + '</Data></Cell>';
+      if (typeof c === 'number' && isFinite(c)) return '<Cell><Data ss:Type="Number">' + c + '</Data></Cell>';
+      if (c == null || c === '') return '<Cell/>';
+      return '<Cell><Data ss:Type="String">' + x(c) + '</Data></Cell>';
+    }
+    var body = rows.map(function (r) { return '<Row>' + r.map(cell).join('') + '</Row>'; }).join('');
+    var xml = '<?xml version="1.0" encoding="UTF-8"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Worksheet ss:Name="' + x(sheetName || 'Sheet1') + '"><Table>' + body + '</Table></Worksheet></Workbook>';
+    var blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename + '.xls';
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
@@ -219,15 +227,25 @@
     var d = form._calc; if (!d) return;
     var f = null, F = NSCode.calc.FORMULAS; for (var i = 0; i < F.length; i++) if (F[i].id === d.id) { f = F[i]; break; }
     if (!f) return;
+    var IN = f.calc.in, START = 5;   // 入力値は B列(C2)・START 行から（下のレイアウトと一致させる）
     var rows = [['式', f.name], ['式（記号）', f.expr], [], ['記号', '値', '単位']];
-    f.calc.in.forEach(function (inp) { var v = d.inputs[inp.sym] || {}; rows.push([inp.sym, v.value, v.unit === '-' ? '' : v.unit]); });
-    rows.push([]); rows.push(['結果（' + d.r.out + '）', d.r.value, d.r.unit]);
-    exportExcel('calc_' + d.id, rows);
+    IN.forEach(function (inp) {
+      var raw = d.inputs[inp.sym] || {};
+      var val = NSCode.calc.toUnit(Number(raw.value), raw.unit || inp.unit, inp.unit);   // 式が期待する単位へ換算
+      rows.push([inp.sym, isFinite(val) ? val : '', inp.unit === '-' ? '' : inp.unit]);
+    });
+    rows.push([]);
+    // 結果セル＝R1C1 数式（入力値セル R{START+i}C2 を参照）。Excel 上で入力を変えると再計算。
+    var rowOf = {}; IN.forEach(function (inp, i) { rowOf[inp.sym] = START + i; });
+    var ref = function (sym) { return 'R' + rowOf[sym] + 'C2'; };
+    var fml = f.calc.xls ? f.calc.xls(ref) : null;
+    rows.push(['結果（' + d.r.out + '）', fml ? { f: fml, v: d.r.value } : d.r.value, d.r.unit]);
+    exportExcel('calc_' + d.id, f.name, rows);
   }
   function onXlsTable(id) {
     var T = NSCode.calc.TABLES, t = null; for (var i = 0; i < T.length; i++) if (T[i].id === id) { t = T[i]; break; }
     if (!t) return;
-    exportExcel('table_' + id, [[t.name]].concat([t.headers]).concat(t.rows));
+    exportExcel('table_' + id, t.name, [[t.name]].concat([t.headers]).concat(t.rows));
   }
   // 連投: 回答が「…は2・2・5項で解説する」のように別の項を参照しているとき、その参照先
   // セクションの内容をフォローアップ・バブルとして続けて表示する。
