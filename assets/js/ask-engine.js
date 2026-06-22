@@ -659,6 +659,12 @@
     if (/[＝∫∑Σ∏Γ∇√]/.test(s)) return true;
     if (/[（(]\s*[0-9０-９]{1,2}\s*[）)]\s*\S/.test(s)) return true;
     if (/[βα]\s*\d|－\s*\d{2,}|\d+\s*編\b/.test(s)) return true;
+    // embedded figure/table-caption splice (two-column PDF interleave artifact): a
+    // page-figure tag (「7―83図3・135」) or ≥2 figure refs glued together with caption
+    // text between (「図3・135 磁気軸受の原理図3・136 弾性ヒンジの例」). These read as noise
+    // in a figure-less chat answer; rejecting lets a cleaner on-topic sentence answer.
+    if (/[0-9０-９]+\s*[―－]\s*[0-9０-９]+\s*[図表][0-9０-９]/.test(s)) return true;
+    if (/[図表][0-9０-９][0-9０-９・･.]*[^。．！？]{0,24}[図表][0-9０-９][0-9０-９・･.]*/.test(s)) return true;
     // two-column PDF merge: Japanese text gets stray spaces after 、，or between
     // CJK chars (e.g.「， は荷重， は試験前」). ≥2 such gaps ⇒ interleaved garbage.
     if ((s.match(/[、，][ 　\t]/g) || []).length >= 2) return true;
@@ -917,7 +923,13 @@
         var psents = buildSentences(pd.text);
         for (var ps = 0; ps < psents.length && items.length < 12; ps++) {
           var psen = psents[ps]; var lm = psen.match(LEAD); if (!lm) continue;
-          if (psen.indexOf(key) < 0 && !(ps > 0 && psents[ps - 1].indexOf(key) >= 0)) continue;   // on-topic only
+          // key must be the列挙のSUBJECT — appear BEFORE the lead-in phrase (or be the
+          // subject of the previous sentence) — NOT merely a sibling MEMBER inside the
+          // listed items. Without this, 「ばねの種類」 hijacks 「機械要素の代表的なものに、
+          // ねじ・軸・軸受・歯車・ベルト・ばね…がある」 and wrongly lists ねじ・軸・歯車…
+          // (mirrors the curated LEADc pass's subject guard above).
+          var kp = psen.indexOf(key);
+          if (!((kp >= 0 && kp < lm.index) || (ps > 0 && psents[ps - 1].indexOf(key) >= 0))) continue;
           lm[1].split(/[・･、，]/).forEach(function (it) {
             it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
             if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
@@ -930,10 +942,63 @@
     }
     // strip a stray leading particle (column-merge artifact: 「や自動調心ころ軸受」「ところ軸受」) and dedup
     var sufTail = new RegExp('(?:' + sufs.map(escRe).join('|') + '|ラック|ピニオン)$');
+    // ---- morphological cleanup of each TYPE name ------------------------------
+    // The prose head-noun passes can splice clause material onto a real type name
+    // (「平歯車は軸」「必要なボルト」「古くから駆動電動機」「つシャトル弁」) or leave an
+    // unrecoverable katakana truncation (「ィフューザポンプ」←ディフューザ). A Haiku-class
+    // answer never lists such fragments. When kuromoji is loaded (the Ask view warms
+    // it up), tokenize the candidate and, on a high-confidence SPLICE signal — a
+    // case/binding particle, any 助動詞, a 1-char hiragana 動詞 lead, or a leading
+    // filler adverb — keep only the maximal trailing 名詞/接頭詞 compound (the real
+    // type name). These triggers are chosen NOT to fire on valid reading-kana
+    // compounds whose kana kuromoji mis-tags (はすば歯車=はす/動詞+ば/接続助詞, すぐばかさ
+    // 歯車=すぐ/副詞) — those carry no case particle/助動詞 so they pass through intact.
+    // Without kuromoji, only the cheap, false-positive-free guards apply.
+    var bareHead = {}; sufs.forEach(function (s) { bareHead[s] = 1; }); bareHead[key] = 1;
+    var CASE_P = { 'は':1,'が':1,'を':1,'に':1,'へ':1,'と':1,'から':1,'より':1,'まで':1,'だけ':1,'での':1,'のの':1 };
+    var FILLER = ['例えば','たとえば','いわゆる','主に','おもに','特に','一般に','通常','単に','なお'];
+    var SMALL_LEAD = /^[ァィゥェォャュョッ・ー]/;     // katakana never starts with these → truncation
+    function nounish(t) { return t.pos === '名詞' || t.pos === '接頭詞' || (t.pos === '記号' && /[A-Za-z0-9ー・]/.test(t.surface_form)); }
+    function cleanTypeItem(w) {
+      if (!w) return '';
+      w = w.replace(/^[・,，、\s]+/, '');
+      if (SMALL_LEAD.test(w)) return '';                       // unrecoverable katakana fragment
+      var G = NSCode.grammar;
+      if (G && G.ready && G.ready() && G.analyze) {
+        var tk = G.analyze(w);
+        if (tk && tk.length) {
+          while (tk.length > 1 && FILLER.indexOf(tk[0].surface_form) >= 0) tk = tk.slice(1);   // drop textbook filler lead
+          // maximal trailing 名詞/接頭詞 run = the candidate clean type name
+          var k = tk.length - 1; while (k >= 0 && nounish(tk[k])) k--;
+          var rs = k + 1, prefix = tk.slice(0, rs);
+          // a SPLICE only when the prefix (material BEFORE that noun-run) binds a
+          // following noun via a case/binding 助詞 or 助動詞, or is a 1-char hiragana
+          // 動詞 (「み式…」←ねじ込み式). A trailing 助動詞 with no noun after it is the
+          // term's OWN morphology (焼なまし=焼/な/まし, 焼ならし) → keep whole; likewise
+          // a pure-kana reading prefix with only 接続助詞 (はすば歯車) → keep whole.
+          var splice = prefix.some(function (t) { return t.pos === '助動詞' || (t.pos === '助詞' && CASE_P[t.surface_form]); })
+            || (prefix.length && prefix[0].pos === '動詞' && prefix[0].surface_form.length === 1);
+          if (rs > 0 && rs < tk.length && splice) {
+            var run = tk.slice(rs);
+            while (run.length > 1 && run[0].pos_detail_1 === '接尾') run.shift();                // a compound can't START with 式/性/製
+            w = run.map(function (t) { return t.surface_form; }).join('');
+          } else {
+            w = tk.map(function (t) { return t.surface_form; }).join('');
+          }
+        }
+      } else {
+        var mh = w.match(/^[ぁ-ん]{1,2}([ァ-ヶ][ァ-ヶー]+.*)$/); if (mh) w = mh[1];              // つシャトル弁→シャトル弁
+        for (var fi = 0; fi < FILLER.length; fi++) if (w.indexOf(FILLER[fi]) === 0 && w.length > FILLER[fi].length + 1) { w = w.slice(FILLER[fi].length); break; }
+      }
+      if (SMALL_LEAD.test(w) || !w || bareHead[w]) return '';
+      if (!(w.length >= 2 || /^[一-鿿]$/.test(w))) return '';
+      return w;
+    }
     var out2 = [], s2 = {};
     items.forEach(function (w) {
       if (/^[をがのにでともやよ]/.test(w) && w.length >= 5 && sufTail.test(w.slice(1))) w = w.slice(1);
-      if (!s2[w]) { s2[w] = 1; out2.push(w); }
+      w = cleanTypeItem(w);
+      if (w && !s2[w]) { s2[w] = 1; out2.push(w); }
     });
     items = out2;
     if (items.length < 4) return null;
@@ -1165,7 +1230,7 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工)(である|だ。|です。|をいう|と呼)/;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工|破壊)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
     // curated bonus only when the candidate is about the FULL query topic, not a shorter
     // concept it merely contains: 「ねじ切りとは」(coreT=ねじ切り) must NOT get the curated
@@ -1668,6 +1733,14 @@
             var learned = false;
             if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
+            // Display/seed cleanup at the engine boundary (was display-only): strip the
+            // dangling lead connective / heading+gloss splice / dup chunks from the final
+            // answer so result.text, the normalized text, AND the abstractive generation
+            // seed (entry.a.text) are all clean — not just the rendered bubble.
+            if (!weak && concise.text && NSCode.grammar && NSCode.grammar.tidy) {
+              var _t = NSCode.grammar.tidy(concise.text);
+              if (_t) concise = { text: _t, source: concise.source, intent: concise.intent };
+            }
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
             if (NSCode.lastRun) NSCode.lastRun.set({
