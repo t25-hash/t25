@@ -142,6 +142,27 @@
       '<div class="ns-msg__body">' + botBody(entry) + '</div></div>';
   }
   /* ---- 計算式・表の連投（KB回答後に NSCode.calc へ「引っ掛かった」ら） ---------- */
+  /* interactive calculator form for a formula that has a compute spec (f.calc) —
+   * one input per RHS symbol (with a same-dimension unit selector), a 計算 button,
+   * a result line, and an Excel(.xls) export. Pure client-side, deterministic. */
+  function calcForm(f) {
+    if (!f.calc || !NSCode.calc || !NSCode.calc.compute) return '';
+    var rows = f.calc.in.map(function (inp) {
+      var alts = NSCode.calc.unitAlts ? NSCode.calc.unitAlts(inp.unit) : [inp.unit];
+      var unitCtl = (alts.length > 1)
+        ? '<select class="ns-calc__unit">' + alts.map(function (u) { return '<option value="' + C.esc(u) + '">' + C.esc(u) + '</option>'; }).join('') + '</select>'
+        : '<span class="ns-calc__unit" data-unit="' + C.esc(inp.unit) + '">' + C.esc(inp.unit === '-' ? '' : inp.unit) + '</span>';
+      return '<label class="ns-calc__row"><span class="ns-calc__sym"><code>' + C.esc(inp.sym) + '</code></span>' +
+        '<input type="number" step="any" class="ns-calc__in" data-sym="' + C.esc(inp.sym) + '" placeholder="数値">' + unitCtl + '</label>';
+    }).join('');
+    return '<div class="ns-calc__form" data-calc-id="' + C.esc(f.id) + '">' +
+      '<div class="ns-calc__label">計算（' + C.esc(f.calc.out) + ' を求める）</div>' + rows +
+      '<div class="ns-calc__actions">' +
+        '<button class="ns-calc__btn" type="button">計算</button>' +
+        '<button class="ns-calc__xls" type="button" title="式・入力・結果をExcelに出力">Excel出力</button>' +
+      '</div>' +
+      '<div class="ns-calc__result" aria-live="polite"></div></div>';
+  }
   function formulaBubble(f) {
     var syms = f.where.map(function (w) {
       return '<li><code>' + C.esc(w.sym) + '</code>：' + C.esc(w.desc) + '</li>';
@@ -152,6 +173,7 @@
         '<div class="ns-calc__name">【式】' + C.esc(f.name) + '</div>' +
         '<div class="ns-calc__expr">' + C.esc(f.expr) + '</div>' +
         '<div class="ns-calc__where"><span class="ns-calc__label">記号</span><ul class="ns-calc__syms">' + syms + '</ul></div>' +
+        calcForm(f) +
       '</div></div>';
   }
   function tableBubble(t) {
@@ -160,7 +182,52 @@
       '<div class="ns-msg__body">' +
         '<div class="ns-calc__name">【表】' + C.esc(t.name) + '</div>' +
         C.Table(t.headers, t.rows) +
+        '<div class="ns-calc__actions"><button class="ns-calc__xls-table" type="button" data-table-id="' + C.esc(t.id) + '" title="この表をExcelに出力">Excel出力</button></div>' +
       '</div></div>';
+  }
+  /* download rows (array of arrays) as an .xls Excel sheet — offline, no library
+   * (an HTML table with the ms-excel MIME; Excel opens it as a worksheet). */
+  function exportExcel(filename, rows) {
+    var esc = function (c) { return String(c == null ? '' : c).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+    var body = rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('');
+    var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+      '<head><meta charset="UTF-8"></head><body><table border="1">' + body + '</table></body></html>';
+    var blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename + '.xls';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+  function collectInputs(form) {
+    var inputs = {};
+    var ins = form.querySelectorAll('.ns-calc__in');
+    for (var i = 0; i < ins.length; i++) {
+      var inp = ins[i], sym = inp.getAttribute('data-sym');
+      var u = inp.parentNode.querySelector('.ns-calc__unit');
+      var unit = u ? (u.value || u.getAttribute('data-unit') || '') : '';
+      inputs[sym] = { value: inp.value, unit: unit };
+    }
+    return inputs;
+  }
+  function onCalc(form) {
+    var id = form.getAttribute('data-calc-id'), inputs = collectInputs(form);
+    var r = NSCode.calc.compute(id, inputs), out = form.querySelector('.ns-calc__result');
+    if (r.ok) { out.textContent = r.out + ' = ' + r.pretty; form._calc = { id: id, inputs: inputs, r: r }; }
+    else { out.textContent = '※ ' + r.why; form._calc = null; }
+  }
+  function onXlsCalc(form) {
+    if (!form._calc) onCalc(form);
+    var d = form._calc; if (!d) return;
+    var f = null, F = NSCode.calc.FORMULAS; for (var i = 0; i < F.length; i++) if (F[i].id === d.id) { f = F[i]; break; }
+    if (!f) return;
+    var rows = [['式', f.name], ['式（記号）', f.expr], [], ['記号', '値', '単位']];
+    f.calc.in.forEach(function (inp) { var v = d.inputs[inp.sym] || {}; rows.push([inp.sym, v.value, v.unit === '-' ? '' : v.unit]); });
+    rows.push([]); rows.push(['結果（' + d.r.out + '）', d.r.value, d.r.unit]);
+    exportExcel('calc_' + d.id, rows);
+  }
+  function onXlsTable(id) {
+    var T = NSCode.calc.TABLES, t = null; for (var i = 0; i < T.length; i++) if (T[i].id === id) { t = T[i]; break; }
+    if (!t) return;
+    exportExcel('table_' + id, [[t.name]].concat([t.headers]).concat(t.rows));
   }
   // 連投: 回答が「…は2・2・5項で解説する」のように別の項を参照しているとき、その参照先
   // セクションの内容をフォローアップ・バブルとして続けて表示する。
@@ -371,6 +438,12 @@
       el('chatLog').addEventListener('click', function (e) {
         var fbtn = e.target.closest && e.target.closest('.ns-feedback__btn');
         if (fbtn) { onFeedback(fbtn); return; }
+        var cbtn = e.target.closest && e.target.closest('.ns-calc__btn');
+        if (cbtn) { var f1 = cbtn.closest('.ns-calc__form'); if (f1) onCalc(f1); return; }
+        var xbtn = e.target.closest && e.target.closest('.ns-calc__xls');
+        if (xbtn) { var f2 = xbtn.closest('.ns-calc__form'); if (f2) onXlsCalc(f2); return; }
+        var xtbl = e.target.closest && e.target.closest('.ns-calc__xls-table');
+        if (xtbl) { onXlsTable(xtbl.getAttribute('data-table-id')); return; }
         var chip = e.target.closest && e.target.closest('.ns-chat__chip');
         if (chip) runAsk(chip.getAttribute('data-q'));
       });

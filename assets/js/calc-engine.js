@@ -87,6 +87,78 @@
       terms: ['安全率', '安全係数', '荷重'] }
   ];
 
+  /* ── 計算機能：各式の純関数＋単位（左辺を求める。eval 不使用・決定論的・テスト可能） ──
+   * in[].unit / outUnit は fn が期待する単位（力学系は SI、慣用に合わせ mm/MPa を使う式もある）。
+   * 入力フォームはこの unit を既定ラベルにし、同次元の慣用単位（mm/MPa/kN 等）に換算して計算する。 */
+  var CALC = {
+    tensile: { out: 'σ', outUnit: 'Pa', in: [{ sym: 'P', unit: 'N' }, { sym: 'A', unit: 'm2' }], fn: function (v) { return v.P / v.A; } },
+    hooke:   { out: 'σ', outUnit: 'Pa', in: [{ sym: 'E', unit: 'Pa' }, { sym: 'ε', unit: '-' }], fn: function (v) { return v.E * v['ε']; } },
+    bending: { out: 'σ', outUnit: 'Pa', in: [{ sym: 'M', unit: 'N·m' }, { sym: 'Z', unit: 'm3' }], fn: function (v) { return v.M / v.Z; } },
+    torsion: { out: 'τ', outUnit: 'Pa', in: [{ sym: 'T', unit: 'N·m' }, { sym: 'Z_p', unit: 'm3' }], fn: function (v) { return v.T / v.Z_p; } },
+    euler:   { out: 'P_cr', outUnit: 'N', in: [{ sym: 'E', unit: 'Pa' }, { sym: 'I', unit: 'm4' }, { sym: 'l_k', unit: 'm' }], fn: function (v) { return Math.PI * Math.PI * v.E * v.I / (v.l_k * v.l_k); } },
+    l10:     { out: 'L₁₀', outUnit: '×10⁶回転', in: [{ sym: 'C', unit: 'N' }, { sym: 'P', unit: 'N' }, { sym: 'p', unit: '-' }], fn: function (v) { return Math.pow(v.C / v.P, v.p); } },
+    newton:  { out: 'Q', outUnit: 'W', in: [{ sym: 'h', unit: 'W/(m²·K)' }, { sym: 'A', unit: 'm2' }, { sym: 'ΔT', unit: 'K' }], fn: function (v) { return v.h * v.A * v['ΔT']; } },
+    fourier: { out: 'Q', outUnit: 'W', in: [{ sym: 'λ', unit: 'W/(m·K)' }, { sym: 'A', unit: 'm2' }, { sym: 'ΔT', unit: 'K' }, { sym: 'L', unit: 'm' }], fn: function (v) { return v['λ'] * v.A * v['ΔT'] / v.L; } },
+    module:  { out: 'm', outUnit: 'mm', in: [{ sym: 'd', unit: 'mm' }, { sym: 'z', unit: '-' }], fn: function (v) { return v.d / v.z; } },
+    lewis:   { out: 'σ_F', outUnit: 'MPa', in: [{ sym: 'F_t', unit: 'N' }, { sym: 'b', unit: 'mm' }, { sym: 'm', unit: 'mm' }, { sym: 'Y', unit: '-' }], fn: function (v) { return v.F_t / (v.b * v.m * v.Y); } },
+    bolt:    { out: 'T', outUnit: 'N·m', in: [{ sym: 'K', unit: '-' }, { sym: 'd', unit: 'm' }, { sym: 'F', unit: 'N' }], fn: function (v) { return v.K * v.d * v.F; } },
+    spring:  { out: 'k', outUnit: 'N/mm', in: [{ sym: 'G', unit: 'MPa' }, { sym: 'd', unit: 'mm' }, { sym: 'D', unit: 'mm' }, { sym: 'n', unit: '-' }], fn: function (v) { return v.G * Math.pow(v.d, 4) / (8 * Math.pow(v.D, 3) * v.n); } },
+    safety:  { out: 'σ_a', outUnit: 'Pa', in: [{ sym: 'σ_s', unit: 'Pa' }, { sym: 'S', unit: '-' }], fn: function (v) { return v['σ_s'] / v.S; } }
+  };
+  FORMULAS.forEach(function (f) { if (CALC[f.id]) f.calc = CALC[f.id]; });
+
+  /* 単位 → [SI係数, 次元タグ]。同次元のみ換算する。 */
+  var UNIT = {
+    'm': [1, 'L'], 'cm': [1e-2, 'L'], 'mm': [1e-3, 'L'], 'μm': [1e-6, 'L'],
+    'm2': [1, 'A'], 'cm2': [1e-4, 'A'], 'mm2': [1e-6, 'A'],
+    'm3': [1, 'V'], 'mm3': [1e-9, 'V'],
+    'm4': [1, 'I4'], 'mm4': [1e-12, 'I4'],
+    'N': [1, 'F'], 'kN': [1e3, 'F'], 'MN': [1e6, 'F'],
+    'Pa': [1, 'P'], 'kPa': [1e3, 'P'], 'MPa': [1e6, 'P'], 'GPa': [1e9, 'P'], 'N/mm2': [1e6, 'P'],
+    'N·m': [1, 'M'], 'N·mm': [1e-3, 'M'], 'kN·m': [1e3, 'M'],
+    'N/mm': [1, 'K'], 'N/m': [1e-3, 'K'],
+    'W': [1, 'W'], 'W/(m²·K)': [1, 'h'], 'W/(m·K)': [1, 'kc'],
+    'K': [1, 'T'], '℃': [1, 'T'], '-': [1, 'x'], '×10⁶回転': [1, 'x']
+  };
+  // 入力欄に出す同次元の単位候補（既定単位を先頭に）
+  function unitAlts(unit) {
+    var d = UNIT[unit] && UNIT[unit][1]; if (!d || d === 'x') return [unit];
+    var a = []; for (var u in UNIT) if (UNIT[u][1] === d) a.push(u);
+    a.sort(function (x, y) { return x === unit ? -1 : y === unit ? 1 : 0; }); return a;
+  }
+  function toUnit(value, from, to) {
+    if (from === to || !UNIT[from] || !UNIT[to] || UNIT[from][1] !== UNIT[to][1]) return value;
+    return value * UNIT[from][0] / UNIT[to][0];
+  }
+  function fmtNum(x) {
+    if (!isFinite(x)) return String(x);
+    if (x === 0) return '0';
+    var a = Math.abs(x);
+    if (a >= 1e5 || a < 1e-3) return x.toExponential(3);
+    return String(Math.round(x * 1e4) / 1e4);
+  }
+  function prettyVal(x, unit) {
+    var s = fmtNum(x) + ' ' + unit;
+    if (unit === 'Pa') s += '（= ' + fmtNum(x / 1e6) + ' MPa）';
+    else if (unit === 'MPa') s += '（= ' + fmtNum(x * 1e6) + ' Pa）';
+    else if (unit === 'm') s += '（= ' + fmtNum(x * 1e3) + ' mm）';
+    return s;
+  }
+  /* 左辺を計算する。 inputs = { sym: { value, unit } } → { ok, out, unit, value, pretty }。 */
+  function compute(id, inputs) {
+    var c = CALC[id]; if (!c) return { ok: false, why: 'no-calc' };
+    var v = {};
+    for (var i = 0; i < c.in.length; i++) {
+      var spec = c.in[i], raw = inputs && inputs[spec.sym];
+      var val = raw && raw.value != null && raw.value !== '' ? Number(raw.value) : NaN;
+      if (!isFinite(val)) return { ok: false, why: '未入力: ' + spec.sym };
+      v[spec.sym] = toUnit(val, (raw && raw.unit) || spec.unit, spec.unit);
+    }
+    var out; try { out = c.fn(v); } catch (e) { return { ok: false, why: '計算エラー' }; }
+    if (!isFinite(out)) return { ok: false, why: '非有限（0除算など）' };
+    return { ok: true, out: c.out, unit: c.outUnit, value: out, pretty: prettyVal(out, c.outUnit) };
+  }
+
   /* generic な概念語（応力・荷重・軸…）はトリガとして弱い。単独で当たっても式・表を
    * 確定させず、specific 語（オイラー・はめあい・断面係数…）と一緒のときだけ効かせる。
    * これで「軸とは」「応力とは」のような誤検出を抑え、「軸のねじり応力」は torsion に当てる。
@@ -132,5 +204,5 @@
   }
   function has(question) { var r = lookup(question); return !!(r.formulas.length || r.tables.length); }
 
-  NSCode.calc = { FORMULAS: FORMULAS, TABLES: TABLES, lookup: lookup, has: has };
+  NSCode.calc = { FORMULAS: FORMULAS, TABLES: TABLES, lookup: lookup, has: has, compute: compute, CALC: CALC, unitAlts: unitAlts, toUnit: toUnit };
 })(typeof window !== 'undefined' ? (window.NSCode = window.NSCode || {}) : (global.NSCode = global.NSCode || {}));

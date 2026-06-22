@@ -373,6 +373,24 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 .ns-calc__syms code { font-size: 13px; }
 .ns-msg--calc .ns-table-wrap { margin-top: 4px; }
 
+/* 計算フォーム */
+.ns-calc__form { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.ns-calc__row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.ns-calc__sym { flex: 0 0 56px; text-align: right; }
+.ns-calc__in { flex: 1 1 auto; min-width: 60px; padding: 5px 8px; font-size: 14px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+.ns-calc__unit { flex: 0 0 auto; font-size: 12.5px; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+.ns-calc__actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.ns-calc__btn, .ns-calc__xls, .ns-calc__xls-table {
+  font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.ns-calc__btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ns-calc__btn:hover { filter: brightness(1.08); }
+.ns-calc__xls:hover, .ns-calc__xls-table:hover { border-color: var(--accent); color: var(--accent); }
+.ns-calc__result:not(:empty) { margin-top: 8px; padding: 8px 12px; font-size: 14px; font-weight: 600;
+  background: var(--accent-weak, var(--surface-2)); border: 1px solid var(--border); border-radius: 8px; }
+
 /* 👍/👎 feedback row under an answer + the "learned" tag and 学習状況 panel */
 .ns-feedback { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .ns-feedback__btn {
