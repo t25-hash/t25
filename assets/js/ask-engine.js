@@ -842,7 +842,13 @@
         var psents = buildSentences(pd.text);
         for (var ps = 0; ps < psents.length && items.length < 12; ps++) {
           var psen = psents[ps]; var lm = psen.match(LEAD); if (!lm) continue;
-          if (psen.indexOf(key) < 0 && !(ps > 0 && psents[ps - 1].indexOf(key) >= 0)) continue;   // on-topic only
+          // key must be the列挙のSUBJECT — appear BEFORE the lead-in phrase (or be the
+          // subject of the previous sentence) — NOT merely a sibling MEMBER inside the
+          // listed items. Without this, 「ばねの種類」 hijacks 「機械要素の代表的なものに、
+          // ねじ・軸・軸受・歯車・ベルト・ばね…がある」 and wrongly lists ねじ・軸・歯車…
+          // (mirrors the curated LEADc pass's subject guard above).
+          var kp = psen.indexOf(key);
+          if (!((kp >= 0 && kp < lm.index) || (ps > 0 && psents[ps - 1].indexOf(key) >= 0))) continue;
           lm[1].split(/[・･、，]/).forEach(function (it) {
             it = it.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s。・]/g, '').trim();
             if (!it || it === key || GENERIC_TERM[it] || seen[it]) return;
