@@ -93,21 +93,27 @@
       '軸は、回転して動力（トルク）を伝える機械要素です。曲げとねじりを同時に受けることが多く、許容ねじり応力・許容曲げ応力と安全率から直径を決めます。\n\n' +
       '軸には、段付き部・キー溝・止め輪溝などの断面急変部があり、ここに応力集中が生じます。すみ肉を丸める（フィレット）ことで応力集中を緩和し、疲労強度を確保します。\n\n' +
       '危険速度（軸の固有振動数と回転数が一致して共振する回転速度）を避けるよう、剛性と回転数の関係を確認します。\n\n' +
-      '軸継手は二つの軸を接続する要素で、心ずれを許容するたわみ軸継手や、過負荷時に切り離す安全継手などがあります。' },
+      '軸継手は二つの軸を接続する要素で、心ずれを許容するたわみ軸継手や、過負荷時に切り離す安全継手などがあります。\n\n' +
+      'クラッチは、二つの軸の間で動力の伝達を必要に応じて入り切りする機械要素である。摩擦クラッチやかみ合いクラッチなどがある。\n\n' +
+      'ブレーキは、運動する部分に摩擦などの抵抗力を与えて減速・停止させ、運動エネルギーを吸収する機械要素である。ドラムブレーキやディスクブレーキなどがある。' },
     { name: '24-軸受-転がりとすべり.md', text:
       '軸受（ベアリング）は、回転する軸を支持し、摩擦を小さく保ちながら荷重を受ける機械要素です。大きく転がり軸受とすべり軸受に分けられます。\n\n' +
+      '軸受の役割は、回転する軸を支持し、摩擦を抑えながら荷重を確実に受けて、軸の回転を滑らかに保つことである。\n\n' +
       '転がり軸受は、内輪・外輪の間に玉やころ（転動体）を挟み、転がり接触で摩擦を低減します。深溝玉軸受はラジアル荷重に、円すいころ軸受やアンギュラ玉軸受はラジアルとアキシアルの複合荷重に適します。\n\n' +
       'すべり軸受は、軸と軸受の間に油膜を形成して面で支持する方式で、高荷重・高速・低騒音に向きます。流体潤滑では油膜が両者を完全に隔て、金属接触を防ぎます。\n\n' +
       '転がり軸受の寿命は、転動疲労による剥離（フレーキング）で定まり、基本定格寿命（L10）として荷重と回転数から推定します。適切な潤滑とシールが寿命を左右します。' },
     { name: '25-ねじ・ばね・ベルト.md', text:
       'ねじは、らせん状のねじ山によって締結や運動変換を行う機械要素です。締結用には三角ねじ、運動・力の伝達には角ねじや台形ねじが使われます。\n\n' +
+      'ねじの役割は、部品どうしを締結して固定すること、および回転運動を直線運動に変換することにある。\n\n' +
       'ボルト締結では、適切な締付けトルクで初期張力（軸力）を与え、ゆるみと疲労を防ぎます。ばね座金やダブルナットなどのゆるみ止めも併用します。\n\n' +
       'ばねは、弾性変形によってエネルギーを蓄え、力を緩衝・保持する要素です。コイルばね・板ばね・皿ばねなどがあり、ばね定数で変形と荷重の関係を表します。\n\n' +
+      'ばねの特徴は、荷重に応じて弾性変形し、エネルギーの蓄積・衝撃の吸収・力の保持ができることである。\n\n' +
       'ベルトとチェーンは、離れた軸の間で動力を伝える巻き掛け伝動要素です。ベルトは静粛で衝撃吸収に優れ、チェーンはすべりがなく大きな力を確実に伝えます。' },
     { name: '26-材料力学の基礎.md', text:
       '材料力学は、部材に外力が働いたときの応力・ひずみ・変形を扱い、壊れない寸法を決めるための基礎理論です。\n\n' +
       '基本的な荷重には、引張・圧縮・せん断・曲げ・ねじりがあります。応力は単位面積あたりの内力、ひずみは変形の割合で、弾性域では両者がフックの法則で比例します（比例定数が縦弾性係数）。\n\n' +
       'ヤング率（縦弾性係数）とは、弾性範囲で応力をひずみで割った比例定数である。値が大きいほど同じ応力で変形しにくく、材料の硬さ（変形しにくさ）の指標となる。\n\n' +
+      'フックの法則とは、弾性範囲では応力とひずみが互いに比例するという法則である。その比例定数が縦弾性係数（ヤング率）であり、σ＝Eεで表される。\n\n' +
       'はりの曲げでは、断面に生じる曲げ応力は断面係数に反比例し、たわみは断面二次モーメントと材料の剛性で決まります。中立軸から遠いほど曲げ応力が大きくなります。\n\n' +
       '細長い柱は、圧縮で座屈する恐れがあり、オイラーの式で座屈荷重を見積もります。繰り返し荷重では、静的強度より低い応力でも疲労破壊が起こるため、応力振幅と繰り返し数で評価します。' },
     { name: '27-公差とはめあい.md', text:
@@ -118,6 +124,7 @@
     { name: '28-強度評価とトラブル.md', text:
       '機械の信頼性設計では、想定される荷重・環境に対し、強度・剛性・寿命を評価し、安全率を見込んで余裕を持たせます。安全率を設けるのは、材料強度や荷重のばらつき、想定外の使用条件、経年劣化といった不確実性に備え、破損を防ぐ余裕を確保するためです。\n\n' +
       '代表的な破損形態には、過大荷重による延性破壊・脆性破壊、繰り返し荷重による疲労破壊、高温長時間でのクリープ、座屈、摩耗、腐食、応力腐食割れがあります。\n\n' +
+      '疲労とは、繰り返し負荷を受ける材料が、静的強度より低い応力でもき裂を生じて破壊に至る現象である。応力振幅と繰り返し数で評価し、応力集中部が起点になりやすい。\n\n' +
       '疲労破壊は、応力集中部（切欠き・溝・きずなど）を起点に進展することが多く、フィレットの付与・表面仕上げの改善・表面硬化処理（ショットピーニングなど）で寿命を延ばせます。\n\n' +
       'いずれも、応力集中の緩和・適切な材料と熱処理・潤滑とシール・点検による予兆把握が基本対策です。過去のトラブル事例は不具合履歴として蓄積し、再発防止に活用します。' },
 
@@ -127,6 +134,61 @@
       '機械工学は、機械の設計・製作・運転に関わる工学分野で、材料力学・機構学・熱力学・流体力学・制御工学などを基礎にします。\n\n' +
       '機械を構成する基本部品を機械要素と呼びます。ねじ・ボルト、軸、軸受、歯車、ベルトやチェーン、ばね、軸継手、カム、リンク機構などがあり、動力の伝達・変換・支持を担います。\n\n' +
       '産業機械（ポンプ・送風機・減速機・工作機械）も、これら機械要素と機械工学の原理の上に成り立っています。' },
+    { name: '32-計測と制御.md', text:
+      '制御とは、対象の状態を目標値に合うように操作量を加えて調整することである。出力を測って入力へ戻すフィードバック制御が基本である。\n\n' +
+      'センサとは、温度・圧力・位置・速度・力などの物理量を検出し、電気信号に変換する素子である。検出した信号は制御や計測に用いられる。\n\n' +
+      'アクチュエータとは、制御信号を受けて機械的な運動や力を発生させる駆動要素である。電動・油圧・空圧などの方式がある。' },
+    { name: '33-加工と工作機械.md', text:
+      '工作機械とは、工具と工作物を相対運動させて金属などを切削・研削し、目的の形状・寸法・精度に加工する機械である。旋盤・フライス盤・ボール盤・研削盤などがある。\n\n' +
+      '切削加工とは、工具で工作物の不要部分を削り取って形状を作る加工法である。旋削・フライス削り・穴あけ・研削などに分けられる。\n\n' +
+      '旋盤とは、工作物を回転させ、刃物（バイト）を当てて主に円筒形状を削る工作機械である。\n\n' +
+      'フライス盤とは、回転する多刃工具（フライス）で平面や溝などを削る工作機械である。\n\n' +
+      '研削加工とは、高速回転する砥石で工作物の表面を少しずつ削り、高い寸法精度と良好な仕上げ面を得る加工法である。\n\n' +
+      '塑性加工とは、材料を弾性限度を超えて変形させ、目的の形状に成形する加工法である。鍛造・圧延・押出し・プレス加工などがある。' },
+    { name: '34-流体力学の基礎.md', text:
+      '層流とは、流体が層状に整然と流れ、隣り合う層が混じり合わない流れの状態である。\n\n' +
+      '乱流とは、流体が不規則な渦を伴って激しく混じり合いながら流れる流れの状態である。\n\n' +
+      'レイノルズ数とは、流れにおける慣性力と粘性力の比を表す無次元の量である。層流か乱流かの判別に用いられる。\n\n' +
+      '圧力損失とは、流体が管路や機器を通過する際に、摩擦や流れの乱れによって失われる圧力である。\n\n' +
+      'キャビテーションとは、流れの中で圧力が局所的に飽和蒸気圧以下に下がり、気泡が発生・消滅して壊食や振動を起こす現象である。' },
+    { name: '35-材料と機構の補足.md', text:
+      '黄銅とは、銅と亜鉛を主成分とする合金である。しんちゅうとも呼ばれ、加工性・耐食性に優れる。\n\n' +
+      '青銅とは、銅とすずを主成分とする合金である。耐摩耗性・鋳造性に優れ、軸受や鋳物に使われる。\n\n' +
+      'リンク機構とは、複数の剛体（リンク）を対偶で連結し、運動や力を伝達・変換する機構である。' },
+    { name: '36-基礎の物理量と振動.md', text:
+      'トルクとは、物体を回転させようとする力の働きで、力と回転軸までの距離の積で表される量である。\n\n' +
+      '応力とは、外力を受けた物体の内部に生じる、単位面積あたりの内力である。\n\n' +
+      '粘度とは、流体の流れにくさ（内部摩擦の大きさ）を表す量である。\n\n' +
+      '熱力学とは、熱と仕事・エネルギーの関係およびその変換を扱う物理学の分野である。\n\n' +
+      '熱効率とは、機関に与えた熱エネルギーのうち、有効な仕事に変換された割合である。\n\n' +
+      '共振とは、外力の振動数が系の固有振動数に一致して振幅が著しく大きくなる現象である。\n\n' +
+      '固有振動数とは、系が外力なしに自由振動するときの、その系に固有の振動数である。\n\n' +
+      '電動機とは、電気エネルギーを回転などの機械的な力に変換する機械である。モータともいう。' },
+    { name: '37-力学と材料特性.md', text:
+      '仕事とは、物体に力を加えて動かしたときにその物体に与えるエネルギーで、力と移動距離の積で表される量である。\n\n' +
+      'エネルギーとは、物体や系が仕事をする能力のことである。\n\n' +
+      '動力とは、単位時間あたりにする仕事（仕事率）であり、機械を動かす能力を表す量である。\n\n' +
+      '慣性とは、物体が現在の運動状態を保とうとする性質である。\n\n' +
+      '降伏点とは、材料を引っ張ったとき、応力をほとんど増やさなくてもひずみが急に増え始める応力の値である。\n\n' +
+      '引張強さとは、材料が引張荷重に耐えられる最大の応力である。\n\n' +
+      '弾性率とは、弾性範囲で応力をひずみで割った比例定数で、材料の変形しにくさを表す量である。\n\n' +
+      '硬さとは、材料の表面に他の物体を押し付けたときの、変形や傷つきにくさを表す尺度である。\n\n' +
+      '靭性とは、材料が破壊するまでに吸収できるエネルギーの大きさで、粘り強さを表す性質である。\n\n' +
+      '延性とは、材料が破断せずに大きく引き伸ばされる性質である。\n\n' +
+      '脆性とは、材料がほとんど塑性変形せずに破壊する性質である。' },
+    { name: '38-設計支援と生産管理.md', text:
+      'CADとは、計算機を用いて図面や三次元モデルを作成する設計支援システムである。\n\n' +
+      'CAEとは、計算機で応力・熱・流れなどを解析し、設計を検証する支援技術である。\n\n' +
+      'CAMとは、CADで作成した設計データをもとに、工作機械の加工プログラム（NCデータ）を作成する仕組みである。\n\n' +
+      'シミュレーションとは、現象を数式やモデルで模擬し、計算機上で挙動を予測・解析する手法である。\n\n' +
+      '有限要素法とは、対象を小さな要素に分割して近似的に解く、応力や熱などの数値解析手法である。\n\n' +
+      '保全とは、設備が正常に機能し続けるよう、点検・修理・部品交換などを行う活動である。\n\n' +
+      '品質管理とは、製品やサービスの品質を一定の水準に保つための管理活動である。\n\n' +
+      '信頼性とは、システムや部品が所定の期間、要求された機能を果たし続ける度合いである。\n\n' +
+      '表面粗さとは、加工した面の微細な凹凸の大きさを表す指標である。' },
+    { name: '39-油圧と空気圧.md', text:
+      '油圧とは、密閉した油に圧力を加え、その力やエネルギーを伝達・制御する方式である。\n\n' +
+      '空気圧とは、圧縮した空気の圧力を用いて、力やエネルギーを伝達・制御する方式である。' },
     { name: '31-機械設計の基礎.md', text:
       '設計とは、求められる機能を満たすものを構想し、形状・寸法・材料・公差として具体化する行為です。要求仕様の明確化に始まり、概念設計 → 基本設計 → 詳細設計と段階的に詳細化します。\n\n' +
       '設計では、強度・剛性・安全率、製造のしやすさ、コスト、保全性、安全性などを総合的に満たすよう、トレードオフを取りながら最適化します。\n\n' +
@@ -273,6 +335,13 @@
    'どういう どういっ どうやっ どうし いずれ なぜ あるい もしく')
     .split(' ').forEach(function (t) { HIRA_STOP[t] = 1; });
   var HIRA_PARTICLE = /[はがをにでとへものやか]/;       // delimiter chars inside a hiragana run
+  // hand-written glossary (DEFAULT_DOCS, *.md) is clean, complete prose — give its
+  // sentences a relevance bonus so covered concepts answer fluently (赤ちゃん→読みやすさ↑).
+  var CURATED_BONUS = 0.9;
+  // a sentence that OPENS with a back-reference (前者/これ/その/上記…) needs prior context
+  // to make sense, so it reads poorly as a stand-alone answer lead — demote it so a
+  // self-contained sentence is preferred (broadly lifts long-tail answer quality).
+  var DEICTIC_LEAD = /^(?:これ|それ|その|この|あの|同|当該|前者|後者|上記|下記|前述|後述|ここで|ここに|そこで|こう|そう|かかる|これら|それら|こうした|そうした|このような|そのような|いずれ|両者)/;
 
   function keyTerms(q) {
     // kanji / katakana / latin runs (existing) PLUS hiragana runs (so ねじ・ばね are
@@ -341,6 +410,12 @@
       var cks = coreQuery(q).match(/[一-鿿]/g) || [];
       for (var ci = 0; ci < cks.length; ci++) { if (!SINGLE_STOP[cks[ci]] && !GENERIC_TERM[cks[ci]]) { out.push(cks[ci]); break; } }
     }
+    // drop a short hiragana FRAGMENT that is a substring of a longer, more specific key
+    // (「せん断応力」→ junk「せん」which else matches「らせん」). Keeps the compound only.
+    out = out.filter(function (k) {
+      if (!/^[ぁ-ゖ]{1,2}$/.test(k)) return true;
+      return !out.some(function (o) { return o !== k && o.indexOf(k) >= 0; });
+    });
     return out;
   }
 
@@ -481,7 +556,7 @@
     function score(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     units.forEach(function (u) { u.score = score(u.s); });
     units.sort(function (a, b) { return b.score - a.score; });
@@ -974,7 +1049,7 @@
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
       // strongly prefer sentences that actually contain a SPECIFIC question term —
       // a sentence merely sharing 変化/伴う must not outrank one about 相変化伝熱/促進.
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     cands.forEach(function (c) { c.rel = rel(c.s); });
     cands.sort(function (a, b) { return b.rel - a.rel; });
@@ -1081,7 +1156,7 @@
     function rel(s) {
       var gs = gram(s), m = 0; gs.forEach(function (x) { if (qg[x]) m++; });
       var lex = gs.length ? m / Math.sqrt(gs.length) : 0;
-      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys);
+      return lex + 0.25 * emb.cosine(qv, emb.embed(s, 64)) + (hasKey(s) ? 0.6 : 0) + topicScore(s, keys) + keyCoverage(s, keys) - (DEICTIC_LEAD.test(s) ? 0.5 : 0);
     }
     var groups = keys.length
       ? (docs || []).filter(function (d) { return hasKey(d.text || ''); }).map(function (d) { return { src: d.name, arr: buildSentences(d.text) }; })
@@ -1102,13 +1177,41 @@
    * and clean — so the reply reads as a complete 1–2 sentence answer, not a stub. */
   function withFollowUp(top, hasKey, maxTotal) {
     var text = top.s, arr = top.g.arr, nx = arr[top.idx + 1];
-    if (nx && !isJunkSent(nx) && text.length < 70 && (text.length + nx.length) <= (maxTotal || 165) && hasKey(nx)) text += nx;
+    // append the following sentence for a complete, Claude-like 2-sentence answer
+    // (definition + elaboration). Handbook continuations must share the key (avoid
+    // drifting off-topic); curated (*.md) continuations are clean & on-topic by
+    // construction, so allow them even without the key — richer covered-concept answers.
+    var curated = /\.md$/.test((top.g && top.g.src) || top.src || '');
+    // the lead is already on-topic (it was selected for the key); its in-passage
+    // continuation usually elaborates the same topic, so append it for a complete
+    // 2-sentence answer. Require the continuation itself not drift to a NEW figure/section.
+    var onTopicLead = hasKey(top.s);
+    // the continuation must ELABORATE the topic, not start a NEW concept's definition
+    // (curated docs pack several 「Xとは…」 defs; never glue 旋盤 onto 切削加工).
+    var newDef = /^[一-鿿ぁ-ヶーA-Za-z]{1,12}(?:とは|は[、，])/.test(nx || '');
+    var nxOk = nx && !isJunkSent(nx) && !newDef && !/^[（(]?(?:図|表|式|第[0-9０-９])/.test(nx) && nx.length >= 10;
+    if (nxOk && text.length < 90 && (text.length + nx.length) <= (maxTotal || 170) && (hasKey(nx) || curated || onTopicLead)) text += nx;
     return text;
   }
   // best sentence carrying an intent cue (+ optional follow-on); null if none good
   function topByCue(question, hits, docs, cueRe, bonus, need, requireCue) {
     var p = sentPool(question, hits, docs); if (!p.cands.length) return null;
-    p.cands.forEach(function (c) { c.sc = c.rel + (cueRe.test(c.s) ? bonus : 0); });
+    // a CUED curated sentence (hand-written clean prose that also carries the intent
+    // cue) is the ideal purpose/feature/why answer — boost it so it beats a garbled
+    // handbook fragment. Gated on the cue so it still passes the intent hallmark.
+    // Also align the ANSWER's cue with the QUESTION's cue (「役割」質問→「役割」を含む文)
+    // so 「軸受の役割」picks the 役割 sentence, not a 低減 one.
+    var qCues = question.match(new RegExp(cueRe.source, 'g')) || [];
+    var key0 = p.keys[0] || '';
+    p.cands.forEach(function (c) {
+      var cued = cueRe.test(c.s);
+      // curated bonus only when the key is the SUBJECT (near the start), so a curated
+      // LIST sentence merely mentioning the key as a member (機械要素…カム…) does NOT
+      // hijack 「カムの役割」.
+      var subj = key0 && c.s.indexOf(key0) >= 0 && c.s.indexOf(key0) <= 8;
+      c.sc = c.rel + (cued ? bonus : 0) + (cued && subj && /\.md$/.test(c.src || '') ? CURATED_BONUS : 0) +
+        (qCues.some(function (qc) { return c.s.indexOf(qc) >= 0; }) ? 0.5 : 0);
+    });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
     if (!top || top.sc < need || (p.keys.length && !p.hasKey(top.s))) return null;
@@ -1127,42 +1230,50 @@
     // genus–differentia definitions: 「Xは〜する装置／機械要素である」 (は, not とは) —
     // the COMMONEST definition form. Recognised when a class noun precedes である/だ
     // AND the key is the topic, so a plain classification still reads as a definition.
-    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比)(である|だ。|です。|をいう|と呼)/;
-    // the curated 用語集 is pure genus–differentia definitions by construction (each
-    // line is 「Xは、〜である」), so a glossary sentence whose TOPIC is the key is a
-    // definition even when its genus noun (破壊・処置・操作・関係…) isn't in GENUS.
-    function curated(c) { return /用語集/.test(c.src || ''); }
-    // prefer the GENERAL term's OWN definition over a subtype's: reward the key as the
-    // literal sentence TOPIC (「歯車は…」「歯車とは…」) and damp a compound-subtype subject
-    // that merely contains the key (「遊星歯車は…」「気体軸受は…」), so 「歯車とは」 is not
-    // answered with the definition of 遊星歯車.
-    var topicRe = key ? new RegExp('(?:^|[。、，,\\s　（(「])' + escRe(key) + '(?:[（(][^）)]*[）)])?(?:は|とは|が|を|の)') : null;
-    var subtypeRe = key ? new RegExp('[一-鿿ァ-ヶー]' + escRe(key) + '(?:は|とは|が)') : null;
+    var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比|熱処理|操作|処置|加工|破壊)(である|だ。|です。|をいう|と呼)/;
+    function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
+    // curated bonus only when the candidate is about the FULL query topic, not a shorter
+    // concept it merely contains: 「ねじ切りとは」(coreT=ねじ切り) must NOT get the curated
+    // 「ねじ」definition just because keyTerms reduced it to ねじ.
+    var coreT = coreQuery(question).replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '');
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
-      var exactTopic = topicRe && topicRe.test(c.s);
-      var subtypeTopic = !exactTopic && subtypeRe && subtypeRe.test(c.s);
-      c.def = STRICT.test(c.s) || GENUS.test(c.s) || (curated(c) && exactTopic);
       // definitions are concise genus–differentia statements: reward the definitional
       // predicate and the key up front, and gently prefer a short clean line over a
-      // long enumerating/classification sentence that merely shares the term. An
-      // authoritative curated definition of the key gets an extra nudge.
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : c.def ? 0.7 : 0)
-        + (exactTopic ? 0.6 : (ki >= 0 && ki <= 6 ? 0.4 : 0)) - (subtypeTopic ? 0.5 : 0)
-        + (curated(c) && exactTopic ? 0.5 : 0)
-        - 0.005 * Math.max(0, c.s.length - 70);
+      // long enumerating/classification sentence that merely shares the term.
+      // the definition's SUBJECT should BE the topic: the curated bonus needs coreT in
+      // SUBJECT position (near the start), so 「軸は…動力（トルク）を伝える…」does NOT win
+      // 「トルクとは」just because it mentions トルク mid-sentence.
+      var cp = coreT.length >= 2 ? c.s.indexOf(coreT) : -1;
+      var curated = /\.md$/.test(c.src || '') && cp >= 0 && cp <= 8;
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) + (ki === 0 ? 0.5 : 0) - 0.005 * Math.max(0, c.s.length - 70) + (curated ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
+    // a hand-written curated definition OF THE EXACT topic (starts with coreT, is a real
+    // definition) is authoritative & clean — always use it, even when a keyword-dense
+    // handbook sentence scores higher (シミュレーション/表面粗さ…).
+    if (coreT.length >= 2) {
+      for (var ci = 0; ci < p.cands.length; ci++) {
+        var cc = p.cands[ci];
+        if (/\.md$/.test(cc.src || '') && cc.s.indexOf(coreT) === 0 && isDef(cc.s)) { top = cc; break; }
+      }
+    }
     // prefer the highest-scored GENUINE definition over a higher-rel non-definition
     // mention of a polysemous key (モジュール間通信… must not bury モジュールの定義).
+    if (!(/\.md$/.test(top.src || '') && top.s.indexOf(coreT) === 0 && isDef(top.s)))
     for (var di = 0; di < p.cands.length; di++) {
-      if (p.cands[di].def && (!key || p.cands[di].s.indexOf(key) >= 0)) { top = p.cands[di]; break; }
+      var cd = p.cands[di];
+      // a curated def is authoritative only for the FULL query topic — never let the
+      // 「歯車」definition win 「歯車ポンプとは」(coreT not in it) just because keyTerms
+      // reduced the topic to 歯車.
+      if (/\.md$/.test(cd.src || '') && coreT.length >= 2 && cd.s.indexOf(coreT) < 0) continue;
+      if (isDef(cd.s) && (!key || cd.s.indexOf(key) >= 0)) { top = cd; break; }
     }
     if (!top || (p.keys.length && !p.hasKey(top.s))) return null;
     // accept a real definition (とは…/をいう or genus「〜装置である」) OR a sentence with
     // the key in topic position; else defer to composeConcise (most on-topic line).
-    if (!top.def && topicScore(top.s, p.keys) < 0.4) return null;
+    if (!isDef(top.s) && topicScore(top.s, p.keys) < 0.4) return null;
     return { text: withFollowUp(top, p.hasKey, 170), source: top.src };
   }
   function answerWhy(question, hits, docs) {
@@ -1182,7 +1293,7 @@
     var CUE = /(一方|に対して|に対し|と比べ|に比べ|より|異な|違い|の差|どちら|に比較)/;
     p.cands.forEach(function (c) {
       var mention = 0; subs.forEach(function (k) { if (c.s.indexOf(k) >= 0) mention++; });
-      c.sc = c.rel + (CUE.test(c.s) ? 0.6 : 0) + mention * 0.4;
+      c.sc = c.rel + (CUE.test(c.s) ? 0.6 : 0) + mention * 0.4 + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
@@ -1198,8 +1309,9 @@
     // that also mentions A — 合金鋼の定義 mentions 炭素鋼 — would otherwise dup the
     // first pick and collapse the synthesis), and never reuses the first sentence.
     function bestFor(k, other, avoidS) {
+      function cscore(c) { return c.rel + (/\.md$/.test(c.src || '') ? CURATED_BONUS : 0); }   // prefer clean curated prose
       var cs = p.cands.filter(function (c) { return c.s.indexOf(k) >= 0 && c.s.length <= 110 && c.s !== avoidS; })
-        .sort(function (a, b) { return b.rel - a.rel; });
+        .sort(function (a, b) { return cscore(b) - cscore(a); });
       if (other) { var only = cs.filter(function (c) { return c.s.indexOf(other) < 0; }); if (only.length) return only[0]; }
       return cs[0];
     }

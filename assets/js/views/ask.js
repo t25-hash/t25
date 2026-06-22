@@ -308,7 +308,7 @@
    * grounded on the SAME retrieved passages. Pure augmentation — on any failure
    * (no WebGPU / weights not vendored / error) the extractive answer stays. */
   function maybeGenerate(entry, botId) {
-    if (!state.gen || !NSCode.sml || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
+    if (!state.gen || !(NSCode.sml || NSCode.genllm) || !entry.a || entry.a.weak || entry.error || !entry.a.hits || !entry.a.hits.length) return;
     pretrainBaseOnce();   // goal #3: strengthen the base SML once, in the background
     entry.a.genPending = true; rerenderBubble(botId, entry); scrollBottom();
     // Feed the CURATED, on-target content (the same the extractive answer draws on —
@@ -320,16 +320,33 @@
     if (entry.a.compose && entry.a.compose.length) seeds = seeds.concat(entry.a.compose);
     if (entry.a.memo) seeds.push(entry.a.memo);
     var ctx = seeds.concat(entry.a.hits.map(function (h) { return h.text; }));
-    // in-house SML grounded (copy-constrained) generation: on-device, no external
-    // model, no WebGPU. The extractive answer (entry.a.text) stays as 参考/fallback.
-    NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature, seeds: seeds }).then(function (txt) {
+
+    // Prefer the on-device LLM (Qwen via genllm) when its weights are vendored — that is
+    // the closest to LLM-quality fluency. It is gated by genllm.available() (WebGPU AND
+    // weights present); with nothing vendored it resolves false and we fall back to the
+    // in-house SML grounded recombination, so behaviour is unchanged by default.
+    function gpAvail() { return (NSCode.genllm && NSCode.genllm.available) ? NSCode.genllm.available() : Promise.resolve(false); }
+    function smlGen() {
+      return NSCode.sml
+        ? NSCode.sml.groundedAnswer(entry.q, ctx, { temperature: state.temperature, seeds: seeds }).then(function (txt) { return { txt: txt, llm: false }; })
+        : Promise.resolve({ txt: '', llm: false });
+    }
+    var gen = gpAvail().then(function (ok) {
+      if (ok) return NSCode.genllm.answerRAG(entry.q, ctx, { temperature: state.temperature })
+        .then(function (txt) { return txt ? { txt: txt, llm: true } : smlGen(); })   // empty LLM out → fall back
+        .catch(function () { return smlGen(); });                                     // LLM error → fall back
+      return smlGen();
+    });
+
+    gen.then(function (res) {
+      var txt = res && res.txt, llm = res && res.llm;
       entry.a.genPending = false;
       if (txt) {
-        // Grammar Compiler Layer も生成回答に適用（抽出と同じく文法正規化を通す）。
-        // 失敗・未ロード時は生成生文をそのまま使う（破壊しない）。
-        var g = NSCode.grammar ? NSCode.grammar.normalize(txt) : null;
-        entry.a.gentext = (g && g.text) ? g.text : txt;
-        entry.a.gensml = g ? g.sentences : null;   // Lab/デバッグ用に SML 分解を保持
+        // LLM output is already fluent — show it as-is (normalize could only harm it).
+        // The in-house SML/extractive output is passed through the Grammar Compiler Layer
+        // (faithful normalization; failure → raw text, never destructive).
+        if (llm) { entry.a.gentext = txt; entry.a.gensml = null; }
+        else { var g = NSCode.grammar ? NSCode.grammar.normalize(txt) : null; entry.a.gentext = (g && g.text) ? g.text : txt; entry.a.gensml = g ? g.sentences : null; }
         persist();
       }
       else { entry.a.genNote = '※ 生成を構成できなかったため抽出で回答します'; }

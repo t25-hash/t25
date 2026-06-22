@@ -241,8 +241,20 @@
   // 内容語（漢字・カタカナ・英数）のラン。助詞や活用語尾(ひらがな)は除外。
   function contentRuns(s) { return String(s || '').match(/[一-鿿ァ-ヶー0-9A-Za-z]+/g) || []; }
   function preservesContent(orig, made) {
-    var rb = contentRuns(made).join('|');
-    return contentRuns(orig).every(function (t) { return rb.indexOf(t) >= 0; });
+    // (1) 内容語が同じ「順序」で現れること。再コンパイルが節内のスロットを並べ替えて
+    // 「ラジアルとアキシアル…に適す」→「アキシアル…へラジアルと適す」のように意味を
+    // 壊すのを防ぐ（順序入替・スクランブルを拒否＝原文保持）。
+    var o = contentRuns(orig), m = contentRuns(made), j = 0;
+    for (var i = 0; i < o.length; i++) {
+      while (j < m.length && m[j] !== o[i]) j++;
+      if (j >= m.length) return false;
+      j++;
+    }
+    // (2) 格助詞を新たに導入しないこと（「荷重に応じて」→「荷重へ応じて」の に→へ 破損を拒否）。
+    function pc(s) { var c = {}, a = s.match(/[はがをにへとでも]/g) || []; a.forEach(function (x) { c[x] = (c[x] || 0) + 1; }); return c; }
+    var co = pc(orig), cm = pc(made);
+    for (var k in cm) if ((cm[k] || 0) > (co[k] || 0)) return false;
+    return true;
   }
   // compile reorders case phrases to canonical SOV (place で → companion と → object を).
   // That's right for the Grammar Lab's scrambled label input, but when NORMALIZING
@@ -435,8 +447,12 @@
       .replace(/^([一-鿿ぁ-ヿァ-ヶー]{2,12})[（(]\s*[A-Za-z][A-Za-z .\-]*[）)]\s*(?=\1)/, '')  // 見出し+英訳の接ぎ木「すべり軸受(sliding bearing)すべり軸受は…」→本文のみ（同語反復時のみ）
       .replace(/(?:系列[Ⅰ-Ⅻ]+\s*)+/g, '')                                  // 表のローマ数字連
       .replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{4,16}?)\1+/g, '$1')             // 隣接重複チャンク
+      .replace(/([一-鿿ぁ-ヶー]{2,})([（(][^）)]{0,30}[）)])\1/g, '$1$2')       // 用語(gloss)用語→用語(gloss)（すべり軸受(sliding bearing)すべり軸受）
       .replace(/^([一-鿿ァ-ヶー]{2,4})\1/, '$1')                              // 先頭の重複語（ねじねじ山→ねじ山）
       .replace(/^(?:また|さらに|および|ならびに|かつ|しかし|だが|そして|なお|ただし|一方|つまり|すなわち|そのため|したがって|よって|さて|ところで|ところが|それゆえ|ゆえに|これに対して)[、，]/, '')  // 先頭の接続詞
+      .replace(/^(?:これ|それ|これら|それら)(?:は|が)[、，]?/, '')                  // 先頭の指示語主語（これは…→…）
+      .replace(/^(?:このように(?:して)?|そのように(?:して)?|こうして|そうして|このため|そのため|このとき|その際|それゆえ|ゆえに|ここでいう|ここで(?:は)?|そこで)[、，]?/, '')  // 先頭の指示副詞（このように/ここでいう…→…）
+      .replace(/^(?:このような|そのような|こうした|そうした|これらの|それらの|この|その)(?![他点])/, '')  // 先頭の連体指示詞（この設備は→設備は）
       .replace(/^[\s　、，,。．・.0-9０-９/／\-]+/, '')                          // 先頭の断片
       .trim();
   }
