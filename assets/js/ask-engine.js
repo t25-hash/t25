@@ -1129,12 +1129,22 @@
     // AND the key is the topic, so a plain classification still reads as a definition.
     var GENUS = /(機械要素|要素|装置|機械|部品|材料|工学|現象|技術|理論|方法|手法|総称|もの|単位|量|係数|割合|プロセス|システム|構造|性質|合金鋼|合金|鋼|鉄|金属|樹脂|流体|機構|工具|器具|機器|加工法|接合法|部材|公差|文書|数値|寸法|比)(である|だ。|です。|をいう|と呼)/;
     function isDef(s) { return STRICT.test(s) || GENUS.test(s); }
+    // prefer the GENERAL term's OWN definition over a subtype's: reward the key as the
+    // literal sentence TOPIC (「歯車は…」「歯車とは…」) and damp a compound-subtype subject
+    // that merely contains the key (「遊星歯車は…」「気体軸受は…」), so 「歯車とは」 is not
+    // answered with the definition of 遊星歯車.
+    var topicRe = key ? new RegExp('(?:^|[。、，,\\s　（(「])' + escRe(key) + '(?:[（(][^）)]*[）)])?(?:は|とは|が|を|の)') : null;
+    var subtypeRe = key ? new RegExp('[一-鿿ァ-ヶー]' + escRe(key) + '(?:は|とは|が)') : null;
     p.cands.forEach(function (c) {
       var ki = key ? c.s.indexOf(key) : -1;
+      var exactTopic = topicRe && topicRe.test(c.s);
+      var subtypeTopic = !exactTopic && subtypeRe && subtypeRe.test(c.s);
       // definitions are concise genus–differentia statements: reward the definitional
       // predicate and the key up front, and gently prefer a short clean line over a
       // long enumerating/classification sentence that merely shares the term.
-      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0) + (ki >= 0 && ki <= 6 ? 0.4 : 0) - 0.005 * Math.max(0, c.s.length - 70);
+      c.sc = c.rel + (STRICT.test(c.s) ? 0.9 : GENUS.test(c.s) ? 0.7 : 0)
+        + (exactTopic ? 0.6 : (ki >= 0 && ki <= 6 ? 0.4 : 0)) - (subtypeTopic ? 0.5 : 0)
+        - 0.005 * Math.max(0, c.s.length - 70);
     });
     p.cands.sort(function (a, b) { return b.sc - a.sc; });
     var top = p.cands[0];
