@@ -262,7 +262,7 @@
       function condense(s, maxLen) {
         // strip leading punctuation/digits/dots and stray connectives
         // (avoids 「また、.…」「また、したがって」「0003「…」 number fragments)
-        s = s.replace(/^[、，,。．・.\s　0-9０-９/／\-]+/, '').replace(/^(また|さらに|したがって|なお|ただし|一方|つまり|すなわち|そして|そのため|よって)[、，,]?/, '');
+        s = s.replace(/^[、，,。．・.\s　0-9０-９/／\-]+/, '').replace(/^(また|さらに|および|ならびに|かつ|したがって|なお|ただし|一方|つまり|すなわち|そして|そのため|よって|さて|ところで|ところが|それゆえ|ゆえに|しかし|だが)[、，,]?/, '');
         s = s.replace(/([一-鿿ァ-ヶーA-Za-zⅠ-Ⅻ0-9]{3,12}?)\1+/g, '$1');   // collapse repeated table/junk chunks
         s = s.replace(/系列[Ⅰ-Ⅻ]+/g, '').replace(/(?:[一-鿿ァ-ヶー]*\d{3,}\s?(?:MPa|mm|kg|°C)?){2,}/g, '');   // strip table/number runs
         if (s.length > maxLen) {
