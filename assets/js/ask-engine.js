@@ -1615,6 +1615,14 @@
             var learned = false;
             if (!opts.noRecall) { var rec = fbRecall(question); if (rec && rec.text) { concise = { text: rec.text, source: rec.source, intent: concise.intent }; weak = false; learned = true; } }
             var memo = weak ? '' : contextMemo(question, res.hits, pdocs, 3);
+            // Display/seed cleanup at the engine boundary (was display-only): strip the
+            // dangling lead connective / heading+gloss splice / dup chunks from the final
+            // answer so result.text, the normalized text, AND the abstractive generation
+            // seed (entry.a.text) are all clean — not just the rendered bubble.
+            if (!weak && concise.text && NSCode.grammar && NSCode.grammar.tidy) {
+              var _t = NSCode.grammar.tidy(concise.text);
+              if (_t) concise = { text: _t, source: concise.source, intent: concise.intent };
+            }
             // Grammar Compiler Layer: SML化 → 正規化（意味保持・複雑文は原文保持）
             var norm = (!weak && concise.text && NSCode.grammar) ? NSCode.grammar.normalize(concise.text) : null;
             if (NSCode.lastRun) NSCode.lastRun.set({
