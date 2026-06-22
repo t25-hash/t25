@@ -361,8 +361,8 @@ a.ns-card:hover { border-color: var(--accent); transform: translateY(-1px); tran
 
 /* 計算式・表の連投バブル */
 .ns-msg--calc .ns-msg__body { background: var(--surface); }
-.ns-msg--web .ns-msg__body { background: var(--surface); border: 1px solid var(--border); }
-.ns-msg--web .ns-qa-answer__src a { color: var(--accent); }
+.ns-qa-answer__web { font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 600; }
+.ns-qa-answer__src a { color: var(--accent); }
 .ns-calc__name { font-weight: 600; font-size: 13px; color: var(--accent); margin-bottom: 8px; }
 .ns-calc__expr {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
