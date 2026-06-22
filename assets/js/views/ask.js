@@ -444,26 +444,38 @@
     });
   }
 
-  /* 🌐 Web 回答（Wikipedia 要約からの生成回答＋出典）。KB外フォールバック時に
+  /* 🌐 Web 回答（Wikipedia 要約からの生成回答＋出典）。KB外フォールバック／明示依頼時に
    * 既存の赤ちゃんバブル内へインライン表示する（別バブルの連投はしない）。 */
   function webAnswerHtml(w, q) {
-    return '<div class="ns-qa-answer__web">🌐 KB外のため Web（' + C.esc(w.source) + '）から回答</div>' +
+    return '<div class="ns-qa-answer__web">🌐 Web（' + C.esc(w.source) + '）から回答</div>' +
       '<p class="ns-qa-answer__lead">' + highlight(w.text, q || '').replace(/\n/g, '<br>') + '</p>' +
       '<div class="ns-qa-answer__src">出典: <a href="' + C.esc(w.url) + '" target="_blank" rel="noopener noreferrer">' + C.esc(w.title) + ' — ' + C.esc(w.source) + '</a></div>';
   }
-  /* KB外（本文一致が弱い／該当なし）のときだけ自動で Web に頼る。良いKB回答があれば何もしない。
+  /* 直近の「Web依頼でない」質問（"Webで調べて" だけの時の話題語フォールバック用）。 */
+  function prevTopicQuery() {
+    for (var i = state.history.length - 1; i >= 0; i--) {
+      var h = state.history[i];
+      if (h && h.q && !(NSCode.web.wantsWeb && NSCode.web.wantsWeb(h.q))) return h.q;
+    }
+    return '';
+  }
+  /* Web に頼る条件: ①KB外（本文一致が弱い／該当なし） または ②「Webで調べて」等の明示依頼。
    * graceful: オフライン/ブロック/未発見/失敗は元の表示のまま。トグルなし（常時自動）。 */
   function maybeWeb(entry, botId) {
     if (!entry || entry.error || !entry.a || entry.a.web) return;
-    var kbOut = entry.a.weak || !entry.a.hits || !entry.a.hits.length;   // KB外か
-    if (!kbOut || !NSCode.web || !NSCode.web.available()) return;
+    if (!NSCode.web || !NSCode.web.available()) return;
+    var kbOut = entry.a.weak || !entry.a.hits || !entry.a.hits.length;
+    var forced = !!(NSCode.web.wantsWeb && NSCode.web.wantsWeb(entry.q));
+    if (!kbOut && !forced) return;
+    var qWeb = entry.q;   // 明示依頼で話題語が抽出できない（"Webで調べて" 単体）→ 直前の質問
+    if (forced && NSCode.web.term && NSCode.web.term(entry.q).length < 2) qWeb = prevTopicQuery() || entry.q;
     var node = el(botId); if (!node) return;
     var body = node.querySelector('.ns-msg__body'); if (!body) return;
     var note = document.createElement('p');
     note.className = 'ns-empty__hint ns-msg__thinking';
-    note.textContent = 'KB に十分な記述がないため Web を調べています…';
+    note.textContent = 'Web（Wikipedia）を調べています…';
     body.insertBefore(note, body.firstChild); scrollBottom();
-    NSCode.web.answer(entry.q).then(function (w) {
+    NSCode.web.answer(qWeb).then(function (w) {
       var n = el(botId); if (!n) return; var b = n.querySelector('.ns-msg__body'); if (!b) return;
       if (w && w.text) {
         entry.a.web = { text: w.text, title: w.title, url: w.url, source: w.source }; persist();
@@ -505,7 +517,7 @@
             (state.gen ? '<b>🧠 抽象生成（自前SML・接地制約・既定）</b>' : '<b>📑 抽出のみ</b>') +
             '</label>' }]) +
           '<p class="ns-empty__hint">ON（既定）＝検索した根拠に縛って<b>自前SMLが言い換え生成</b>（端末内・外部API/重み/WebGPU不要、抽出も「参考」併記）。OFF＝<b>根拠の実文を抽出</b>のみ。<b>※実験：</b>幻覚はしません（根拠語のみ）。使うほど（学習・👍/👎）改善します。</p>' +
-          '<p class="ns-empty__hint">🌐 <b>KB外フォールバック</b>：KBに十分な記述が無い質問は、自動で <b>Wikipedia（CORS・APIキー不要・外部AI API不使用）</b> を調べ、要約から回答を生成して同じ回答内に出典つきで示します（KBで答えられる質問では使いません。オフライン/取得失敗時は何もしません）。</p>' +
+          '<p class="ns-empty__hint">🌐 <b>Web（Wikipedia）</b>：①KBに十分な記述が無い質問は自動でフォールバック、②「<b>〜をWebで調べて</b>」「ググって」「ネットで検索して」等の明示依頼ではKBに答えがあってもWebを使います（CORS・APIキー不要・外部AI API不使用）。要約から回答を生成し同じ回答内に出典つきで表示。オフライン/取得失敗時は何もしません。</p>' +
           '<p class="ns-empty__hint">重みの様子は <a href="#/neural">Neural Lab</a>、PDFの取り込みは <a href="#/pdf">PDF抽出</a> で。</p>' +
         '</details>' +
         '<div class="ns-ask-2pane">' +
