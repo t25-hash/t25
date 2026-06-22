@@ -17,6 +17,7 @@ const CHECKS = [
   { name: 'calc 式・表検索', file: 'calc-lookup-eval.cjs', pass: /CALC LOOKUP SCORE: (\d+) \/ \1/ },
   { name: 'calc 数値計算', file: 'calc-compute-eval.cjs', pass: /CALC COMPUTE SCORE: (\d+) \/ \1/ },
   { name: 'junk-filter 判定', file: 'junk-filter-test.cjs', pass: /JUNK FILTER SCORE: (\d+) \/ \1/ },
+  { name: 'web 検索生成', file: 'web-engine-test.cjs', pass: /WEB ENGINE SCORE: (\d+) \/ \1/ },
   { name: 'recombine', file: 'recombine-harness.cjs', pass: /0 failed/ },
   { name: 'grammar-kuromoji', file: 'grammar-kuromoji-harness.cjs', pass: /0 failed/ },
   { name: 'intent 網羅', file: 'intent-coverage-harness.cjs', pass: /問題: なし/ }
@@ -29,7 +30,7 @@ for (const c of CHECKS) {
   catch (e) { out = (e.stdout || '') + (e.stderr || ''); }   // 非ゼロ終了でも出力で判定
   const ok = c.pass.test(out);
   if (!ok) allOk = false;
-  const metric = (out.match(/(HARD RETRIEVAL SCORE[^\n]*|Recall@1[^\n]*|QUALITY SCORE[^\n]*|QUALITY READABILITY[^\n]*|CALC LOOKUP SCORE[^\n]*|CALC COMPUTE SCORE[^\n]*|JUNK FILTER SCORE[^\n]*|\d+ passed[^\n]*|問題: [^\n]*)/) || ['?'])[0].trim();
+  const metric = (out.match(/(HARD RETRIEVAL SCORE[^\n]*|Recall@1[^\n]*|QUALITY SCORE[^\n]*|QUALITY READABILITY[^\n]*|CALC LOOKUP SCORE[^\n]*|CALC COMPUTE SCORE[^\n]*|JUNK FILTER SCORE[^\n]*|WEB ENGINE SCORE[^\n]*|\d+ passed[^\n]*|問題: [^\n]*)/) || ['?'])[0].trim();
   console.log((ok ? '  OK   ' : '  FAIL ') + c.name.padEnd(20) + ' | ' + metric);
 }
 console.log('==== PRECISION SUITE: ' + (allOk ? 'ALL PASS' : 'REGRESSION DETECTED') + ' ====');
